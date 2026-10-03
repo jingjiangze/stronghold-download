@@ -27,7 +27,8 @@ const KEY_FILE = path.join(os.homedir(), '.sp-sign', 'ed25519.key');
 const PUB_FILE = path.join(os.homedir(), '.sp-sign', 'ed25519.pub');
 const PUBLISH_KEY_FILES = [
   path.join(os.homedir(), '.sp_publish_key'),
-  path.join(os.homedir(), 'DDDD', 'Agent Work', 'stronghold-download-audit', 'recon', 'publish_key.txt'),
+  // 本机仓库在 C:/DDDD/Agent Work（与用户目录不同盘根），所以从 homedir 往上两级再进去
+  path.resolve(os.homedir(), '..', '..', 'DDDD', 'Agent Work', 'stronghold-download-audit', 'recon', 'publish_key.txt'),
 ];
 
 const argv = process.argv.slice(2);
