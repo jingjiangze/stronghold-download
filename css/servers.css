@@ -123,6 +123,9 @@
 .sv-occ__humans { color: var(--mint-500); }
 .sv-occ--na { color: var(--text-dim); }
 
+/* [hidden] must win over the flex display on panels/rows */
+.admin-panel[hidden], .admin-review[hidden], .sv-row[hidden], .servers-head[hidden] { display: none !important; }
+
 /* ---- submit modal ------------------------------------------------------------------ */
 .sv-modal { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; }
 .sv-modal__backdrop { position: absolute; inset: 0; background: rgba(5, 8, 7, .72); }
