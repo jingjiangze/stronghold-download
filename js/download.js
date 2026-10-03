@@ -33,6 +33,7 @@
   /* ---- helpers --------------------------------------------------------------------- */
 
   function fmtMB(bytes) {
+    if (typeof bytes !== 'number' || !isFinite(bytes) || bytes <= 0) return '';
     return (bytes / 1048576).toFixed(1) + ' MB';
   }
 
@@ -53,7 +54,12 @@
 
   function buildMirrorUrl(mirror, asset, tag) {
     var url = null;
-    if (mirror.mode === 'direct') url = asset.url;
+    if (asset.external) {
+      // Notes-derived direct link: it already points at the mirror host itself, so
+      // prefix/template acceleration does not apply — offer it as-is only.
+      if (mirror.mode !== 'direct') return null;
+      url = asset.url;
+    } else if (mirror.mode === 'direct') url = asset.url;
     else if (mirror.mode === 'prefix') url = mirror.prefix + asset.url;
     else if (mirror.mode === 'template') {
       if (Array.isArray(mirror.tags) && mirror.tags.indexOf(tag) === -1) return null;
@@ -103,7 +109,7 @@
 
   function normalizeRelease(rel) {
     if (!rel || !Array.isArray(rel.assets)) return null;
-    return {
+    var release = {
       tag: rel.tag_name,
       name: rel.name || rel.tag_name,
       publishedAt: rel.published_at,
@@ -113,11 +119,40 @@
         return { name: a.name, size: a.size, url: a.browser_download_url, digest: a.digest || null };
       })
     };
+    // Newer releases ship the APK out-of-band: the notes carry a direct .apk link (with a
+    // fallback size when the notes mention one). Normalize it into a pseudo-asset so the
+    // rest of the page treats it exactly like a release asset.
+    if (!hasApk(release)) {
+      var link = apkLinkFromBody(rel.body);
+      if (link && allowedHostsExt(link)) {
+        var sizeMatch = String(rel.body || '').match(/([\d.]+)\s*(MB|MiB|GB|GiB)/i);
+        var size = sizeMatch ? Math.round(parseFloat(sizeMatch[1]) *
+          (sizeMatch[2].toUpperCase().charAt(0) === 'G' ? 1073741824 : 1048576)) : null;
+        release.assets.push({
+          name: link.split('/').pop().split(/[?#]/)[0] || 'app-release.apk',
+          size: size,
+          url: link,
+          digest: null,
+          external: true
+        });
+      }
+    }
+    return release;
+  }
+
+  /** Host allowlist for notes-derived links: https only + the mirrors' own hosts. */
+  function allowedHostsExt(urlText) {
+    try {
+      var parsed = new URL(urlText);
+      if (parsed.protocol !== 'https:') return false;
+      var hosts = allowedHosts();
+      return !!hosts[parsed.host];
+    } catch (err) { return false; }
   }
 
   function pickRelease(releases) {
-    // Newest stable release that actually carries an APK. Releases published without
-    // assets yet (build still running) are skipped instead of blanking the page.
+    // Newest stable release that carries an APK — either as a release asset or as an
+    // APK URL found in the release notes (newer builds ship the APK out-of-band).
     var stable = (releases || []).filter(function (r) { return !r.draft && !r.prerelease; });
     var withApk = stable.filter(hasApk);
     return withApk[0] || null;
@@ -126,6 +161,16 @@
   function hasApk(rel) {
     return !!(rel && rel.assets && rel.assets.length &&
       rel.assets.some(function (a) { return /\.apk$/i.test(a.name); }));
+  }
+
+  /** Extract an APK direct link from the release notes (first https URL ending in .apk). */
+  function apkLinkFromBody(body) {
+    var text = String(body || '');
+    var urls = text.match(/https?:\/\/[^\s\)\]\"<>]+/g) || [];
+    for (var i = 0; i < urls.length; i += 1) {
+      if (/\.apk($|[?#])/i.test(urls[i])) return urls[i];
+    }
+    return null;
   }
 
   function pickAsset(release) {
@@ -197,6 +242,9 @@
       el.hash.hidden = false;
       el.hash.dataset.sha = asset.digest;
       el.hash.title = '复制 SHA256 校验值\n' + asset.digest;
+    } else if (el.hash) {
+      el.hash.hidden = true;
+      delete el.hash.dataset.sha;
     }
 
     renderMirrors();

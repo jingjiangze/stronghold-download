@@ -35,15 +35,19 @@ async function getJson(url) {
 async function latestWithApk() {
   const list = await getJson(`https://api.github.com/repos/${REPO}/releases?per_page=10`);
   const stable = list.filter((r) => !r.draft && !r.prerelease);
-  const picked = stable.find((r) => (r.assets || []).some((a) => /\.apk$/i.test(a.name)));
-  if (!picked) throw new Error('no stable release with an .apk asset found');
+  // An APK counts either as a release asset or as a direct .apk link in the notes
+  // (newer builds ship the APK out-of-band via weishucdn).
+  const picked = stable.find((r) => (r.assets || []).some((a) => /\.apk$/i.test(a.name)) ||
+    /https?:\/\/[^\s)\]"<>]+\.apk/i.test(r.body || ''));
+  if (!picked) throw new Error('no stable release with an APK (asset or notes link) found');
   return picked;
 }
 
 const release = await latestWithApk();
 const apks = (release.assets || []).filter((a) => /\.apk$/i.test(a.name));
-if (!apks.length) {
-  console.error(`release ${release.tag_name} has no .apk asset`);
+const notesLink = (release.body || '').match(/https?:\/\/[^\s)\]"<>]+\.apk/i);
+if (!apks.length && !notesLink) {
+  console.error(`release ${release.tag_name} has neither an .apk asset nor an .apk link in the notes`);
   process.exit(1);
 }
 
@@ -58,6 +62,7 @@ const snapshot = {
       published_at: release.published_at,
       prerelease: !!release.prerelease,
       html_url: release.html_url,
+      body: release.body || '',
       assets: apks.map((a) => ({
         name: a.name,
         size: a.size,
@@ -67,6 +72,18 @@ const snapshot = {
     }
   ]
 };
+
+// No .apk asset: synthesize the pseudo-asset from the notes link so the page renders it
+// exactly like a release asset (name from the URL, size unknown unless stated).
+if (!apks.length && notesLink) {
+  snapshot.releases[0].assets = [{
+    name: notesLink[0].split('/').pop().split(/[?#]/)[0] || 'app-release.apk',
+    size: null,
+    url: notesLink[0],
+    digest: null,
+    external: true
+  }];
+}
 
 mkdirSync(dirname(OUT), { recursive: true });
 writeFileSync(OUT, JSON.stringify(snapshot, null, 2) + '\n');

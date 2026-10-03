@@ -1,19 +1,21 @@
 {
-  "generated": "2026-10-03T05:06:27.394Z",
+  "generated": "2026-10-03T06:58:06.938Z",
   "repo": "jingjiangze/Stronghold-Protocol",
   "releases": [
     {
-      "tag": "shell-v2.5.1",
-      "name": "卫戍协议 Android 壳 v2.5.1（3D 棋盘 CORS 热修）",
-      "published_at": "2026-10-03T05:01:38Z",
+      "tag": "shell-v2.6.0",
+      "name": "卫戍协议 Android 壳 v2.6.0（签名服务器清单 · 清单驱动热更新）",
+      "published_at": "2026-10-03T06:32:23Z",
       "prerelease": false,
-      "html_url": "https://github.com/jingjiangze/Stronghold-Protocol/releases/tag/shell-v2.5.1",
+      "html_url": "https://github.com/jingjiangze/Stronghold-Protocol/releases/tag/shell-v2.6.0",
+      "body": "v2.6.0：Ed25519 签名服务器清单（内置公钥，三源验签）、本地树优先 + 第三方免责声明、P0-2 服务时注入、清单驱动热更新（镜像链 + sha256 + extras/patches 重放 + 回滚）。APK 直链 https://weishucdn.jiangjiangze.icu/apk/stronghold-v2.6.0.apk",
       "assets": [
         {
-          "name": "app-release.apk",
-          "size": 520884618,
-          "url": "https://github.com/jingjiangze/Stronghold-Protocol/releases/download/shell-v2.5.1/app-release.apk",
-          "digest": "sha256:d339a7a9d899228086932f49068ec3228e038b06a9b36850d900d63e604f70ce"
+          "name": "stronghold-v2.6.0.apk",
+          "size": null,
+          "url": "https://weishucdn.jiangjiangze.icu/apk/stronghold-v2.6.0.apk",
+          "digest": null,
+          "external": true
         }
       ]
     }
