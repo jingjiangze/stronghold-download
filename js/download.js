@@ -116,7 +116,8 @@
       prerelease: !!rel.prerelease,
       draft: !!rel.draft,
       assets: rel.assets.map(function (a) {
-        return { name: a.name, size: a.size, url: a.browser_download_url, digest: a.digest || null };
+        return { name: a.name, size: a.size, url: a.browser_download_url, digest: a.digest || null,
+                 external: !!a.external };
       })
     };
     // Newer releases ship the APK out-of-band: the notes carry a direct .apk link (with a
@@ -414,8 +415,9 @@
         if (snap && snap.releases) {
           state.release = normalizeRelease(pickRelease(snap.releases.map(function (r) {
             return { tag_name: r.tag, name: r.name, published_at: r.published_at, prerelease: r.prerelease,
-              draft: false, assets: r.assets.map(function (a) {
-                return { name: a.name, size: a.size, browser_download_url: a.url, digest: a.digest };
+              draft: false, body: r.body || '', assets: r.assets.map(function (a) {
+                return { name: a.name, size: a.size, browser_download_url: a.url, digest: a.digest,
+                         external: !!a.external };
               }) };
           })));
           state.asset = pickAsset(state.release);
