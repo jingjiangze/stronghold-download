@@ -218,6 +218,9 @@
   function renderMirrors() {
     if (!el.mirrors) return;
     el.mirrors.textContent = '';
+    // Notes-derived direct links point at the mirror host itself; there is nothing to
+    // accelerate, so only the primary button is offered.
+    if (state.asset && state.asset.external) return;
     var applicable = 0;
     state.mirrors.forEach(function (mirror) {
       var url = buildMirrorUrl(mirror, state.asset, state.release.tag);
