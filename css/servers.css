@@ -1,0 +1,119 @@
+/* ==========================================================================================
+   servers.css — server list page (same visual language as the title / download screen)
+   ========================================================================================== */
+
+.servers-screen { overflow-y: auto; }
+.servers-main { margin: .9rem 0 1.2rem; }
+.servers-panel { width: 7.4rem; }
+
+/* ---- panel header ----------------------------------------------------------------- */
+.servers-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .12rem;
+  padding-bottom: .1rem;
+  border-bottom: 1px solid var(--line);
+}
+.servers-timer {
+  font-size: .13rem;
+  color: var(--text-dim);
+  letter-spacing: .08em;
+}
+
+/* ---- list ------------------------------------------------------------------------- */
+.servers-list {
+  display: flex;
+  flex-direction: column;
+  gap: .08rem;
+  min-height: .5rem;
+}
+
+.sv-row {
+  display: flex;
+  align-items: center;
+  gap: .12rem;
+  padding: .1rem .12rem;
+  border: 1px solid var(--line);
+  background: rgba(12, 15, 14, .55);
+  transition: border-color var(--t-fast) var(--ease-out);
+}
+.sv-row:hover { border-color: var(--line-2); }
+
+.sv-dot {
+  flex: 0 0 auto;
+  width: .12rem;
+  height: .12rem;
+  border-radius: 50%;
+  background: var(--text-dim);
+  box-shadow: 0 0 .08rem currentColor;
+  color: var(--text-dim);
+}
+.sv-row.is-good .sv-dot { background: var(--mint-glow); color: var(--mint-glow); }
+.sv-row.is-ok .sv-dot { background: var(--mint-500); color: var(--mint-500); }
+.sv-row.is-slow .sv-dot { background: var(--amber); color: var(--amber); }
+.sv-row.is-bad .sv-dot { background: var(--red); color: var(--red); }
+.sv-row.is-na .sv-dot { background: var(--text-dim); color: var(--text-dim); }
+
+.sv-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: .02rem;
+}
+.sv-name {
+  font-size: .16rem;
+  font-weight: 700;
+  letter-spacing: .06em;
+  color: var(--text-hi);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sv-host {
+  font-size: .12rem;
+  letter-spacing: .04em;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sv-meter {
+  flex: 0 0 1.4rem;
+  height: .1rem;
+  border: 1px solid var(--line-2);
+  background: rgba(0, 0, 0, .35);
+}
+.sv-bar {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: linear-gradient(90deg, var(--mint-600), var(--mint-glow));
+  transition: width .4s var(--ease-out);
+}
+.sv-row.is-slow .sv-bar { background: linear-gradient(90deg, var(--amber), var(--gold)); }
+.sv-row.is-bad .sv-bar,
+.sv-row.is-na .sv-bar { background: var(--red); opacity: .45; }
+
+.sv-ms {
+  flex: 0 0 1.15rem;
+  text-align: right;
+  font-family: var(--font-display);
+  font-size: .16rem;
+  letter-spacing: .06em;
+  color: var(--text-md);
+}
+.sv-row.is-good .sv-ms { color: var(--mint-glow); }
+.sv-row.is-slow .sv-ms { color: var(--gold-2); }
+.sv-row.is-bad .sv-ms { color: var(--red-premium); }
+
+/* ---- portrait / narrow screens ---------------------------------------------------- */
+@media (max-aspect-ratio: 12/10) {
+  .servers-main { margin: .5rem 0 .9rem; }
+  .servers-panel { width: min(94vw, 7.6rem); }
+  .sv-meter { display: none; }
+  .sv-ms { flex: 0 0 1.05rem; font-size: .15rem; }
+  .sv-row { padding: .14rem .12rem; }
+}
