@@ -457,6 +457,8 @@
     document.addEventListener('keydown', function (ev) {
       if (ev.key === 'Escape' && el.modal && !el.modal.hidden) closeModal();
     });
+    // deep link: servers.html#submit opens the dialog directly (also used for screenshots)
+    if (location.hash === '#submit') openModal();
     document.addEventListener('visibilitychange', function () {
       if (document.hidden) {
         if (state.timer) { clearTimeout(state.timer); state.timer = null; }
