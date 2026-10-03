@@ -97,21 +97,20 @@ export async function verifyServerHealth(origin, probe) {
 
   const reasons = [];
   if (body.ok !== true) reasons.push('ok 字段不是 true');
-  if (body.version !== VERIFY.version) reasons.push(`version 不是 ${VERIFY.version}`);
 
-  // Variant detection: the node/server build reports `app` + live counters; the
-  // cloudflare workers build reports `runtime:"cloudflare"` + a git `build` hash.
+  // Variant detection BEFORE version comparison: the node/server build uses a numeric
+  // protocol version (1) while the cloudflare workers build puts the app release string
+  // ("0.1.0") in `version` and carries a git `build` hash instead.
   let rooms = null;
   let humans = null;
-  const isWorkers = body.runtime === 'cloudflare';
+  const isWorkers = body.runtime === 'cloudflare' || body.version === VERIFY.app;
   if (isWorkers) {
-    if (typeof body.build !== 'string' || !/^[0-9a-f]{6,40}$/i.test(body.build)) {
+    if (typeof body.build !== 'string' || !/^[0-9a-f]{6,40}$/i.test(String(body.build))) {
       reasons.push('缺少有效的 build 哈希');
     }
-  } else if (body.app !== VERIFY.app) {
-    reasons.push(`app 不是 ${VERIFY.app}`);
-  }
-  if (!isWorkers) {
+  } else {
+    if (body.version !== VERIFY.version) reasons.push(`version 不是 ${VERIFY.version}`);
+    if (body.app !== VERIFY.app) reasons.push(`app 不是 ${VERIFY.app}`);
     for (const field of HEALTH_FIELDS) {
       const value = body[field];
       if (typeof value !== 'number' || !Number.isFinite(value)) reasons.push(`缺少字段 ${field}`);
