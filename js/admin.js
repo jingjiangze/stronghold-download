@@ -126,14 +126,119 @@
 
     var main = document.createElement('div');
     main.className = 'sv-main';
-    var name = document.createElement('span');
-    name.className = 'sv-name';
-    name.textContent = entry.name || entry.url;
-    var host = document.createElement('span');
-    host.className = 'sv-host';
-    host.textContent = entry.url + (entry.note ? ' · ' + entry.note : '');
-    main.appendChild(name);
-    main.appendChild(host);
+
+    // Editable fields: name / url / note. The row enters edit mode via 编辑 and saves
+    // through publishList(); url changes re-run the server-side health check on the next
+    // verify round (a bad address simply quarantines again, data is never lost).
+    var nameSpan = document.createElement('span');
+    nameSpan.className = 'sv-name';
+    nameSpan.textContent = entry.name || entry.url;
+    var hostSpan = document.createElement('span');
+    hostSpan.className = 'sv-host';
+    hostSpan.textContent = entry.url + (entry.note ? ' · ' + entry.note : '');
+    main.appendChild(nameSpan);
+    main.appendChild(hostSpan);
+
+    var editForm = null;
+    var editBtn = document.createElement('button');
+    editBtn.type = 'button';
+    editBtn.className = 'sv-toggle';
+    editBtn.textContent = '编辑';
+
+    function leaveEditMode() {
+      if (editForm && editForm.parentNode) { editForm.parentNode.removeChild(editForm); }
+      editForm = null;
+      editBtn.textContent = '编辑';
+      nameSpan.classList.remove('is-hidden');
+      hostSpan.classList.remove('is-hidden');
+      div.classList.remove('is-editing');
+    }
+
+    function enterEditMode() {
+      if (editForm) return;
+      nameSpan.classList.add('is-hidden');
+      hostSpan.classList.add('is-hidden');
+      div.classList.add('is-editing');
+      editForm = document.createElement('div');
+      editForm.className = 'sv-edit';
+      var fields = [
+        { key: 'name', label: '名称', value: entry.name || '', max: 24 },
+        { key: 'url', label: '地址', value: entry.url || '', max: 200 },
+        { key: 'note', label: '备注', value: entry.note || '', max: 24 }
+      ];
+      var inputs = {};
+      fields.forEach(function (f) {
+        var wrap = document.createElement('label');
+        wrap.className = 'sv-edit__field';
+        var lbl = document.createElement('span');
+        lbl.className = 'micro';
+        lbl.textContent = f.label;
+        var input = document.createElement('input');
+        input.maxLength = f.max;
+        input.value = f.value;
+        input.placeholder = f.label;
+        input.dataset.field = f.key;
+        wrap.appendChild(lbl);
+        wrap.appendChild(input);
+        editForm.appendChild(wrap);
+        inputs[f.key] = input;
+      });
+      var actions = document.createElement('div');
+      actions.className = 'sv-edit__actions';
+      var save = document.createElement('button');
+      save.type = 'button';
+      save.className = 'btn btn--primary btn--sm';
+      var saveLabel = document.createElement('span');
+      saveLabel.className = 'btn__label';
+      saveLabel.textContent = '保存';
+      save.appendChild(saveLabel);
+      var cancel = document.createElement('button');
+      cancel.type = 'button';
+      cancel.className = 'btn btn--ghost btn--sm';
+      cancel.textContent = '取消';
+      actions.appendChild(save);
+      actions.appendChild(cancel);
+      editForm.appendChild(actions);
+      main.appendChild(editForm);
+
+      save.addEventListener('click', function () {
+        var nextName = inputs.name.value.trim();
+        var nextUrl = inputs.url.value.trim();
+        var nextNote = inputs.note.value.trim();
+        var check = validateUrl(nextUrl);
+        if (check.error) { showError('地址：' + check.error); return; }
+        // duplicate guard (another row may already use this URL)
+        var dup = base.some(function (s, i) { return i !== index && s.url === check.url.href; });
+        if (dup) { showError('该地址已被其他服务器使用'); return; }
+        var updated = Object.assign({}, entry, {
+          name: nextName || check.url.host,
+          url: check.url.href,
+          note: nextNote || undefined
+        });
+        if (!nextNote) delete updated.note;
+        base[index] = updated;
+        save.disabled = true;
+        setText(saveLabel, '保存中…');
+        publishList().then(function () {
+          showError('');
+          leaveEditMode();
+          render();
+          setText(el.status, '已保存（地址变更将在下轮校验中重新确认）');
+        }).catch(function (err) {
+          showError(err.message);
+          save.disabled = false;
+          setText(saveLabel, '保存');
+        });
+      });
+      cancel.addEventListener('click', leaveEditMode);
+    }
+
+    editBtn.addEventListener('click', function () {
+      if (editForm) leaveEditMode();
+      else enterEditMode();
+    });
+
+    main.appendChild(editBtn);
     div.appendChild(main);
 
     var toggle = document.createElement('button');
