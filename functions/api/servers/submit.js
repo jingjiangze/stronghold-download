@@ -49,45 +49,30 @@ export async function onRequestPost(context) {
   const verdict = await verifyServerHealth(entry.url, entry.probe);
   if (!verdict.ok) return json({ ok: false, error: `校验失败：${verdict.error}` }, 400);
 
-  const index = await readIndex(env);
-  if (index.length >= MAX_PENDING) return json({ ok: false, error: '待审核队列已满，请稍后再试' }, 429);
-
-  // Same URL already queued or already live?
-  const live = await env.R2BUCKET.get('site/servers.json');
-  if (live) {
-    try {
-      const liveDoc = JSON.parse(await live.text());
-      if ((liveDoc.servers || []).some((s) => s.url === entry.url)) {
-        return json({ ok: false, error: '该服务器已在公共清单中' }, 409);
-      }
-    } catch { /* unreadable live list: proceed to queue */ }
+  // Auto-publish (user decision 2026-10-03: server-side health check is the gate; no
+  // human review). Merge into the live list and publish to R2 immediately.
+  const liveRes = await env.R2BUCKET.get('site/servers.json');
+  let live = { updated: new Date().toISOString(), servers: [] };
+  if (liveRes) {
+    try { live = JSON.parse(await liveRes.text()); } catch { /* start fresh */ }
   }
-  const queued = await Promise.all(index.map((id) => env.SERVER_REVIEW.get(`pending/${id}`)));
-  for (const record of queued) {
-    if (record && JSON.parse(record).url === entry.url) {
-      return json({ ok: false, error: '该服务器已在待审核队列中' }, 409);
-    }
+  const servers = Array.isArray(live.servers) ? live.servers.slice() : [];
+  if (servers.some((s) => s.url === entry.url)) {
+    return json({ ok: false, error: '该服务器已在公共清单中' }, 409);
   }
-
-  // Queue id: uniqueness matters (ids gate moderation), not secrecy — but per security
-  // review, derive it from the platform CSPRNG instead of Math.random().
-  const random = new Uint8Array(4);
-  crypto.getRandomValues(random);
-  const queueId = Date.now().toString(36) + Array.from(random, (b) => b.toString(16).padStart(2, '0')).join('');
-  const record = {
-    // Queue key first, then the entry: a visitor-supplied entry.id must not overwrite the
-    // moderation key (`id` would otherwise be clobbered by the spread below).
-    ...entry,
-    id: queueId,
-    submittedAt: new Date().toISOString(),
-    submittedBy: clientIp(request),
-    verify: { ok: true, rooms: verdict.rooms || null, humans: verdict.humans || null, at: new Date().toISOString() },
+  if (servers.length >= 64) return json({ ok: false, error: '清单已满' }, 429);
+  const published = {
+    id: entry.id, name: entry.name, url: entry.url, probe: entry.probe, enabled: true,
   };
-  await env.SERVER_REVIEW.put(`pending/${queueId}`, JSON.stringify(record));
-  index.push(queueId);
-  await writeIndex(env, index);
+  if (entry.note) published.note = entry.note;
+  servers.push(published);
 
-  return json({ ok: true, id: queueId, queuePosition: index.length });
+  const body = JSON.stringify({ updated: new Date().toISOString(), servers }, null, 2) + '\n';
+  await env.R2BUCKET.put('site/servers.json', body, {
+    httpMetadata: { contentType: 'application/json', cacheControl: 'public, max-age=60' },
+  });
+
+  return json({ ok: true, published: true, count: servers.length });
 }
 
 export async function onRequestGet(context) {
