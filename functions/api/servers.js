@@ -97,10 +97,21 @@ export async function onRequestPut(context) {
       clean.probe = entry.probe.slice(0, 64);
     }
     if (typeof entry.note === 'string' && entry.note.trim()) clean.note = entry.note.trim().slice(0, 48);
+    if (typeof entry.region === 'string' && entry.region.trim()) clean.region = entry.region.trim().slice(0, 16);
+    if (Number.isInteger(entry.tier)) clean.tier = entry.tier;
+    if (Number.isInteger(entry.weight)) clean.weight = entry.weight;
+    if (Number.isInteger(entry.protocol)) clean.protocol = entry.protocol;
+    if (typeof entry.app === 'string' && entry.app.trim()) clean.app = entry.app.trim().slice(0, 32);
     cleaned.push(clean);
   }
 
-  const body = JSON.stringify({ updated: new Date().toISOString(), servers: cleaned }, null, 2) + '\n';
+  // A signed list is stored byte-for-byte: re-serializing would invalidate the Ed25519 signature
+  // (it covers the canonical form). The entry validation above still runs, so a hostile payload
+  // cannot smuggle a private/loopback url past the gate — it merely keeps its own extra fields.
+  const signed = typeof doc.sig === 'string' && doc.sig.length > 0;
+  const body = signed
+    ? raw
+    : JSON.stringify({ updated: new Date().toISOString(), servers: cleaned }, null, 2) + '\n';
   await bucket.put(LIST_KEY, body, {
     httpMetadata: { contentType: 'application/json', cacheControl: 'public, max-age=60' }
   });

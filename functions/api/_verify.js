@@ -11,6 +11,10 @@ const VERIFY = {
 
 const PRIVATE_V4 = [/^127\./, /^10\./, /^192\.168\./, /^169\.254\./, /^0\./,
                     /^172\.(1[6-9]|2[0-9]|3[01])\./];
+
+// Two official healthz shapes are accepted:
+//  - node/server build: { ok, version, app, uptimeSec, sockets, sessions, rooms, matches, humans, bots }
+//  - cloudflare workers build: { ok, runtime: "cloudflare", version, build: <git sha> }
 const HEALTH_FIELDS = ['uptimeSec', 'sockets', 'sessions', 'rooms', 'matches', 'humans', 'bots'];
 const VERIFY_TIMEOUT_MS = 5000;
 const MAX_HEALTH_BYTES = 1024;
@@ -94,15 +98,31 @@ export async function verifyServerHealth(origin, probe) {
   const reasons = [];
   if (body.ok !== true) reasons.push('ok 字段不是 true');
   if (body.version !== VERIFY.version) reasons.push(`version 不是 ${VERIFY.version}`);
-  if (body.app !== VERIFY.app) reasons.push(`app 不是 ${VERIFY.app}`);
-  for (const field of HEALTH_FIELDS) {
-    const value = body[field];
-    if (typeof value !== 'number' || !Number.isFinite(value)) reasons.push(`缺少字段 ${field}`);
+
+  // Variant detection: the node/server build reports `app` + live counters; the
+  // cloudflare workers build reports `runtime:"cloudflare"` + a git `build` hash.
+  let rooms = null;
+  let humans = null;
+  const isWorkers = body.runtime === 'cloudflare';
+  if (isWorkers) {
+    if (typeof body.build !== 'string' || !/^[0-9a-f]{6,40}$/i.test(body.build)) {
+      reasons.push('缺少有效的 build 哈希');
+    }
+  } else if (body.app !== VERIFY.app) {
+    reasons.push(`app 不是 ${VERIFY.app}`);
+  }
+  if (!isWorkers) {
+    for (const field of HEALTH_FIELDS) {
+      const value = body[field];
+      if (typeof value !== 'number' || !Number.isFinite(value)) reasons.push(`缺少字段 ${field}`);
+    }
+    rooms = body.rooms;
+    humans = body.humans;
   }
   if (reasons.length) return fail(cacheKey, `不是卫戍协议服务器（${reasons.join('、')}）`);
 
   cache.set(cacheKey, { ok: true, at: Date.now() });
-  return { ok: true, elapsedMs: Date.now() - started, rooms: body.rooms, humans: body.humans };
+  return { ok: true, elapsedMs: Date.now() - started, rooms, humans, variant: isWorkers ? 'workers' : 'node' };
 }
 
 function fail(cacheKey, error) {

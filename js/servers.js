@@ -28,8 +28,13 @@
   var GOOD_MS = 150;
   var OK_MS = 400;
   var SLOW_MS = 1000;
+  // Results are cached per server in localStorage so the page opens with last round's
+  // numbers instantly; a fresh measurement only runs on the 5-minute timer or when the
+  // user hits 立即测速.
+  var CACHE_KEY = 'sp.serverProbeCache.v1';
+  var CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
-  var state = { servers: [], updated: null, running: false, lastRun: 0, nextRun: 0, timer: null };
+  var state = { servers: [], updated: null, running: false, lastRun: 0, nextRun: 0, timer: null, fromCache: false };
 
   var el = {
     list: document.getElementById('sv-list'),
@@ -119,6 +124,50 @@
     });
   }
 
+  /* ---- result cache (localStorage) --------------------------------------------------- */
+
+  function loadCache() {
+    try {
+      var raw = localStorage.getItem(CACHE_KEY);
+      if (!raw) return {};
+      var doc = JSON.parse(raw);
+      if (!doc || typeof doc !== 'object' || !doc.entries) return {};
+      if (Date.now() - (doc.at || 0) > CACHE_TTL_MS) return {};
+      return doc.entries;
+    } catch (err) { return {}; }
+  }
+
+  function saveCache(entries) {
+    try {
+      localStorage.setItem(CACHE_KEY, JSON.stringify({ at: Date.now(), entries: entries }));
+    } catch (err) { /* storage unavailable */ }
+  }
+
+  function applyCache(entries) {
+    var hits = 0;
+    state.servers.forEach(function (server) {
+      var hit = entries[server.id + '|' + (server.url ? server.url.host : '')];
+      if (!hit || typeof hit.ms !== 'number') return;
+      server.ms = hit.ms;
+      server.okCount = SAMPLES;
+      server.offline = !!hit.offline;
+      server.level = server.offline ? 'bad'
+        : server.ms < GOOD_MS ? 'good' : server.ms < OK_MS ? 'ok' : 'slow';
+      hits += 1;
+    });
+    return hits;
+  }
+
+  function snapshotCache() {
+    var entries = {};
+    state.servers.forEach(function (server) {
+      if (server.ms == null && !server.offline) return;
+      entries[server.id + '|' + (server.url ? server.url.host : '')] =
+        { ms: server.ms, offline: !!server.offline };
+    });
+    return entries;
+  }
+
   /* ---- probing ---------------------------------------------------------------------- */
 
   function timed(url, timeoutMs) {
@@ -169,13 +218,23 @@
     });
   }
 
-  function probeAll() {
+  function probeAll(force) {
     if (state.running) return Promise.resolve();
+    // Servers without a cached result are always measured (first sight); with a cache,
+    // a full re-measure only happens when the user explicitly clicks 立即测速.
+    var missing = state.servers.filter(function (s) { return s.probeable && s.ms == null && !s.offline; });
+    if (!force && !missing.length) {
+      state.lastRun = Date.now();
+      if (document.body) document.body.setAttribute('data-probe', 'done');
+      schedule();
+      return Promise.resolve();
+    }
     state.running = true;
     if (document.body) document.body.setAttribute('data-probe', 'running');
-    setText(el.note, '测速进行中…');
+    setText(el.note, force ? '手动测速进行中…' : '正在补测新服务器…');
+    var targets = force ? state.servers : missing;
     var chain = Promise.resolve();
-    state.servers.forEach(function (server) {
+    targets.forEach(function (server) {
       chain = chain.then(function () {
         if (!server.probeable) { server.level = 'na'; return undefined; }
         return pickPath(server).then(function (url) {
@@ -187,7 +246,9 @@
     return chain.then(function () {
       state.running = false;
       state.lastRun = Date.now();
+      state.fromCache = false;
       if (document.body) document.body.setAttribute('data-probe', 'done');
+      saveCache(snapshotCache());
       setText(el.note, '延迟为当前浏览器实测往返时间（每台先预热再取 3 次采样中位数），仅供参考。');
       render();
       schedule();
@@ -303,7 +364,7 @@
 
   function boot() {
     if (el.refresh) {
-      el.refresh.addEventListener('click', function () { probeAll(); });
+      el.refresh.addEventListener('click', function () { probeAll(true); });
     }
     document.addEventListener('visibilitychange', function () {
       if (document.hidden) {
@@ -319,12 +380,20 @@
 
     loadList().then(function (data) {
       prepare(data);
+      var hits = applyCache(loadCache());
       render();
       if (!state.servers.length) {
         setText(el.note, '清单为空或不可用，请稍后再试。');
         return undefined;
       }
-      return probeAll();
+      if (hits) {
+        state.fromCache = true;
+        state.lastRun = Date.now();
+        setText(el.note, '显示上次测速结果（缓存）；点「立即测速」重新实测，或等 5 分钟自动刷新。');
+        schedule();
+        return undefined;
+      }
+      return probeAll(true);
     }).catch(function () {
       setText(el.note, '清单加载失败，请稍后再试。');
     });

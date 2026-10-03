@@ -1,7 +1,22 @@
 {
-  "updated": "2026-10-03T14:55:00Z",
-  "note": "Hot-updatable server list. Uploaded to R2 as site/servers.json; the page reads R2 first and falls back to this repository copy. Entries must be public http(s) URLs (localhost / private / reserved addresses are skipped by the page before any request).",
+  "v": 1,
+  "updated": "2026-10-03T15:20:00Z",
+  "keyId": "sp-2026-10",
+  "note": "Ed25519 签名清单；客户端与网页共用同一份数据（dl.jiangjiangze.icu/servers.json 与 R2 site/servers.json）。tier/weight 影响排序，protocol/app 为兼容门禁；sig 覆盖除 sig 外的规范化 JSON。",
   "servers": [
+    {
+      "id": "weishu",
+      "name": "站长服务",
+      "url": "https://weishu.jiangjiangze.icu",
+      "probe": "/healthz",
+      "region": "CN",
+      "note": "官方",
+      "enabled": true,
+      "tier": 10,
+      "weight": 100,
+      "protocol": 1,
+      "app": "0.1.0"
+    },
     {
       "id": "xiaolubao",
       "name": "小鹿宝",
@@ -9,14 +24,22 @@
       "probe": "/healthz",
       "region": "CN",
       "note": "社区服",
-      "enabled": true
+      "enabled": true,
+      "tier": 0,
+      "weight": 100,
+      "protocol": 1,
+      "app": "0.1.0"
     },
     {
       "id": "anciusland",
       "name": "安修斯之地",
       "url": "https://wei.anciusland.work",
       "probe": "/healthz",
-      "enabled": true
+      "enabled": true,
+      "tier": 0,
+      "weight": 100,
+      "protocol": 1,
+      "app": "0.1.0"
     },
     {
       "id": "tx-106-55",
@@ -24,15 +47,12 @@
       "url": "http://106.55.43.13:3000",
       "probe": "/healthz",
       "region": "CN",
-      "enabled": true
-    },
-    {
-      "id": "weishu",
-      "name": "站长服务",
-      "url": "https://weishu.jiangjiangze.icu",
-      "probe": "/healthz",
-      "note": "官方",
-      "enabled": true
+      "enabled": true,
+      "tier": 0,
+      "weight": 50,
+      "protocol": 1,
+      "app": "0.1.0"
     }
-  ]
+  ],
+  "sig": "OGjF3vSmeuG806wT6GyYdBSQMm80vJGTXBU21VWnn1RYB3QfRsS5fCUceNmz/yMJqYaxQsOVnoGgKPln9viSDw=="
 }
