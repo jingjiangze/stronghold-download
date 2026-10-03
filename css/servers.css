@@ -109,6 +109,20 @@
 .sv-row.is-slow .sv-ms { color: var(--gold-2); }
 .sv-row.is-bad .sv-ms { color: var(--red-premium); }
 
+/* ---- occupancy (rooms / humans from the shared verification) ----------------------- */
+.sv-occ {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: .08rem;
+  font-size: .13rem;
+  letter-spacing: .04em;
+  color: var(--text-lo);
+  white-space: nowrap;
+}
+.sv-occ__humans { color: var(--mint-500); }
+.sv-occ--na { color: var(--text-dim); }
+
 /* ---- submit modal ------------------------------------------------------------------ */
 .sv-modal { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; }
 .sv-modal__backdrop { position: absolute; inset: 0; background: rgba(5, 8, 7, .72); }

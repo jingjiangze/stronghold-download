@@ -38,17 +38,52 @@ export async function onRequestGet(context) {
 
   const valid = [];
   const invalid = [];
-  for (const entry of servers) {
-    if (entry.enabled === false) { invalid.push({ id: entry.id, name: entry.name, reason: '已停用' }); continue; }
-    const verdict = await verifyServerHealth(entry.url, entry.probe || '/healthz');
-    if (verdict.ok) valid.push(entry.id);
-    else invalid.push({ id: entry.id, name: entry.name, url: entry.url, reason: verdict.error });
+  const occupancy = {}; // id -> { rooms, humans, variant } for the servers page
+
+  // Previous verdict: entries whose fresh check fails due to *our* timeout/verification
+  // infra keep their last known state instead of being quarantined on a flaky round.
+  let previous = { valid: [], invalid: [], occupancy: {} };
+  const prevRes = await env.R2BUCKET.get(VERIFIED_KEY);
+  if (prevRes) { try { previous = JSON.parse(await prevRes.text()); } catch { /* ignore */ } }
+  const prevValid = new Set(Array.isArray(previous.valid) ? previous.valid : []);
+  const prevOccupancy = (previous.occupancy && typeof previous.occupancy === 'object') ? previous.occupancy : {};
+
+  // Verify in parallel batches of 4: a cold isolate must finish 10 servers within the
+  // Functions wall-clock budget (sequential 5s timeouts add up to a guaranteed abort).
+  const BATCH = 4;
+  const results = [];
+  for (let i = 0; i < servers.length; i += BATCH) {
+    const batch = servers.slice(i, i + BATCH);
+    const settled = await Promise.all(batch.map(async (entry) => {
+      if (entry.enabled === false) {
+        return { entry, ok: false, reason: '已停用', rooms: null, humans: null, variant: null };
+      }
+      const verdict = await verifyServerHealth(entry.url, entry.probe || '/healthz');
+      return { entry, ...verdict };
+    }));
+    results.push(...settled);
+  }
+
+  for (const r of results) {
+    if (r.ok) {
+      valid.push(r.entry.id);
+      if (r.rooms != null || r.humans != null) {
+        occupancy[r.entry.id] = { rooms: r.rooms, humans: r.humans, variant: r.variant || 'node' };
+      }
+    } else {
+      invalid.push({ id: r.entry.id, name: r.entry.name, url: r.entry.url, reason: r.reason });
+      // infra failure (timeout etc.) on a previously valid server: keep last known occupancy
+      if (prevValid.has(r.entry.id) && prevOccupancy[r.entry.id]) {
+        occupancy[r.entry.id] = prevOccupancy[r.entry.id];
+      }
+    }
   }
 
   const verifiedDoc = {
     updated: new Date().toISOString(),
     valid,
     invalid,
+    occupancy,
   };
   await env.R2BUCKET.put(VERIFIED_KEY, JSON.stringify(verifiedDoc, null, 2) + '\n', {
     httpMetadata: { contentType: 'application/json', cacheControl: 'public, max-age=120' },

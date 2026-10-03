@@ -1,19 +1,19 @@
 {
-  "generated": "2026-10-03T19:20:00Z",
+  "generated": "2026-10-03T14:44:35.330Z",
   "repo": "jingjiangze/Stronghold-Protocol",
   "releases": [
     {
-      "tag": "shell-v2.7.4",
-      "name": "卫戍协议 Android 壳 v2.7.4（修复启动无限崩溃）",
-      "published_at": "2026-10-03T12:33:03Z",
+      "tag": "shell-v2.7.5",
+      "name": "卫戍协议 Android 壳 v2.7.5（离线服务 P0 修复 · 启动层重构）",
+      "published_at": "2026-10-03T13:20:44Z",
       "prerelease": false,
-      "html_url": "https://github.com/jingjiangze/Stronghold-Protocol/releases/tag/shell-v2.7.4",
-      "body": "v2.7.4：修复 v2.7.3 启动无限崩溃（P0 回归，致歉）。\n\n**根因（三层叠加，全部同源）**：\n1. 自动热更新路径把 `progress` 传了 **null**，而 `hotUpdate` 内部直接 `progress.onStage(...)` → **NullPointerException**；\n2. 调用处只 `catch (IOException)` —— NPE 逃逸，后台线程未捕获异常**直接杀进程**；\n3. 内容基线错误：全新安装无热更史时用**壳版本号冒充内容 buildTag**（shell-v2.7.3），而线上 manifest 已是 shell-v2.8.0 → 每次启动都判定「需要更新」→ 每次启动都走进上面的 NPE → **主界面与游戏内无限崩溃**。\n\n崩溃日志（用户提供的 crash 截图）精确定位：`Updater.hotUpdate(Updater.java:251) ← autoCheckForUpdate(MainActivity.java:741)`，与推断完全一致。\n\n**修复**：\n- `hotUpdate` 内部 progress 为 null 时改用 NO_OP 实现（防御性，调用方无需关心）；\n- 自动/手动两个调用点改 `catch (Throwable)` —— 更新失败永不杀进程，自动路径静默记日志，手动路径弹「更新失败」对话框；\n- **内容基线与壳版本彻底解耦**：无热更史时与 **APK 内嵌 manifest 的 buildTag** 比较（内嵌清单与内嵌内容同源，天然不会落后于自己）——新装设备不再触发多余下载。\n\n**升级建议**：v2.7.3 设备请直接覆盖安装本版（v2.7.3 的崩溃发生在热更新安装完成前，覆盖安装后迁移钩子会重置状态）。\n\nAPK 直链 https://weishucdn.jiangjiangze.icu/apk/stronghold-v2.7.4.apk",
+      "html_url": "https://github.com/jingjiangze/Stronghold-Protocol/releases/tag/shell-v2.7.5",
+      "body": "v2.7.5：离线服务 P0 修复——启动层重构（专用入口 + 显式 startServer + 随机端口 + 握手 + 真实状态机）。\n\n**P0 根因（本地复现实锤）**：壳的启动链是 `libnode.so -e \"bootstrap → import(server/index.js)\"`，而 upstream 的 `isMain()` 用 `process.argv[1]` 判断入口——`-e` 动态导入下 `argv[1]` 是 undefined → **isMain() 恒为 false → main() 从未执行 → Node 空转退出** → healthz 永不通 → 60 秒超时。离线服务**从未真正跑通过**（v2.4 审计文档当时已记录「v2.3 未过真机」，但只修了进程存活验证，没修 main() 不执行这个根因）。连带：本机房主的 presence 上报、房间枚举、dc-bridge 全在 main() 里——全部从未运行。\n\n**修复（借鉴 Fuhua 启动模型，upstream 源码零改动）**：\n- 新增专用入口 `server/android-main.mjs`（随包 extra）：读 launch.json → **显式调用导出的 `startServer()`**（正是 upstream 测试自己用的编程接口）→ 轮询 /healthz → 原子写 handshake.json → SIGTERM 优雅退出；presence 挂载也显式执行（补上从未运行的那段）。\n- **端口 0**：OS 分配空闲端口，彻底消除 EADDRINUSE 失败模式；handshake.json 携带真实端口，HostService 监听线程采纳它（`HostParams.port` 降级为兜底值）。\n- **真实状态机**：`isUp()` 拆为 STARTING/READY/FAILED——只有 handshake(ok)+Node 存活才是 READY；onDestroy 重置；「离线服务」二次点击能真正重启。\n- upstream 的 `if (isMain()) main()` 原样保留（CLI/测试不受影响）；launch.json 新增 handshake/upstreamEntry 字段（Java 侧 argv 仍全字面量，安全扫描合规）。\n\n**Hub v1 收尾**：`currentServerId()` 对本机 127.0.0.1 返回 `sp-phone-host`（与 NodeRunner 的 SP_SERVER_ID 对齐）——此前恒为空导致客户端见证（/observe）从未上报；现在手机房主的房间 presence+observe 双通道进入目录，其他设备 resolveInvite 可跨服发现。\n\nAPK 直链 https://weishucdn.jiangjiangze.icu/apk/stronghold-v2.7.5.apk",
       "assets": [
         {
-          "name": "stronghold-v2.7.4.apk",
+          "name": "stronghold-v2.7.5.apk",
           "size": null,
-          "url": "https://weishucdn.jiangjiangze.icu/apk/stronghold-v2.7.4.apk",
+          "url": "https://weishucdn.jiangjiangze.icu/apk/stronghold-v2.7.5.apk",
           "digest": null,
           "external": true
         }

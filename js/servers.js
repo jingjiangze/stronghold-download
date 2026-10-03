@@ -36,7 +36,7 @@
   var CACHE_KEY = 'sp.serverProbeCache.v1';
   var CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
-  var state = { servers: [], updated: null, running: false, lastRun: 0, nextRun: 0, timer: null, fromCache: false };
+  var state = { servers: [], updated: null, running: false, lastRun: 0, nextRun: 0, timer: null, fromCache: false, occupancy: {} };
 
   var el = {
     list: document.getElementById('sv-list'),
@@ -143,6 +143,7 @@
     doc.valid.forEach(function (id) { okIds[id] = true; });
     var reasons = {};
     doc.invalid.forEach(function (item) { reasons[item.id] = item.reason || '校验未通过'; });
+    state.occupancy = (doc.occupancy && typeof doc.occupancy === 'object') ? doc.occupancy : {};
     var hidden = 0;
     state.servers.forEach(function (server) {
       // A published id must be in `valid` to stay visible; anything else quarantines.
@@ -395,6 +396,32 @@
       ? '缓存于 ' + new Date(server.cachedAt).toLocaleString('zh-CN', { hour12: false })
       : '';
     div.appendChild(ms);
+
+    // Occupancy from the shared server-side verification (node builds report rooms/humans;
+    // workers builds have none -> show a dash via title only).
+    var occ = state.occupancy[server.id];
+    if (occ) {
+      var occSpan = document.createElement('span');
+      occSpan.className = 'sv-occ';
+      if (typeof occ.rooms === 'number' && typeof occ.humans === 'number') {
+        occSpan.innerHTML = '';
+        var roomIcon = document.createElement('span');
+        roomIcon.className = 'sv-occ__item';
+        roomIcon.title = '房间数 · 在线人数（每 5 分钟随服务端校验刷新）';
+        roomIcon.textContent = '🏠 ' + occ.rooms;
+        var humanIcon = document.createElement('span');
+        humanIcon.className = 'sv-occ__item sv-occ__humans';
+        humanIcon.title = roomIcon.title;
+        humanIcon.textContent = '👤 ' + occ.humans;
+        occSpan.appendChild(roomIcon);
+        occSpan.appendChild(humanIcon);
+      } else {
+        occSpan.title = '该服务器类型不提供房间/人数统计';
+        occSpan.textContent = '·';
+        occSpan.className = 'sv-occ sv-occ--na';
+      }
+      div.appendChild(occSpan);
+    }
 
     if (server.url) {
       var open = document.createElement('a');
