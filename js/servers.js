@@ -19,6 +19,8 @@
     'https://weishucdn.jiangjiangze.icu/site/servers.json', // hot copy (R2, CORS open)
     './data/servers.json'                                    // repository fallback snapshot
   ];
+  var VERIFIED_URL = 'https://weishucdn.jiangjiangze.icu/site/verified.json';
+  var VERIFY_REFRESH_MS = 5 * 60 * 1000; // matches the probe cadence
   var PROBE_TIMEOUT_MS = 5000;
   var WARMUP_TIMEOUT_MS = 6000;
   var LIST_TIMEOUT_MS = 8000;
@@ -131,6 +133,47 @@
         level: 'pending'
       };
     });
+  }
+
+  /* ---- server-side verification partition (valid vs quarantined) --------------------- */
+
+  function applyVerified(doc) {
+    if (!doc || !Array.isArray(doc.valid) || !Array.isArray(doc.invalid)) return 0;
+    var okIds = {};
+    doc.valid.forEach(function (id) { okIds[id] = true; });
+    var reasons = {};
+    doc.invalid.forEach(function (item) { reasons[item.id] = item.reason || '校验未通过'; });
+    var hidden = 0;
+    state.servers.forEach(function (server) {
+      // A published id must be in `valid` to stay visible; anything else quarantines.
+      if (okIds[server.id]) { server.quarantined = false; return; }
+      server.quarantined = true;
+      server.quarantineReason = reasons[server.id] || '服务端校验未通过';
+      hidden += 1;
+    });
+    state.hiddenCount = hidden;
+    return hidden;
+  }
+
+  function loadVerified() {
+    return fetchJson(VERIFIED_URL).then(function (doc) {
+      var hidden = applyVerified(doc);
+      if (hidden) {
+        setText(el.note, hidden + ' 台服务器因服务端校验未通过已暂时隐藏（可在恢复后自动重新展示）。');
+      }
+      render();
+      return hidden;
+    }).catch(function () { return 0; /* no verdict yet: show everything */ });
+  }
+
+  /** Fire-and-forget: ask the backend to re-verify all servers now (shared result). */
+  function triggerVerify() {
+    fetch('/api/servers/verify', { cache: 'no-store' }).then(function (res) {
+      return res.ok ? res.json() : null;
+    }).then(function (doc) {
+      if (!doc || !doc.ok) return;
+      return loadVerified();
+    }).catch(function () { /* best-effort */ });
   }
 
   /* ---- result cache (localStorage) --------------------------------------------------- */
@@ -371,7 +414,12 @@
   function render() {
     if (!el.list) return;
     el.list.textContent = '';
-    state.servers.forEach(function (server) { el.list.appendChild(row(server)); });
+    var shown = 0;
+    state.servers.forEach(function (server) {
+      if (server.quarantined) return; // failed server-side verification: hidden from the page
+      el.list.appendChild(row(server));
+      shown += 1;
+    });
     if (state.updated) {
       var stamp = new Date(state.updated);
       setText(el.updated, '清单更新 ' + (isNaN(stamp.getTime())
@@ -379,6 +427,9 @@
         : stamp.toLocaleString('zh-CN', { hour12: false })));
     } else {
       setText(el.updated, '清单来源：内置快照');
+    }
+    if (state.hiddenCount) {
+      setText(el.updated, (el.updated.textContent || '') + ' · ' + state.hiddenCount + ' 台待复核');
     }
     if (state.fromCache && state.servers.some(function (s) { return s.cachedAt; })) {
       setText(el.timer, '缓存 ' + cacheAge());
@@ -495,6 +546,12 @@
         setText(el.note, '清单为空或不可用，请稍后再试。');
         return undefined;
       }
+      // Server-side fingerprint verdicts: hide entries that are not Stronghold Protocol
+      // servers (or are broken), then keep the partition fresh every 5 minutes.
+      loadVerified();
+      if (state.verifyTimer) clearInterval(state.verifyTimer);
+      state.verifyTimer = setInterval(triggerVerify, VERIFY_REFRESH_MS);
+      setTimeout(triggerVerify, 1500); // first shared re-verify shortly after load
       if (hits) {
         state.fromCache = true;
         state.lastRun = Date.now();
