@@ -53,18 +53,23 @@
     return hosts;
   }
 
+  /** The URL mirrors accelerate: the GitHub release asset (accelerators only proxy
+   *  GitHub URLs), falling back to the asset itself for direct mode. */
+  function mirrorSource(asset, tag) {
+    if (state.release && state.release.ghAsset) {
+      return { name: 'app-release.apk', url: state.release.ghAsset, external: false };
+    }
+    return asset;
+  }
+
   function buildMirrorUrl(mirror, asset, tag) {
+    var source = mirrorSource(asset, tag);
     var url = null;
-    if (asset.external) {
-      // Notes-derived direct link: it already points at the mirror host itself, so
-      // prefix/template acceleration does not apply — offer it as-is only.
-      if (mirror.mode !== 'direct') return null;
-      url = asset.url;
-    } else if (mirror.mode === 'direct') url = asset.url;
-    else if (mirror.mode === 'prefix') url = mirror.prefix + asset.url;
+    if (mirror.mode === 'direct') url = source.url;
+    else if (mirror.mode === 'prefix') url = mirror.prefix + source.url;
     else if (mirror.mode === 'template') {
       if (Array.isArray(mirror.tags) && mirror.tags.indexOf(tag) === -1) return null;
-      url = mirror.template.replace('{tag}', tag).replace('{name}', asset.name);
+      url = mirror.template.replace('{tag}', tag).replace('{name}', source.name);
     }
     if (!url) return null;
     try {
@@ -123,7 +128,8 @@
     };
     // Prefer a first-party direct link when the notes carry one (R2 CDN beats the GitHub
     // asset URL); otherwise keep the .apk release asset. Either way the page shows a
-    // single APK download.
+    // single APK download. The GitHub asset URL is kept separately as `ghAsset` so the
+    // public accelerators (which only proxy GitHub URLs) can still be offered as mirrors.
     var notesLink = apkLinkFromBody(rel.body);
     if (notesLink && allowedHostsExt(notesLink)) {
       var sizeMatch = String(rel.body || '').match(/([\d.]+)\s*(MB|MiB|GB|GiB)/i);
@@ -137,6 +143,15 @@
         digest: null,
         external: true
       });
+    }
+    var apkAsset = hasApk(release) ? release.assets.filter(function (a) { return /\.apk$/i.test(a.name); })[0] : null;
+    if (apkAsset && !apkAsset.external) {
+      release.ghAsset = apkAsset.url; // e.g. https://github.com/<repo>/releases/download/<tag>/<file>
+    } else if (apkAsset) {
+      // External link chosen: reconstruct the GitHub asset URL for the accelerators from
+      // the release tag (asset names are stable across releases).
+      release.ghAsset = 'https://github.com/' + 'jingjiangze/Stronghold-Protocol' +
+        '/releases/download/' + release.tag + '/app-release.apk';
     }
     return release;
   }
@@ -219,9 +234,6 @@
   function renderMirrors() {
     if (!el.mirrors) return;
     el.mirrors.textContent = '';
-    // Notes-derived direct links point at the mirror host itself; there is nothing to
-    // accelerate, so only the primary button is offered.
-    if (state.asset && state.asset.external) return;
     var applicable = 0;
     state.mirrors.forEach(function (mirror) {
       var url = buildMirrorUrl(mirror, state.asset, state.release.tag);
@@ -257,6 +269,15 @@
   }
 
   function applyPrimary() {
+    // First-party direct link (notes URL): always the primary — nothing can beat it, and
+    // the accelerator row below serves the GitHub asset instead.
+    if (state.asset && state.asset.external) {
+      state.primaryMirrorId = 'direct-external';
+      el.primary.href = state.asset.url;
+      el.primary.title = '下载最新版 Android 客户端（首方直链）';
+      renderMirrors();
+      return;
+    }
     var url = null;
     var chosen = null;
     var fastest = fastestMirror();
