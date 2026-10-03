@@ -1,3 +1,5 @@
 tools/
 README.md
+functions/
+wrangler.toml
 .assetsignore

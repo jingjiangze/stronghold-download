@@ -1,0 +1,83 @@
+/* ==========================================================================================
+   admin.css — server list admin page (reuses the servers-panel look)
+   ========================================================================================== */
+
+.admin-panel { width: 8.2rem; }
+
+.admin-list {
+  display: flex;
+  flex-direction: column;
+  gap: .08rem;
+  min-height: .4rem;
+}
+
+/* editable rows reuse .sv-row visuals; add controls */
+.sv-row .sv-toggle {
+  flex: 0 0 auto;
+  background: none;
+  border: 1px solid var(--line-2);
+  color: var(--text-lo);
+  font: inherit;
+  font-size: .12rem;
+  letter-spacing: .08em;
+  padding: .03rem .08rem;
+  cursor: pointer;
+}
+.sv-row .sv-toggle:hover { color: var(--text-hi); border-color: var(--line-3); }
+.sv-row.is-disabled .sv-name,
+.sv-row.is-disabled .sv-host { opacity: .45; }
+.sv-row.is-disabled .sv-dot { background: var(--text-dim); color: var(--text-dim); }
+
+.sv-row .sv-del {
+  flex: 0 0 auto;
+  background: none;
+  border: 1px solid var(--red-a20);
+  color: var(--red-premium);
+  font: inherit;
+  font-size: .12rem;
+  letter-spacing: .08em;
+  padding: .03rem .08rem;
+  cursor: pointer;
+}
+.sv-row .sv-del:hover { border-color: var(--red); }
+
+/* ---- form ------------------------------------------------------------------------- */
+.admin-form {
+  display: flex;
+  flex-direction: column;
+  gap: .12rem;
+  padding-top: .12rem;
+  border-top: 1px solid var(--line);
+}
+.admin-grid {
+  display: grid;
+  grid-template-columns: 1fr 1.4fr;
+  gap: .1rem .14rem;
+}
+.admin-field { display: flex; flex-direction: column; gap: .03rem; }
+.admin-field input {
+  height: .34rem;
+  padding: 0 .1rem;
+  border: 1px solid var(--line-2);
+  background: rgba(10, 13, 12, .8);
+  color: var(--text-hi);
+  font: inherit;
+  font-size: .14rem;
+  letter-spacing: .02em;
+}
+.admin-field input:focus { outline: none; border-color: var(--mint-500); }
+.admin-field input::placeholder { color: var(--text-dim); }
+
+.admin-err {
+  margin: 0;
+  font-size: .12rem;
+  color: var(--red-premium);
+  letter-spacing: .04em;
+}
+.admin-actions { display: flex; gap: .1rem; flex-wrap: wrap; }
+
+/* ---- portrait --------------------------------------------------------------------- */
+@media (max-aspect-ratio: 12/10) {
+  .admin-panel { width: min(94vw, 8.4rem); }
+  .admin-grid { grid-template-columns: 1fr; }
+}

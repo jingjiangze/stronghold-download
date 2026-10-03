@@ -1,0 +1,7 @@
+name = "stronghold-download"
+compatibility_date = "2026-09-01"
+pages_build_output_dir = "."
+
+[[r2_buckets]]
+binding = "R2BUCKET"
+bucket_name = "stronghold-assets"

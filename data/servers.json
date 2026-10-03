@@ -1,5 +1,5 @@
 {
-  "updated": "2026-10-03T12:30:00Z",
+  "updated": "2026-10-03T13:40:00Z",
   "note": "Hot-updatable server list. Uploaded to R2 as site/servers.json; the page reads R2 first and falls back to this repository copy. Entries must be public http(s) URLs (localhost / private / reserved addresses are skipped by the page before any request).",
   "servers": [
     {
@@ -16,6 +16,14 @@
       "name": "安修斯之地",
       "url": "https://wei.anciusland.work",
       "probe": "/healthz",
+      "enabled": true
+    },
+    {
+      "id": "tx-106-55",
+      "name": "腾讯云测试服",
+      "url": "http://106.55.43.13:3000",
+      "probe": "/healthz",
+      "region": "CN",
       "enabled": true
     }
   ]

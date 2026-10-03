@@ -172,6 +172,7 @@
   function probeAll() {
     if (state.running) return Promise.resolve();
     state.running = true;
+    if (document.body) document.body.setAttribute('data-probe', 'running');
     setText(el.note, '测速进行中…');
     var chain = Promise.resolve();
     state.servers.forEach(function (server) {
@@ -186,6 +187,7 @@
     return chain.then(function () {
       state.running = false;
       state.lastRun = Date.now();
+      if (document.body) document.body.setAttribute('data-probe', 'done');
       setText(el.note, '延迟为当前浏览器实测往返时间（每台先预热再取 3 次采样中位数），仅供参考。');
       render();
       schedule();

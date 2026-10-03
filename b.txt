@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0c0f0e" />
+  <meta name="color-scheme" content="dark" />
+  <meta name="format-detection" content="telephone=no" />
+  <meta name="description" content="卫戍协议：盟约 · 公开服务器延迟实测清单" />
+  <title>卫戍协议：盟约 · 服务器清单</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' fill='%230c0f0e'/%3E%3Cpath fill='%234ed8af' d='M5 3h3v2h2V3h4v2h2V3h3v5l-2 2v7l2 2v2H5v-2l2-2v-7L5 8z'/%3E%3C/svg%3E" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" media="print" onload="this.media='all'"
+        href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700;900&family=Oxanium:wght@400;500;600;700&family=Rajdhani:wght@500;600;700&display=swap" />
+  <link rel="stylesheet" href="./fonts/fonts.css" />
+  <link rel="stylesheet" href="./css/theme.css" />
+  <link rel="stylesheet" href="./css/components.css" />
+  <link rel="stylesheet" href="./css/screens/title.css" />
+  <link rel="stylesheet" href="./css/devices.css" />
+  <link rel="stylesheet" href="./css/dl.css" />
+  <link rel="stylesheet" href="./css/servers.css" />
+</head>
+<body>
+  <div class="screen title-screen servers-screen">
+    <div class="title-bg" aria-hidden="true">
+      <div class="title-bg__glow"></div>
+      <div class="title-bg__radar"><div class="title-bg__sweep"></div></div>
+      <div class="title-bg__target"></div>
+      <svg class="title-bg__ridges" viewBox="0 0 1920 420" preserveAspectRatio="none" aria-hidden="true">
+        <defs>
+          <linearGradient id="ridge-far" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#16231f" /><stop offset="1" stop-color="#0a0e0d" />
+          </linearGradient>
+          <linearGradient id="ridge-near" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#0f1714" /><stop offset=".6" stop-color="#080b0a" />
+          </linearGradient>
+          <linearGradient id="ridge-edge" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stop-color="#17f9b7" stop-opacity="0" />
+            <stop offset=".3" stop-color="#17f9b7" stop-opacity=".55" />
+            <stop offset=".7" stop-color="#17f9b7" stop-opacity=".55" />
+            <stop offset="1" stop-color="#17f9b7" stop-opacity="0" />
+          </linearGradient>
+        </defs>
+        <path class="ridge ridge--far" fill="url(#ridge-far)" stroke="url(#ridge-edge)"
+          d="M0 420V250l120-40 90 30 90-70 60 20 80-70 80 55 80-25 90 70 90-20 80 50 100-15 90 25 90-55 90-55 70-55 70 45 80-20 90 65 80-20 100 55 100-20 100 40v180z" />
+        <path class="ridge ridge--near" fill="url(#ridge-near)" stroke="url(#ridge-edge)"
+          d="M0 420V322l160-32 100 20 120-50 90 40 130-20 120 50 140-30 140 35 120-35 140 20 140-50 120 30 120-20 120 40 160-20v147z" />
+      </svg>
+      <div class="title-bg__haze"></div>
+      <span class="cross" style="left:7%;top:22%"></span>
+      <span class="cross" style="left:93%;top:30%"></span>
+      <span class="cross" style="left:14%;top:70%"></span>
+      <span class="cross" style="left:88%;top:62%"></span>
+      <span class="cross" style="left:60%;top:12%"></span>
+    </div>
+
+    <div class="title-corner title-corner--tl">
+      <span class="title-corner__mark"></span>
+      <div><span class="micro micro--mint">RHODES ISLAND // SIMULATION SERVICE</span><br /><span class="micro">TACTICAL CO-OP NODE · 02</span></div>
+    </div>
+    <div class="title-corner title-corner--tr">
+      <span class="micro micro--hi">NETWORK STATUS</span><br /><span class="micro">SERVER LIST</span>
+    </div>
+
+    <main class="title-main servers-main">
+      <div class="title-en">
+        <span class="title-en__a">STRONGHOLD PROTOCOL</span>
+        <span class="title-en__b">SERVER STATUS</span>
+      </div>
+      <h1 class="title-cn">服务器清单</h1>
+      <p class="title-tag">公开服务器延迟实测 · 每 5 分钟自动刷新</p>
+
+      <div class="title-login servers-panel">
+        <div class="servers-head">
+          <span class="micro micro--mint" id="sv-updated">清单加载中…</span>
+          <span class="servers-timer" id="sv-timer"></span>
+          <button type="button" class="btn btn--primary btn--sm" id="sv-refresh"><span class="btn__label">立即测速</span></button>
+        </div>
+        <div class="servers-list" id="sv-list" aria-live="polite"></div>
+        <p class="dl-note" id="sv-note">延迟为当前浏览器实测往返时间（每台先预热再取 3 次采样中位数），仅供参考。</p>
+        <p class="dl-links">
+          <a href="./index.html">下载客户端</a>
+          <span class="dl-links__sep">·</span>
+          <a href="https://github.com/sganggs/Stronghold-Protocol" target="_blank" rel="noopener noreferrer">主仓库</a>
+          <span class="dl-links__sep">·</span>
+          <a href="https://github.com/jingjiangze/Stronghold-Protocol/releases/latest" target="_blank" rel="noopener noreferrer">APK 发布页</a>
+        </p>
+      </div>
+    </main>
+  </div>
+
+  <script src="./js/servers.js" defer></script>
+<script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a4499cdaef4c69ac',t:'MTc5MTAwNjAzMw=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>
