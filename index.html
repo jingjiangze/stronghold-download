@@ -90,7 +90,11 @@
           <span id="dl-size" class="dl-size"></span>
           <button type="button" class="dl-copy" id="dl-hash" title="复制 SHA256 校验值" hidden>SHA256</button>
         </div>
-        <p class="dl-note" id="dl-note">支持断点续传 · 下载缓慢时可切换下方镜像，或使用下载工具（aria2c -x8 -s8 多线程）</p>
+        <p class="dl-note" id="dl-note">支持断点续传 · 下载缓慢时使用多线程下载工具（实测约 8 倍速度）</p>
+        <div class="dl-aria2">
+          <button type="button" class="dl-copy" id="dl-aria2" title="复制 aria2c 多线程命令" hidden>复制多线程命令</button>
+          <span class="dl-aria2__hint">aria2c -x16 -s16 直链高速下载</span>
+        </div>
         <p class="dl-links">
           <a href="./servers.html">服务器清单</a>
           <span class="dl-links__sep">·</span>
@@ -102,6 +106,6 @@
     </main>
   </div>
 
-  <script src="./js/download.js?v=6" defer></script>
+  <script src="./js/download.js?v=7" defer></script>
 </body>
 </html>

@@ -25,7 +25,8 @@
     version: document.getElementById('dl-version'),
     size: document.getElementById('dl-size'),
     hash: document.getElementById('dl-hash'),
-    note: document.getElementById('dl-note')
+    note: document.getElementById('dl-note'),
+    aria2: document.getElementById('dl-aria2')
   };
 
   var state = { release: null, asset: null, mirrors: [], measured: {}, primaryMirrorId: null };
@@ -252,6 +253,7 @@
 
     renderMirrors();
     applyPrimary();
+    showAria2Button();
   }
 
   function applyPrimary() {
@@ -383,6 +385,14 @@
 
   /* ---- hash copy ------------------------------------------------------------------- */
 
+  function copyText(value, done) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(value).then(done, function () { window.prompt(value, value); });
+    } else {
+      window.prompt(value, value);
+    }
+  }
+
   function wireHashButton() {
     if (!el.hash) return;
     el.hash.addEventListener('click', function () {
@@ -394,18 +404,38 @@
         el.hash.textContent = '已复制';
         setTimeout(function () { el.hash.classList.remove('is-done'); el.hash.textContent = old; }, 1600);
       };
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(value).then(done, function () { window.prompt('SHA256', value); });
-      } else {
-        window.prompt('SHA256', value);
-      }
+      copyText(value, done);
     });
+  }
+
+  /** aria2c one-liner for the current asset: 16 connections make the R2 CDN ~8x faster
+   *  than a browser's single connection. Button appears once the asset is known. */
+  function wireAria2Button() {
+    if (!el.aria2) return;
+    el.aria2.addEventListener('click', function () {
+      if (!state.asset) return;
+      var name = state.asset.name || 'app-release.apk';
+      var cmd = 'aria2c -x16 -s16 -k 4M --file-allocation=none -o "' + name + '" "' +
+                el.primary.href + '"';
+      var done = function () {
+        el.aria2.classList.add('is-done');
+        var old = el.aria2.textContent;
+        el.aria2.textContent = '已复制';
+        setTimeout(function () { el.aria2.classList.remove('is-done'); el.aria2.textContent = old; }, 1600);
+      };
+      copyText(cmd, done);
+    });
+  }
+
+  function showAria2Button() {
+    if (el.aria2 && state.asset) el.aria2.hidden = false;
   }
 
   /* ---- boot ------------------------------------------------------------------------ */
 
   function start() {
     wireHashButton();
+    wireAria2Button();
 
     fetchJson('./data/mirrors.json', 8000).then(function (data) {
       state.mirrors = (data && data.mirrors) || [];
