@@ -1,4 +1,0 @@
-tag: 最新版 shell-v2.7.0
-primary: https://weishucdn.jiangjiangze.icu/apk/stronghold-v2.7.0.apk
-mirror buttons: 0
-size: ""
