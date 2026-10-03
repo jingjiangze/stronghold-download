@@ -1,5 +1,5 @@
 {
-  "updated": "2026-10-03T10:27:49Z",
+  "updated": "2026-10-03T09:44:56Z",
   "servers": [
     {
       "id": "xiaolubao",
@@ -89,20 +89,9 @@
       "probe": "/healthz",
       "enabled": true,
       "note": "scout ������"
-    },
-    {
-      "id": "wei-worker",
-      "name": "卫 · Workers",
-      "url": "https://stronghold-wei.yuehuibu5561.workers.dev",
-      "probe": "/healthz",
-      "region": "EDGE",
-      "note": "官方 Workers 部署",
-      "enabled": true,
-      "tier": 5,
-      "weight": 100
     }
   ],
   "v": 1,
   "keyId": "sp-2026-10",
-  "sig": "h5V+hNyP6GkOduVwGgR9Hac/sk3O0CpPU5TkS7ra4LXRoCpGaC9ph3Qccgne5GkhFSCCR2k48As1KiV9TAOpCA=="
+  "sig": "m6IrPk8eFLbyQtvKqnf+KG39KMjryPU8k2tkRAy6O8pKC6EMhQmtnElZoZYuVLTrYZ9WIXu2WZj+bptrbRwbCQ=="
 }

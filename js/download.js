@@ -120,23 +120,22 @@
                  external: !!a.external };
       })
     };
-    // Newer releases ship the APK out-of-band: the notes carry a direct .apk link (with a
-    // fallback size when the notes mention one). Normalize it into a pseudo-asset so the
-    // rest of the page treats it exactly like a release asset.
-    if (!hasApk(release)) {
-      var link = apkLinkFromBody(rel.body);
-      if (link && allowedHostsExt(link)) {
-        var sizeMatch = String(rel.body || '').match(/([\d.]+)\s*(MB|MiB|GB|GiB)/i);
-        var size = sizeMatch ? Math.round(parseFloat(sizeMatch[1]) *
-          (sizeMatch[2].toUpperCase().charAt(0) === 'G' ? 1073741824 : 1048576)) : null;
-        release.assets.push({
-          name: link.split('/').pop().split(/[?#]/)[0] || 'app-release.apk',
-          size: size,
-          url: link,
-          digest: null,
-          external: true
-        });
-      }
+    // Prefer a first-party direct link when the notes carry one (R2 CDN beats the GitHub
+    // asset URL); otherwise keep the .apk release asset. Either way the page shows a
+    // single APK download.
+    var notesLink = apkLinkFromBody(rel.body);
+    if (notesLink && allowedHostsExt(notesLink)) {
+      var sizeMatch = String(rel.body || '').match(/([\d.]+)\s*(MB|MiB|GB|GiB)/i);
+      var size = sizeMatch ? Math.round(parseFloat(sizeMatch[1]) *
+        (sizeMatch[2].toUpperCase().charAt(0) === 'G' ? 1073741824 : 1048576)) : null;
+      release.assets = release.assets.filter(function (a) { return !/\.apk$/i.test(a.name); });
+      release.assets.push({
+        name: notesLink.split('/').pop().split(/[?#]/)[0] || 'app-release.apk',
+        size: size,
+        url: notesLink,
+        digest: null,
+        external: true
+      });
     }
     return release;
   }

@@ -73,9 +73,9 @@ const snapshot = {
   ]
 };
 
-// No .apk asset: synthesize the pseudo-asset from the notes link so the page renders it
-// exactly like a release asset (name from the URL, size unknown unless stated).
-if (!apks.length && notesLink) {
+// Direct-link preference: when the notes carry an .apk URL (first-party R2 CDN), it wins
+// over the GitHub release asset; otherwise keep the .apk asset as-is.
+if (notesLink) {
   snapshot.releases[0].assets = [{
     name: notesLink[0].split('/').pop().split(/[?#]/)[0] || 'app-release.apk',
     size: null,

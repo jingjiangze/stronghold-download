@@ -1,5 +1,5 @@
 {
-  "generated": "2026-10-03T10:19:38.294Z",
+  "generated": "2026-10-03T18:05:00Z",
   "repo": "jingjiangze/Stronghold-Protocol",
   "releases": [
     {
@@ -11,10 +11,11 @@
       "body": "v2.7.0：跨服务器邀请码 + 离线服务启动修复 + 默认本地客户端 + 首页设置分段化。\n\n**① 跨服邀请码（一份邀请码跨网站加入房间）**：\n- 输入 4 位邀请码 → 并发探测签名清单内全部 node 服务器（WS 试探 room.join，探针名固定「卫」，命中即退座）+ 盒子目录（手机房主房）；\n- 恰好一处命中 → 自动切换并加入（页面的 ?room= 深链机制，零上游改动）；**多处命中 → 冲突选择器**（按本机延迟排序，显示名称/延迟/在线人数/已满/已开局，域名不出现在界面）；零命中 → 明确提示 + 60 秒限流冷却；\n- Workers 房间制服务器不参与试探（协议不同），面板标注「需对方客户端」。\n\n**② 离线服务启动超时修复**：等待窗 30s→60s，三段式反馈（释放资源→启动 Node→仍在启动）；超时不再是死胡同——诊断框显示 Node 存活状态、端口探测、server.log 尾部，提供「再等 30 秒 / 停止服务 / 关闭」；参数重启窗 12s→30s。\n\n**③ 默认本地客户端（行为修正）**：点选房间制服务器不再自动切换对方客户端（v2.6.1 的回归）；必须显式点「使用对方客户端进入」；升级时自动重置全部已记录的对方客户端标志。\n\n**④ 首页设置分段化**：字体大小/左右边距从滑杆改为参数面板同款分段按钮（字体 5 档/边距 4 档），旧的自定义值自动就近归档。\n\nAPK 直链 https://weishucdn.jiangjiangze.icu/apk/stronghold-v2.7.0.apk",
       "assets": [
         {
-          "name": "app-release.apk",
-          "size": 520925054,
-          "url": "https://github.com/jingjiangze/Stronghold-Protocol/releases/download/shell-v2.7.0/app-release.apk",
-          "digest": "sha256:04d19f96cdd8db833ad0df023d3bc1d0db3a01ecf811f66adbd436971978b2a8"
+          "name": "stronghold-v2.7.0.apk",
+          "size": null,
+          "url": "https://weishucdn.jiangjiangze.icu/apk/stronghold-v2.7.0.apk",
+          "digest": null,
+          "external": true
         }
       ]
     }
