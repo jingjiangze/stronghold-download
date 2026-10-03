@@ -70,16 +70,24 @@
         <span class="title-en__a">STRONGHOLD PROTOCOL</span>
         <span class="title-en__b">LIST ADMIN</span>
       </div>
-      <h1 class="title-cn">提交服务器</h1>
-      <p class="title-tag">校验是本项目服务器后自动加入公共清单</p>
+      <h1 class="title-cn">清单管理</h1>
+      <p class="title-tag">输入密钥后可管理全部服务器</p>
 
-      <div class="title-login servers-panel admin-panel">
+      <div class="title-login servers-panel admin-panel" id="ad-gate" hidden>
         <div class="servers-head">
           <span class="micro micro--mint" id="ad-status"></span>
           <a class="btn btn--secondary btn--sm" href="./servers.html"><span class="btn__label">返回清单</span></a>
         </div>
 
         <div class="admin-list" id="ad-list"></div>
+
+        <div class="admin-review" id="ad-review" hidden>
+          <div class="servers-head">
+            <span class="micro micro--mint">未通过校验（暂存区）</span>
+            <button type="button" class="btn btn--ghost btn--sm" id="ad-reload"><span class="btn__label">刷新</span></button>
+          </div>
+          <div class="admin-list" id="ad-pending"></div>
+        </div>
 
         <form class="admin-form" id="ad-form" autocomplete="off">
           <div class="admin-grid">
@@ -102,22 +110,36 @@
           </div>
           <p class="admin-err" id="ad-err" hidden></p>
           <div class="admin-actions">
-            <button type="submit" class="btn btn--primary btn--sm" id="ad-submit"><span class="btn__label">校验并提交</span></button>
+            <button type="submit" class="btn btn--primary btn--sm" id="ad-submit"><span class="btn__label">校验并添加</span></button>
             <a class="btn btn--secondary btn--sm" href="./servers.html"><span class="btn__label">查看清单</span></a>
           </div>
         </form>
 
-        <p class="dl-note" id="ad-note">提交后由服务端实测该地址的 /healthz：确认是卫戍协议服务器即自动加入公共清单；
-          不是本项目服务器会被拒绝并显示原因。本页不再提供维护者发布功能。</p>
+        <p class="dl-note" id="ad-note">提交由服务端实测 /healthz：确认是卫戍协议服务器即自动加入公共清单。
+          停用/删除直接写线上清单；暂存区的服务器恢复 = 重新加入清单。</p>
         <p class="dl-links">
           <a href="./index.html">下载客户端</a>
           <span class="dl-links__sep">·</span>
           <a href="https://github.com/sganggs/Stronghold-Protocol" target="_blank" rel="noopener noreferrer">主仓库</a>
         </p>
       </div>
+
+      <div class="title-login servers-panel admin-panel" id="ad-gate-login">
+        <p class="dl-note" style="margin:0 0 .12rem">管理页面需要密钥。</p>
+        <form id="ad-key-form" autocomplete="off">
+          <label class="admin-field">
+            <span class="micro">密钥</span>
+            <input id="ad-key-input" type="password" placeholder="输入管理密钥" required />
+          </label>
+          <p class="admin-err" id="ad-key-err" hidden></p>
+          <div class="admin-actions">
+            <button type="submit" class="btn btn--primary btn--sm" id="ad-key-go"><span class="btn__label">进入管理</span></button>
+          </div>
+        </form>
+      </div>
     </main>
   </div>
 
-  <script src="./js/admin.js" defer></script>
+  <script src="./js/admin.js?v=4" defer></script>
 </body>
 </html>

@@ -92,11 +92,11 @@
   color: var(--text-dim);
 }
 .dl-links a {
-  color: var(--text-lo);
+  color: var(--gold); /* 浅黄（页面金币色 #ffc600），页脚导航需要显眼 */
   text-decoration: none;
   border-bottom: 1px solid transparent;
 }
-.dl-links a:hover { color: var(--mint-500); border-bottom-color: var(--mint-a35); }
+.dl-links a:hover { color: var(--gold-2); border-bottom-color: var(--gold-a20); }
 .dl-links__sep { margin: 0 .06rem; opacity: .6; }
 
 /* ---- portrait / narrow screens ----------------------------------------------------- */
