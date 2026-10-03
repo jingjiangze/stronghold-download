@@ -1,7 +1,0 @@
-primary: https://weishucdn.jiangjiangze.icu/apk/stronghold-v2.7.0.apk
-mirror buttons (unique): 5
-   https://ghfast.top/https://github.com/jingjiangze/Stronghold-Protocol/releases/download/shell-v
-   https://gh-proxy.com/https://github.com/jingjiangze/Stronghold-Protocol/releases/download/shell
-   https://gh.llkk.cc/https://github.com/jingjiangze/Stronghold-Protocol/releases/download/shell-v
-   https://ghproxy.net/https://github.com/jingjiangze/Stronghold-Protocol/releases/download/shell-
-   https://github.com/jingjiangze/Stronghold-Protocol/releases/download/shell-v2.7.0/app-release.a
