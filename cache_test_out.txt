@@ -1,7 +1,0 @@
---- first open ---
-note: 延迟为当前浏览器实测往返时间（每台先预热再取 3 次采样中位数），仅供参考。
-ms: —
---- second open (cache present) ---
-note: 显示上次测速结果（缓存）；点「立即测速」重新实测，或等 5 分钟自动刷新。
-ms: 604 ms
-cache entries: 1

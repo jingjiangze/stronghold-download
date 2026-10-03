@@ -5,3 +5,9 @@ b.txt
 h.txt
 data/manifest.json
 data/servers.json.bak*
+boot_err.txt
+cache_test_out.txt
+iso2_out.txt
+iso_out.txt
+trace_out.txt
+two_open.txt

@@ -1,4 +1,0 @@
-FETCH: https://weishucdn.jiangjiangze.icu/site/servers.json
-FETCH: ./data/servers.json
-NOTE: 清单加载失败，请稍后再试。
-MS: (no row)

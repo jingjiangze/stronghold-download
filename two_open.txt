@@ -1,3 +1,0 @@
-OPEN1 note: cache saved
-OPEN2 note: 显示上次测速结果（缓存）；点「立即测速」重新实测，或等 5 分钟自动刷新。
-OPEN2 ms: 410 ms
