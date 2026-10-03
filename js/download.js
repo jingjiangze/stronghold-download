@@ -12,6 +12,7 @@
 
   var REPO = 'jingjiangze/Stronghold-Protocol';
   var API_LATEST = 'https://api.github.com/repos/' + REPO + '/releases/latest';
+  var API_LIST = 'https://api.github.com/repos/' + REPO + '/releases?per_page=10';
   var PRIMARY_ASSET = 'app-release.apk';
   var PROBE_BYTES = 3 * 1024 * 1024;
   var PROBE_TIMEOUT_MS = 12000;
@@ -75,6 +76,18 @@
     return ctrl.signal;
   }
 
+  /** Newest stable release that carries an APK; falls back to the release list when the
+   *  brand-newest release exists but its APK has not been attached yet. */
+  function fetchLatestWithApk() {
+    return fetchJson(API_LATEST, API_TIMEOUT_MS).then(function (rel) {
+      var latest = normalizeRelease(rel);
+      if (hasApk(latest)) return latest;
+      return fetchJson(API_LIST, API_TIMEOUT_MS).then(function (list) {
+        return normalizeRelease(pickRelease(list));
+      });
+    });
+  }
+
   /* ---- data ------------------------------------------------------------------------ */
 
   function fetchJson(url, ms) {
@@ -103,8 +116,16 @@
   }
 
   function pickRelease(releases) {
-    var list = (releases || []).filter(function (r) { return !r.draft && !r.prerelease; });
-    return list[0] || (releases || [])[0] || null;
+    // Newest stable release that actually carries an APK. Releases published without
+    // assets yet (build still running) are skipped instead of blanking the page.
+    var stable = (releases || []).filter(function (r) { return !r.draft && !r.prerelease; });
+    var withApk = stable.filter(hasApk);
+    return withApk[0] || null;
+  }
+
+  function hasApk(rel) {
+    return !!(rel && rel.assets && rel.assets.length &&
+      rel.assets.some(function (a) { return /\.apk$/i.test(a.name); }));
   }
 
   function pickAsset(release) {
@@ -213,6 +234,26 @@
       }
     });
     return best;
+  }
+
+  /* ---- mirror manifests (R2 first-party mirror advertises what it holds) ------------ */
+
+  function refreshManifests() {
+    var targets = state.mirrors.filter(function (m) { return !!m.manifest; });
+    return Promise.all(targets.map(function (mirror) {
+      return fetchJson(mirror.manifest, 8000).then(function (manifest) {
+        // Base URL must stay on the mirror's own host before anything is built from it.
+        var host = null;
+        try { host = new URL(mirror.manifest).host; } catch (err) { host = null; }
+        if (!host || !manifest || typeof manifest.tag !== 'string') return;
+        if (!allowedHosts()[host]) return;
+        var names = Array.isArray(manifest.assets) ? manifest.assets : [];
+        var holdsApk = !names.length || names.some(function (n) { return n === state.asset.name; });
+        if (holdsApk) mirror.tags = [manifest.tag];
+      }).catch(function () { /* unreachable manifest: keep the static tags gate */ });
+    })).then(function () {
+      render();
+    });
   }
 
   /* ---- browser speed probe (only for mirrors that send CORS headers) ---------------- */
@@ -329,16 +370,11 @@
           state.asset = pickAsset(state.release);
           render();
         }
-        return fetchJson(API_LATEST, API_TIMEOUT_MS).then(function (rel) {
-          var live = normalizeRelease(rel);
+        return fetchLatestWithApk().then(function (live) {
           if (live && (!state.release || live.tag !== state.release.tag)) {
             state.release = live;
             state.asset = pickAsset(live);
             state.measured = {};
-            render();
-          } else if (live && !state.release) {
-            state.release = live;
-            state.asset = pickAsset(live);
             render();
           }
         }).catch(function () { /* offline / rate-limited: the snapshot stays */ });
@@ -349,7 +385,10 @@
         setText(el.note, '请点击上方按钮前往 GitHub Releases 页面下载。');
         return;
       }
-      return probeMirrors().then(announceProbe).catch(function () { /* probe is best-effort */ });
+      return refreshManifests()
+        .then(function () { return probeMirrors(); })
+        .then(announceProbe)
+        .catch(function () { /* probe is best-effort */ });
     }).catch(function () {
       setText(el.version, '暂无法获取版本信息');
       setText(el.note, '请点击上方按钮前往 GitHub Releases 页面下载。');

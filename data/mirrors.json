@@ -9,7 +9,8 @@
       "template": "https://weishucdn.jiangjiangze.icu/releases/{tag}/{name}",
       "cors": true,
       "range": true,
-      "tags": []
+      "tags": [],
+      "manifest": "https://weishucdn.jiangjiangze.icu/releases/manifest.json"
     },
     {
       "id": "ghfast",

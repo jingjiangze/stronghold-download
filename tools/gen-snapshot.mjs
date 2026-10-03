@@ -30,20 +30,17 @@ async function getJson(url) {
   return res.json();
 }
 
-/** Latest stable release: /releases/latest, falling back to the newest non-prerelease entry. */
-async function latestStable() {
-  try {
-    return await getJson(`https://api.github.com/repos/${REPO}/releases/latest`);
-  } catch (err) {
-    if (err.status !== 404) throw err;
-    const list = await getJson(`https://api.github.com/repos/${REPO}/releases?per_page=10`);
-    const stable = list.find((r) => !r.draft && !r.prerelease);
-    if (!stable) throw new Error('no stable release found');
-    return stable;
-  }
+/** Newest stable release that actually carries an APK (a brand-new release whose build
+ *  has not attached assets yet is skipped rather than blanking the page). */
+async function latestWithApk() {
+  const list = await getJson(`https://api.github.com/repos/${REPO}/releases?per_page=10`);
+  const stable = list.filter((r) => !r.draft && !r.prerelease);
+  const picked = stable.find((r) => (r.assets || []).some((a) => /\.apk$/i.test(a.name)));
+  if (!picked) throw new Error('no stable release with an .apk asset found');
+  return picked;
 }
 
-const release = await latestStable();
+const release = await latestWithApk();
 const apks = (release.assets || []).filter((a) => /\.apk$/i.test(a.name));
 if (!apks.length) {
   console.error(`release ${release.tag_name} has no .apk asset`);
