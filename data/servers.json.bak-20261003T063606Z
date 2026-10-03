@@ -1,8 +1,8 @@
 {
   "v": 1,
-  "updated": "2026-10-03T06:39:10Z",
+  "updated": "2026-10-03T06:29:10Z",
   "keyId": "sp-2026-10",
-  "note": "Ed25519 签名清单（keyId sp-2026-10）。客户端与网页共用同一份数据：dl.jiangjiangze.icu/data/servers.json 与 R2 site/servers.json。任何增删改都必须用 tools/apk/sign.mjs 重新签名，否则客户端验签失败会回退到下一源。tier/weight 影响排序；protocol/app 为兼容门禁。",
+  "note": "Ed25519 签名清单；客户端与网页共用同一份数据（dl.jiangjiangze.icu/servers.json 与 R2 site/servers.json）。tier/weight 影响排序，protocol/app 为兼容门禁（仅对已实测确认的服务器写入）；sig 覆盖除 sig 外的规范化 JSON。",
   "servers": [
     {
       "id": "xiaolubao",
@@ -34,8 +34,7 @@
       "tier": 0,
       "weight": 100,
       "protocol": 1,
-      "app": "0.1.0",
-      "note": "社区服 · B站 13:30 访客 M1尾翼稳定脱壳穿甲弹 自建云服务器"
+      "app": "0.1.0"
     },
     {
       "id": "weishu",
@@ -56,8 +55,7 @@
       "probe": "/healthz",
       "enabled": true,
       "tier": 0,
-      "weight": 100,
-      "note": "社区服 · CF Workers 版（BBleae fork）"
+      "weight": 100
     },
     {
       "id": "rinko",
@@ -66,18 +64,8 @@
       "probe": "/healthz",
       "enabled": true,
       "tier": 0,
-      "weight": 100,
-      "note": "社区服 · CF Workers 版（Slapq fork）"
-    },
-    {
-      "id": "starst",
-      "name": "星尘子服",
-      "url": "https://game.starst.site",
-      "probe": "/healthz",
-      "region": "CN",
-      "note": "社区服 · B站 14:19 Starst星尘子 自建；文字/语音交流站 https://www.starst.site",
-      "enabled": true
+      "weight": 100
     }
   ],
-  "sig": "Z/Ou6QmmJIYnODQUn9xuANbyvDspdjA8P4vH6QtBjsxfdKpdctOaB/CmvrAy5mPckB1kgxI9h9fFwJ2s1GOpAw=="
+  "sig": "WLqU6XJbkv+8zrx7bf4KYwXYDyylCkZ9YAYBkiZsOGG5hGqNtJVQZ3FtOnvzIsQ8r1svEBx/MvFPGuws8g/0Aw=="
 }

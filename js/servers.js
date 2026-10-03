@@ -41,7 +41,16 @@
     updated: document.getElementById('sv-updated'),
     timer: document.getElementById('sv-timer'),
     refresh: document.getElementById('sv-refresh'),
-    note: document.getElementById('sv-note')
+    note: document.getElementById('sv-note'),
+    add: document.getElementById('sv-add'),
+    modal: document.getElementById('sv-modal'),
+    modalForm: document.getElementById('sv-modal-form'),
+    addName: document.getElementById('sv-add-name'),
+    addUrl: document.getElementById('sv-add-url'),
+    addProbe: document.getElementById('sv-add-probe'),
+    addNote: document.getElementById('sv-add-note'),
+    addErr: document.getElementById('sv-add-err'),
+    addGo: document.getElementById('sv-add-go')
   };
 
   function setText(node, text) { if (node) node.textContent = text; }
@@ -360,12 +369,94 @@
     }
   }
 
+  /* ---- visitor submit modal --------------------------------------------------------- */
+
+  var PRIVATE_V4_SUBMIT = [/^127\./, /^10\./, /^192\.168\./, /^169\.254\./, /^0\./,
+                           /^172\.(1[6-9]|2[0-9]|3[01])\./];
+
+  function submitTargetOk(raw) {
+    var url;
+    try { url = new URL(String(raw).trim()); } catch (err) { return { error: '地址无法解析' }; }
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') return { error: '仅允许 http/https' };
+    if (url.username || url.password) return { error: '地址中不能包含账号密码' };
+    var h = url.hostname.toLowerCase();
+    var unsafe = !h || h === 'localhost' || h.endsWith('.localhost') || h.endsWith('.local') || h.endsWith('.internal');
+    if (!unsafe && h.charAt(0) === '[') {
+      var v6 = h.slice(1, -1);
+      unsafe = v6 === '::1' || v6 === '::' || /^f[cd]/.test(v6) || /^fe[89ab]/.test(v6);
+    }
+    if (!unsafe && h !== '0.0.0.0') {
+      unsafe = PRIVATE_V4_SUBMIT.some(function (re) { return re.test(h); });
+    }
+    if (unsafe) return { error: '拒绝内网/环回/保留地址' };
+    return { url: url };
+  }
+
+  function showSubmitError(text) {
+    if (!el.addErr) return;
+    if (text) { el.addErr.hidden = false; setText(el.addErr, text); }
+    else { el.addErr.hidden = true; setText(el.addErr, ''); }
+  }
+
+  function openModal() {
+    if (!el.modal) return;
+    el.modal.hidden = false;
+    showSubmitError('');
+    if (el.addName) el.addName.focus();
+  }
+
+  function closeModal() {
+    if (el.modal) el.modal.hidden = true;
+  }
+
+  function onSubmit(event) {
+    event.preventDefault();
+    var check = submitTargetOk(el.addUrl.value);
+    if (check.error) { showSubmitError(check.error); return; }
+    var probe = String(el.addProbe.value || '/healthz').trim() || '/healthz';
+    if (!probe.startsWith('/')) probe = '/' + probe;
+    var name = (el.addName.value || '').trim() || check.url.host;
+    var payload = { servers: [{ name: name, url: check.url.href, probe: probe }] };
+    if ((el.addNote.value || '').trim()) payload.servers[0].note = el.addNote.value.trim();
+
+    if (el.addGo) { el.addGo.disabled = true; setText(el.addGo.querySelector('.btn__label'), '校验中…'); }
+    showSubmitError('');
+    fetch('/api/servers/submit', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload)
+    }).then(function (res) {
+      return res.json().catch(function () { return {}; }).then(function (data) { return { status: res.status, data: data }; });
+    }).then(function (outcome) {
+      if (!outcome.data.ok) throw new Error(outcome.data.error || ('HTTP ' + outcome.status));
+      closeModal();
+      el.addName.value = ''; el.addUrl.value = ''; el.addNote.value = '';
+      // The list just gained a server: refresh the manifest and measure the newcomer.
+      loadList().then(function (data) { prepare(data); applyCache(loadCache()); render(); probeAll(false); });
+      setText(el.note, '「' + name + '」校验通过，已加入清单（服务端实测 /healthz 确认为卫戍协议服务器）。');
+    }).catch(function (err) {
+      showSubmitError('提交失败：' + (err && err.message ? err.message : '网络'));
+    }).finally(function () {
+      if (el.addGo) { el.addGo.disabled = false; setText(el.addGo.querySelector('.btn__label'), '校验并提交'); }
+    });
+  }
+
   /* ---- boot ------------------------------------------------------------------------- */
 
   function boot() {
     if (el.refresh) {
       el.refresh.addEventListener('click', function () { probeAll(true); });
     }
+    if (el.add) el.add.addEventListener('click', openModal);
+    if (el.modalForm) el.modalForm.addEventListener('submit', onSubmit);
+    if (el.modal) {
+      el.modal.addEventListener('click', function (ev) {
+        if (ev.target && ev.target.getAttribute && ev.target.getAttribute('data-close')) closeModal();
+      });
+    }
+    document.addEventListener('keydown', function (ev) {
+      if (ev.key === 'Escape' && el.modal && !el.modal.hidden) closeModal();
+    });
     document.addEventListener('visibilitychange', function () {
       if (document.hidden) {
         if (state.timer) { clearTimeout(state.timer); state.timer = null; }

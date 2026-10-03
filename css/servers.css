@@ -109,6 +109,32 @@
 .sv-row.is-slow .sv-ms { color: var(--gold-2); }
 .sv-row.is-bad .sv-ms { color: var(--red-premium); }
 
+/* ---- submit modal ------------------------------------------------------------------ */
+.sv-modal { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; }
+.sv-modal__backdrop { position: absolute; inset: 0; background: rgba(5, 8, 7, .72); }
+.sv-modal__card {
+  position: relative;
+  width: min(94vw, 7.6rem);
+  max-height: 92svh;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: .12rem;
+  padding: .2rem .26rem .18rem;
+  background: linear-gradient(180deg, rgba(20, 25, 23, .95), rgba(10, 13, 12, .97));
+  border: 1px solid var(--line-2);
+  box-shadow: 0 .2rem .6rem rgba(0, 0, 0, .6);
+}
+.sv-modal__card::before {
+  content: '';
+  position: absolute;
+  left: -1px; right: -1px; top: -1px;
+  height: 2px;
+  background: linear-gradient(90deg, var(--mint-500), transparent 60%);
+}
+.sv-modal__card .admin-grid { grid-template-columns: 1fr 1.4fr; }
+.sv-modal[hidden] { display: none; }
+
 /* ---- portrait / narrow screens ---------------------------------------------------- */
 @media (max-aspect-ratio: 12/10) {
   .servers-main { margin: .5rem 0 .9rem; }
@@ -116,4 +142,5 @@
   .sv-meter { display: none; }
   .sv-ms { flex: 0 0 1.05rem; font-size: .15rem; }
   .sv-row { padding: .14rem .12rem; }
+  .sv-modal__card .admin-grid { grid-template-columns: 1fr; }
 }

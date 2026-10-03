@@ -50,7 +50,7 @@
     else { el.err.hidden = true; setText(el.err, ''); }
   }
 
-  /* ---- validation (mirrors servers.js) ---------------------------------------------- */
+  /* ---- validation (mirrors functions/api/_verify.js) --------------------------------- */
 
   var PRIVATE_V4 = [/^127\./, /^10\./, /^192\.168\./, /^169\.254\./, /^0\./,
                     /^172\.(1[6-9]|2[0-9]|3[01])\./];
@@ -78,343 +78,41 @@
     return { url: url };
   }
 
-  function normalizeProbe(raw, base) {
-    var text = String(raw || '/healthz').trim() || '/healthz';
-    if (!text.startsWith('/')) text = '/' + text;
-    var url;
-    try { url = new URL(text, base); } catch (err) { return null; }
-    return url.href;
-  }
+  /* ---- visitor submission (no key; server verifies and auto-publishes) --------------- */
 
-  /* ---- data -------------------------------------------------------------------------- */
-
-  function fetchJson(url) {
-    var ctrl = new AbortController();
-    var timer = setTimeout(function () { ctrl.abort(); }, LIST_TIMEOUT_MS);
-    return fetch(url, { signal: ctrl.signal, cache: 'no-store' })
-      .then(function (res) {
-        clearTimeout(timer);
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        return res.json();
-      }, function (err) { clearTimeout(timer); throw err; });
-  }
-
-  function loadPublished() {
-    var chain = Promise.resolve(null);
-    return LIST_SOURCES.reduce(function (acc, src) {
-      return acc.then(function (data) {
-        return data || fetchJson(src).catch(function () { return null; });
-      });
-    }, chain).then(function (data) {
-      base = (data && Array.isArray(data.servers)) ? data.servers.slice() : [];
-      if (data && data.updated) base.updated = data.updated;
-    });
-  }
-
-  function current() { return draft || base; }
-
-  function persistDraft() {
-    try {
-      if (draft) localStorage.setItem(LS_DRAFT, JSON.stringify({ updated: new Date().toISOString(), servers: draft }));
-      else localStorage.removeItem(LS_DRAFT);
-    } catch (err) { /* storage unavailable */ }
-  }
-
-  function restoreDraft() {
-    try {
-      var raw = localStorage.getItem(LS_DRAFT);
-      if (!raw) return;
-      var parsed = JSON.parse(raw);
-      if (parsed && Array.isArray(parsed.servers)) draft = parsed.servers;
-    } catch (err) { /* ignore corrupt draft */ }
-  }
-
-  function publishKey() {
-    var params = new URLSearchParams(location.search);
-    var fromQuery = params.get('k');
-    if (fromQuery) {
-      try { localStorage.setItem(LS_KEY, fromQuery); } catch (err) { /* ignore */ }
-      history.replaceState(null, '', location.pathname);
-      return fromQuery;
-    }
-    try { return localStorage.getItem(LS_KEY) || ''; } catch (err) { return ''; }
-  }
-
-  /* ---- rendering --------------------------------------------------------------------- */
-
-  function row(entry, index) {
-    var disabled = entry.enabled === false;
-    var div = document.createElement('div');
-    div.className = 'sv-row' + (disabled ? ' is-disabled' : '');
-
-    var dot = document.createElement('span');
-    dot.className = 'sv-dot';
-    div.appendChild(dot);
-
-    var main = document.createElement('div');
-    main.className = 'sv-main';
-    var name = document.createElement('span');
-    name.className = 'sv-name';
-    name.textContent = entry.name || entry.url;
-    var host = document.createElement('span');
-    host.className = 'sv-host';
-    host.textContent = (entry.url || '') + (entry.note ? ' · ' + entry.note : '');
-    main.appendChild(name);
-    main.appendChild(host);
-    div.appendChild(main);
-
-    var toggle = document.createElement('button');
-    toggle.type = 'button';
-    toggle.className = 'sv-toggle';
-    toggle.textContent = disabled ? '已停用' : '启用中';
-    toggle.addEventListener('click', function () {
-      var list = current().slice();
-      list[index] = Object.assign({}, entry, { enabled: disabled });
-      draft = list;
-      persistDraft();
-      render();
-    });
-    div.appendChild(toggle);
-
-    var del = document.createElement('button');
-    del.type = 'button';
-    del.className = 'sv-del';
-    del.textContent = '删除';
-    del.addEventListener('click', function () {
-      var list = current().slice();
-      list.splice(index, 1);
-      draft = list;
-      persistDraft();
-      render();
-    });
-    div.appendChild(del);
-    return div;
-  }
-
-  function render() {
-    if (!el.list) return;
-    el.list.textContent = '';
-    current().forEach(function (entry, index) { el.list.appendChild(row(entry, index)); });
-
-    var dirty = !!draft;
-    setText(el.status, dirty ? '有未发布的修改（暂存在本机）' : '与线上清单一致');
-    if (el.save) el.save.disabled = !dirty;
-  }
-
-  /* ---- actions ----------------------------------------------------------------------- */
-
-  function onAdd(ev) {
-    ev.preventDefault();
+  function onSubmit(event) {
+    event.preventDefault();
     showError('');
     var check = validateUrl(el.url.value);
     if (check.error) { showError(check.error); return; }
-    var probeHref = normalizeProbe(el.probe.value, check.url);
-    if (!probeHref) { showError('探针路径无效'); return; }
-    var entry = {
-      id: 'srv-' + Date.now().toString(36),
-      name: (el.name.value || '').trim() || check.url.host,
-      url: check.url.href.replace(/\/$/, '') + (check.url.pathname === '/' ? '' : ''),
-      probe: probeHref.replace(/^https?:\/\/[^/]+/, ''),
-      enabled: true
-    };
-    if (check.url.pathname && check.url.pathname !== '/') entry.url = check.url.origin + check.url.pathname.replace(/\/$/, '');
+    var entry = { name: (el.name.value || '').trim() || check.url.host,
+                  url: check.url.href,
+                  probe: (el.probe.value || '/healthz').trim() || '/healthz' };
     if ((el.note.value || '').trim()) entry.note = el.note.value.trim();
-    if (entry.probe === '/') delete entry.probe;
-
-    var list = current().slice();
-    if (list.some(function (s) { return s.url === entry.url; })) {
-      showError('该地址已在清单中');
-      return;
-    }
-    list.push(entry);
-    draft = list;
-    persistDraft();
-    el.name.value = '';
-    el.url.value = '';
-    el.note.value = '';
-    render();
-  }
-
-  function publishPayload() {
-    return JSON.stringify({
-      updated: new Date().toISOString(),
-      servers: current().map(function (s) {
-        var clean = { id: s.id, name: s.name, url: s.url, probe: s.probe || '/healthz', enabled: s.enabled !== false };
-        if (s.note) clean.note = s.note;
-        return clean;
-      })
-    }, null, 2) + '\n';
-  }
-
-  function onPublish() {
-    showError('');
-    var key = publishKey();
-    if (!key) {
-      key = window.prompt('输入发布密钥（跳过则修改只保存在本机）', '') || '';
-      if (!key) {
-        if (el.note) setText(el.note, '已暂存在本机。可在服务器清单页看到合并结果；把 JSON 交给维护者即可发布。');
-        try { localStorage.setItem(LS_KEY, ''); } catch (err) { /* ignore */ }
-        return;
-      }
-      try { localStorage.setItem(LS_KEY, key); } catch (err) { /* ignore */ }
-    }
-    if (el.save) { el.save.disabled = true; setText(el.save.querySelector('.btn__label'), '发布中…'); }
-    fetch('/api/servers', {
-      method: 'PUT',
-      headers: { 'content-type': 'application/json', 'x-admin-key': key },
-      body: publishPayload()
-    }).then(function (res) {
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      return res.json().catch(function () { return {}; });
-    }).then(function () {
-      draft = null;
-      persistDraft();
-      setText(el.status, '已发布');
-      return loadPublished().then(render);
-    }).catch(function (err) {
-      showError('发布失败（' + (err && err.message ? err.message : '网络') + '），修改仍暂存在本机');
-      render();
-    }).finally(function () {
-      if (el.save) setText(el.save.querySelector('.btn__label'), '保存并发布');
-    });
-  }
-
-  function onRevert() {
-    draft = null;
-    persistDraft();
-    showError('');
-    render();
-  }
-
-  /* ---- visitor submission (no key; server verifies + queues) ------------------------- */
-
-  function onSubmit() {
-    showError('');
-    var list = current();
-    if (!list.length) { showError('没有可提交的服务器'); return; }
     if (el.submit) { el.submit.disabled = true; setText(el.submit.querySelector('.btn__label'), '校验中…'); }
     fetch('/api/servers/submit', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ servers: list.map(function (s) {
-        return { id: s.id, name: s.name, url: s.url, probe: s.probe || '/healthz', note: s.note };
-      }) })
-    }).then(function (res) {
-      return res.json().catch(function () { return {}; }).then(function (data) {
-        return { status: res.status, data: data };
-      });
-    }).then(function (outcome) {
-      if (!outcome.data.ok) throw new Error(outcome.data.error || ('HTTP ' + outcome.status));
-      setText(el.status, '已进入待审核队列（第 ' + outcome.data.queuePosition + ' 位），维护者确认后上线');
-      if (el.note) setText(el.note, '提交成功。服务端已实测 /healthz 并确认为卫戍协议服务器；上线前由维护者审核。');
-    }).catch(function (err) {
-      showError('提交失败：' + (err && err.message ? err.message : '网络'));
-    }).finally(function () {
-      if (el.submit) { el.submit.disabled = false; setText(el.submit.querySelector('.btn__label'), '提交到公共清单'); }
-    });
-  }
-
-  /* ---- maintainer review queue ------------------------------------------------------- */
-
-  function pendingRow(record) {
-    var div = document.createElement('div');
-    div.className = 'sv-row';
-
-    var dot = document.createElement('span');
-    dot.className = 'sv-dot';
-    div.appendChild(dot);
-
-    var main = document.createElement('div');
-    main.className = 'sv-main';
-    var name = document.createElement('span');
-    name.className = 'sv-name';
-    name.textContent = record.name;
-    var host = document.createElement('span');
-    host.className = 'sv-host';
-    host.textContent = record.url + (record.note ? ' · ' + record.note : '');
-    main.appendChild(name);
-    main.appendChild(host);
-    div.appendChild(main);
-
-    var meta = document.createElement('span');
-    meta.className = 'sv-ms';
-    meta.textContent = 'rooms ' + (record.verify && record.verify.rooms != null ? record.verify.rooms : '—');
-    div.appendChild(meta);
-
-    var approve = document.createElement('button');
-    approve.type = 'button';
-    approve.className = 'btn btn--primary btn--sm admin-approve';
-    var approveLabel = document.createElement('span');
-    approveLabel.className = 'btn__label';
-    approveLabel.textContent = '通过';
-    approve.appendChild(approveLabel);
-    approve.addEventListener('click', function () { review(record.id, 'approve', approveLabel); });
-    div.appendChild(approve);
-
-    var reject = document.createElement('button');
-    reject.type = 'button';
-    reject.className = 'sv-del';
-    reject.textContent = '拒绝';
-    reject.addEventListener('click', function () { review(record.id, 'reject', reject); });
-    div.appendChild(reject);
-    return div;
-  }
-
-  function review(id, action, node) {
-    var old = node.textContent;
-    node.textContent = '…';
-    fetch('/api/servers/review', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-admin-key': publishKey() },
-      body: JSON.stringify({ id: id, action: action })
+      body: JSON.stringify({ servers: [entry] })
     }).then(function (res) {
       return res.json().catch(function () { return {}; }).then(function (data) { return { status: res.status, data: data }; });
     }).then(function (outcome) {
       if (!outcome.data.ok) throw new Error(outcome.data.error || ('HTTP ' + outcome.status));
-      loadPublished().then(function () { render(); loadQueue(); });
+      setText(el.status, '校验通过，已加入公共清单');
+      setText(el.note, '「' + entry.name + '」已上线（服务端实测 /healthz 确认为卫戍协议服务器）。');
+      el.name.value = ''; el.url.value = ''; el.note.value = '';
     }).catch(function (err) {
-      node.textContent = old;
-      showError('审核操作失败：' + (err && err.message ? err.message : '网络'));
+      showError('提交失败：' + (err && err.message ? err.message : '网络'));
+    }).finally(function () {
+      if (el.submit) { el.submit.disabled = false; setText(el.submit.querySelector('.btn__label'), '校验并提交'); }
     });
-  }
-
-  function loadQueue() {
-    var key = publishKey();
-    if (!key) { el.review.hidden = true; return; }
-    fetch('/api/servers/submit', { headers: { 'x-admin-key': key } })
-      .then(function (res) { return res.ok ? res.json() : { ok: false }; })
-      .then(function (data) {
-        if (!data.ok || !Array.isArray(data.pending)) { el.review.hidden = true; return; }
-        el.review.hidden = false;
-        el.pending.textContent = '';
-        if (!data.pending.length) {
-          var empty = document.createElement('span');
-          empty.className = 'sv-host';
-          empty.textContent = '队列为空';
-          el.pending.appendChild(empty);
-          return;
-        }
-        data.pending.forEach(function (record) { el.pending.appendChild(pendingRow(record)); });
-      }).catch(function () { el.review.hidden = true; });
   }
 
   /* ---- boot -------------------------------------------------------------------------- */
 
   function boot() {
-    if (el.form) el.form.addEventListener('submit', onAdd);
-    if (el.save) el.save.addEventListener('click', onPublish);
-    if (el.submit) el.submit.addEventListener('click', onSubmit);
-    if (el.revert) el.revert.addEventListener('click', onRevert);
-    if (el.reload) el.reload.addEventListener('click', loadQueue);
-    loadPublished().then(function () {
-      restoreDraft();
-      render();
-      loadQueue();
-    }).catch(function () {
-      setText(el.status, '线上清单加载失败（可离线编辑）');
-      restoreDraft();
-      render();
-    });
+    if (el.form) el.form.addEventListener('submit', onSubmit);
+    setText(el.status, '填写下方表单提交服务器');
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
