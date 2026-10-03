@@ -1,14 +1,16 @@
 /fonts/*
   Cache-Control: public, max-age=604800, immutable
 
+# Scripts and stylesheets change with each deploy; keep the edge/browser TTL short so a
+# release is picked up promptly (references are also versioned with ?v= for instant bumps).
 /css/*
-  Cache-Control: public, max-age=604800, immutable
+  Cache-Control: public, max-age=300, must-revalidate
 
 /js/*
-  Cache-Control: public, max-age=3600
+  Cache-Control: public, max-age=300, must-revalidate
 
 /data/*
-  Cache-Control: public, max-age=120
+  Cache-Control: public, max-age=60
 
 /
-  Cache-Control: public, max-age=300
+  Cache-Control: public, max-age=120

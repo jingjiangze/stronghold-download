@@ -1,0 +1,3 @@
+loadList ok: true
+prepared: 1
+CHAIN ERR: I.render is not a function

@@ -160,6 +160,7 @@
       server.ms = hit.ms;
       server.okCount = SAMPLES;
       server.offline = !!hit.offline;
+      server.cachedAt = hit.at || 0;
       server.level = server.offline ? 'bad'
         : server.ms < GOOD_MS ? 'good' : server.ms < OK_MS ? 'ok' : 'slow';
       hits += 1;
@@ -172,9 +173,19 @@
     state.servers.forEach(function (server) {
       if (server.ms == null && !server.offline) return;
       entries[server.id + '|' + (server.url ? server.url.host : '')] =
-        { ms: server.ms, offline: !!server.offline };
+        { ms: server.ms, offline: !!server.offline, at: server.probedAt || server.cachedAt || Date.now() };
     });
     return entries;
+  }
+
+  function cacheAge() {
+    var oldest = 0;
+    state.servers.forEach(function (server) {
+      if (server.cachedAt && (!oldest || server.cachedAt < oldest)) oldest = server.cachedAt;
+    });
+    if (!oldest) return '';
+    var mins = Math.max(1, Math.round((Date.now() - oldest) / 60000));
+    return mins < 60 ? mins + ' 分钟前' : Math.round(mins / 60) + ' 小时前';
   }
 
   /* ---- probing ---------------------------------------------------------------------- */
@@ -242,17 +253,16 @@
     if (document.body) document.body.setAttribute('data-probe', 'running');
     setText(el.note, force ? '手动测速进行中…' : '正在补测新服务器…');
     var targets = force ? state.servers : missing;
-    var chain = Promise.resolve();
-    targets.forEach(function (server) {
-      chain = chain.then(function () {
-        if (!server.probeable) { server.level = 'na'; return undefined; }
-        return pickPath(server).then(function (url) {
-          if (!url) { server.level = 'bad'; server.offline = true; server.ms = null; return undefined; }
-          return sample(server, url);
-        });
+    // Measure servers in parallel: each runs its own warm-up + samples, and the UI row
+    // updates as soon as that server finishes instead of after the whole round.
+    var done = Promise.all(targets.map(function (server) {
+      if (!server.probeable) { server.level = 'na'; return undefined; }
+      return pickPath(server).then(function (url) {
+        if (!url) { server.level = 'bad'; server.offline = true; server.ms = null; return undefined; }
+        return sample(server, url).then(function () { render(); });
       });
-    });
-    return chain.then(function () {
+    }));
+    return done.then(function () {
       state.running = false;
       state.lastRun = Date.now();
       state.fromCache = false;
@@ -338,6 +348,9 @@
     var ms = document.createElement('span');
     ms.className = 'sv-ms';
     ms.textContent = msText(server);
+    ms.title = server.cachedAt
+      ? '缓存于 ' + new Date(server.cachedAt).toLocaleString('zh-CN', { hour12: false })
+      : '';
     div.appendChild(ms);
 
     if (server.url) {
@@ -366,6 +379,9 @@
         : stamp.toLocaleString('zh-CN', { hour12: false })));
     } else {
       setText(el.updated, '清单来源：内置快照');
+    }
+    if (state.fromCache && state.servers.some(function (s) { return s.cachedAt; })) {
+      setText(el.timer, '缓存 ' + cacheAge());
     }
   }
 
