@@ -20,7 +20,7 @@
   <link rel="stylesheet" href="./css/components.css?v=4" />
   <link rel="stylesheet" href="./css/screens/title.css?v=4" />
   <link rel="stylesheet" href="./css/devices.css?v=4" />
-  <link rel="stylesheet" href="./css/dl.css?v=7" />
+  <link rel="stylesheet" href="./css/dl.css?v=9" />
 </head>
 <body>
   <div class="screen title-screen">
@@ -89,6 +89,7 @@
           <span id="dl-version">正在获取版本信息…</span>
           <span id="dl-size" class="dl-size"></span>
           <button type="button" class="dl-copy" id="dl-hash" title="复制 SHA256 校验值" hidden>SHA256</button>
+          <span id="dl-downloads" class="dl-downloads" title="GitHub 资产 + 页面直链下载合计" hidden></span>
         </div>
         <p class="dl-note" id="dl-note">支持断点续传 · 下载缓慢时使用多线程下载工具（实测约 8 倍速度）</p>
         <div class="dl-aria2">
@@ -106,6 +107,6 @@
     </main>
   </div>
 
-  <script src="./js/download.js?v=9" defer></script>
+  <script src="./js/download.js?v=11" defer></script>
 </body>
 </html>

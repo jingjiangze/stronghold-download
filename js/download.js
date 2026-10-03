@@ -26,7 +26,8 @@
     size: document.getElementById('dl-size'),
     hash: document.getElementById('dl-hash'),
     note: document.getElementById('dl-note'),
-    aria2: document.getElementById('dl-aria2')
+    aria2: document.getElementById('dl-aria2'),
+    downloads: document.getElementById('dl-downloads')
   };
 
   var state = { release: null, asset: null, mirrors: [], measured: {}, primaryMirrorId: null };
@@ -268,7 +269,17 @@
     showAria2Button();
   }
 
+  /** Primary button routes through the counting redirect (/api/download/<tag>/<file>);
+   *  the aria2 one-liner keeps the raw direct link for power users. */
+  function countedUrl() {
+    if (!state.release || !state.asset) return null;
+    if (state.asset.external) return state.asset.url; // raw direct link (no counter)
+    return '/api/download/' + encodeURIComponent(state.release.tag) + '/' +
+           encodeURIComponent(state.asset.name);
+  }
+
   function applyPrimary() {
+    var counted = countedUrl();
     // First-party direct link (notes URL): always the primary — nothing can beat it, and
     // the accelerator row below serves the GitHub asset instead.
     if (state.asset && state.asset.external) {
@@ -278,6 +289,7 @@
       renderMirrors();
       return;
     }
+    if (counted) { el.primary.href = counted; }
     var url = null;
     var chosen = null;
     var fastest = fastestMirror();
@@ -289,11 +301,11 @@
         if (candidate) { chosen = m; url = candidate; break; }
       }
     }
-    if (chosen && !url) url = buildMirrorUrl(chosen, state.asset, state.release.tag);
-    if (!url) return;
-    state.primaryMirrorId = chosen.id;
-    el.primary.href = url;
-    el.primary.title = '下载最新版 Android 客户端（' + chosen.name + '）';
+    if (chosen) {
+      state.primaryMirrorId = chosen.id;
+      el.primary.href = counted || url;
+      el.primary.title = '下载最新版 Android 客户端（' + chosen.name + '）';
+    }
     renderMirrors();
   }
 
@@ -452,11 +464,37 @@
     if (el.aria2 && state.asset) el.aria2.hidden = false;
   }
 
+  /** Total download count = GitHub release assets (download_count, all releases) + the
+   *  page's own counted redirects. Rendered in the meta line, gold, best-effort. */
+  function fetchDownloadTotal() {
+    if (!el.downloads) return;
+    var ghCount = 0;
+    fetchJson('https://api.github.com/repos/' + REPO + '/releases?per_page=100', 9000)
+      .then(function (list) {
+        (Array.isArray(list) ? list : []).forEach(function (r) {
+          (r.assets || []).forEach(function (a) {
+            if (/\.apk$/i.test(a.name)) ghCount += a.download_count || 0;
+          });
+        });
+      }).catch(function () { /* gh count optional */ })
+      .then(function () {
+        return fetchJson('/api/download/total', 6000).then(function (out) {
+          return out && out.ok ? (out.total || 0) : 0;
+        }).catch(function () { return 0; });
+      }).then(function (fnCount) {
+        var total = ghCount + fnCount;
+        if (total <= 0) return;
+        el.downloads.hidden = false;
+        setText(el.downloads, '⬇ ' + total.toLocaleString('zh-CN') + ' 次下载');
+      });
+  }
+
   /* ---- boot ------------------------------------------------------------------------ */
 
   function start() {
     wireHashButton();
     wireAria2Button();
+    fetchDownloadTotal();
 
     fetchJson('./data/mirrors.json', 8000).then(function (data) {
       state.mirrors = (data && data.mirrors) || [];

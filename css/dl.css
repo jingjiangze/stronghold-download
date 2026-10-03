@@ -47,6 +47,7 @@
   min-height: .2rem;
 }
 .dl-size { color: var(--text-md); }
+.dl-downloads { color: var(--gold); letter-spacing: .08em; }
 .dl-copy {
   font: inherit;
   font-size: .12rem;
