@@ -328,7 +328,9 @@
       el.keyInput.value = stored;
       onKeySubmit.call(el.keyForm, { preventDefault: function () {} });
     } else {
-      el.gate.hidden = false;
+      // Locked: show ONLY the key gate. The management panel stays hidden until the key
+      // verifies server-side (401 = wrong key, gate stays up).
+      el.gate.hidden = true;
       el.gateLogin.hidden = false;
     }
   }
