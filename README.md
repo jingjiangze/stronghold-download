@@ -26,6 +26,27 @@ wrangler pages deploy . --project-name=stronghold-download --branch=main
 **版本策略：页面只提供最新版 APK 的下载链接，不保留、不展示任何旧版本**
 （快照里只有一个 release，且只有 `.apk` 资产；R2 模板镜像的 `tags` 只放当前 tag）。
 
+## 服务器清单：提交 → 审核 → 本机重签
+
+清单是 Ed25519 签名文档（`v` / `keyId` / `updated` / `note` / `servers` / `sig`），私钥只在本机 `~/.sp-sign/`，
+**任何服务端都不持有**。三步：
+
+```bash
+# 0) 访客/自动脚本提交（只进 KV 队列，不发布；服务端会先做一次 /healthz 指纹校验）
+curl -X POST https://dl.jiangjiangze.icu/api/servers/submit -H 'content-type: application/json'      -d '{"servers":[{"name":"某某服","url":"https://example.org","note":"来源说明"}]}'
+
+# 1) 维护者看队列 / 点通过（admin 页，或直接调函数）
+curl -H "x-admin-key: $PUBLISH_KEY" https://dl.jiangjiangze.icu/api/servers/submit   # 列队列
+curl -X POST -H "x-admin-key: $PUBLISH_KEY" -H 'content-type: application/json'      -d '{"id":"<队列id>","action":"approve"}' https://dl.jiangjiangze.icu/api/servers/review
+# 2) approve 会把这条并入清单并**作废签名**（标 unsigned），随后本机补签发布：
+node tools/sign-servers.mjs                      # 看现状（验签/未签名）
+node tools/sign-servers.mjs --sign --publish     # 重签并发布，发布后自动回读复验
+```
+
+签名规则与 `functions/api/_verify.js` 的 `canonicalPayload()` 同源：去掉 `sig`/`unsigned`，
+对象键递归按字典序、数组顺序不变、无多余空白；**`updated` 参与签名**，所以手改时间戳必然验不过。
+`review` 的响应里带 `canonicalSha256`，和本机签名器打印的 sha 一致就说明签的是同一份。
+
 ## R2 首方镜像
 
 `data/mirrors.json` 里 `r2` 条目使用模板
