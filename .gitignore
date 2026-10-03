@@ -3,3 +3,5 @@
 node_modules/
 b.txt
 h.txt
+data/manifest.json
+data/servers.json.bak*
