@@ -1,0 +1,21 @@
+{
+  "generated": "2026-10-03T04:31:12.475Z",
+  "repo": "jingjiangze/Stronghold-Protocol",
+  "releases": [
+    {
+      "tag": "shell-v2.4.1",
+      "name": "卫戍协议 Android 壳 v2.4.1（三端审计修复合并）",
+      "published_at": "2026-10-03T03:49:36Z",
+      "prerelease": false,
+      "html_url": "https://github.com/jingjiangze/Stronghold-Protocol/releases/tag/shell-v2.4.1",
+      "assets": [
+        {
+          "name": "app-release.apk",
+          "size": 543388755,
+          "url": "https://github.com/jingjiangze/Stronghold-Protocol/releases/download/shell-v2.4.1/app-release.apk",
+          "digest": "sha256:7bc7a6ba7d084e2e71df26170238e5028388517a0ea923185bc883d944014c56"
+        }
+      ]
+    }
+  ]
+}

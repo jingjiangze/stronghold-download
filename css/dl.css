@@ -1,0 +1,87 @@
+/* ==========================================================================================
+   dl.css — download page additions on top of the game client's own stylesheets.
+   Keeps the title-screen look; only layout for the mirrors row and the meta line is new.
+   ========================================================================================== */
+
+.title-login.dl-console { width: 5.8rem; }
+
+/* The game's title screen widens .btn--xl letter spacing for its one-character "开始"
+   button; a long download label needs the normal button metrics instead. */
+.dl-console .btn--xl { letter-spacing: .14em; padding-left: .48rem; padding-right: .48rem; }
+.dl-console .btn--block { width: 100%; min-width: 0; }
+.dl-console .btn--xl .btn__label { overflow: hidden; text-overflow: ellipsis; }
+.dl-mirrors .btn { flex: 0 0 auto; }
+
+/* ---- mirrors row ------------------------------------------------------------------- */
+.dl-mirrors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .1rem;
+  justify-content: center;
+  min-height: .36rem;
+}
+.dl-mirrors .dl-mirror { font-weight: 500; letter-spacing: .04em; }
+.dl-mirrors .dl-mirror .btn__label { display: inline-flex; align-items: center; gap: .05rem; }
+.dl-badge {
+  font-size: .11rem;
+  line-height: 1;
+  letter-spacing: .1em;
+  color: var(--mint-glow);
+  border: 1px solid var(--mint-a35);
+  padding: .03rem .04rem;
+  white-space: nowrap;
+}
+.dl-badge--gold { color: var(--gold-2); border-color: var(--gold-a20); }
+.dl-mirror.is-slow { opacity: .55; }
+
+/* ---- meta line --------------------------------------------------------------------- */
+.dl-meta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: .08rem .14rem;
+  font-size: .14rem;
+  color: var(--text-lo);
+  letter-spacing: .06em;
+  min-height: .2rem;
+}
+.dl-size { color: var(--text-md); }
+.dl-copy {
+  font: inherit;
+  font-size: .12rem;
+  letter-spacing: .1em;
+  color: var(--mint-500);
+  background: transparent;
+  border: 1px solid var(--mint-a35);
+  padding: .02rem .08rem;
+  cursor: pointer;
+}
+.dl-copy:hover { color: var(--mint-400); border-color: var(--mint-500); }
+.dl-copy.is-done { color: var(--gold-2); border-color: var(--gold-a20); }
+.dl-probe { font-size: .13rem; color: var(--text-dim); letter-spacing: .06em; }
+
+.dl-note {
+  margin: 0;
+  text-align: center;
+  font-size: .12rem;
+  line-height: 1.6;
+  color: var(--text-dim);
+}
+
+/* ---- portrait / narrow screens ----------------------------------------------------- */
+/* The game client is landscape-only; a download page is opened on portrait phones,
+   so allow scrolling and give buttons comfortable tap sizes instead of rotating. */
+@media (max-aspect-ratio: 12/10) {
+  html { font-size: 52px; }
+  html, body { overflow: auto; }
+  .screen.title-screen { position: relative; min-height: 100svh; padding: 1.1rem 0 1.4rem; }
+  .title-main { margin-top: 0; }
+  .title-cn { font-size: .86rem; }
+  .title-corner { display: none; }
+  .title-login.dl-console { width: min(92vw, 6.6rem); margin-top: .3rem; }
+  .dl-mirrors { gap: .12rem; }
+  .dl-mirrors .btn { height: .56rem; padding: 0 .2rem; font-size: .16rem; }
+  .title-bg__radar { left: 50%; top: 30%; width: 7.2rem; height: 7.2rem; opacity: .35; }
+  .title-bg__target { display: none; }
+}

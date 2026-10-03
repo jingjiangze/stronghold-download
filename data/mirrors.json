@@ -1,0 +1,54 @@
+{
+  "updated": "2026-10-03",
+  "note": "Mirror list for the download page. Prefix mirrors get the GitHub asset URL appended; template mirrors fill {tag}/{name}. Hosts must stay on this list; the page re-validates every built URL against it. Policy: only the CURRENT release is served — template mirrors keep just one tag in \"tags\" and old tag objects are deleted when a new version ships.",
+  "mirrors": [
+    {
+      "id": "r2",
+      "name": "R2 首方镜像",
+      "mode": "template",
+      "template": "https://weishucdn.jiangjiangze.icu/releases/{tag}/{name}",
+      "cors": true,
+      "range": true,
+      "tags": []
+    },
+    {
+      "id": "ghfast",
+      "name": "ghfast.top",
+      "mode": "prefix",
+      "prefix": "https://ghfast.top/",
+      "cors": false,
+      "range": true
+    },
+    {
+      "id": "ghproxy",
+      "name": "gh-proxy.com",
+      "mode": "prefix",
+      "prefix": "https://gh-proxy.com/",
+      "cors": true,
+      "range": true
+    },
+    {
+      "id": "llkk",
+      "name": "gh.llkk.cc",
+      "mode": "prefix",
+      "prefix": "https://gh.llkk.cc/",
+      "cors": false,
+      "range": false
+    },
+    {
+      "id": "ghproxynet",
+      "name": "ghproxy.net",
+      "mode": "prefix",
+      "prefix": "https://ghproxy.net/",
+      "cors": false,
+      "range": true
+    },
+    {
+      "id": "github",
+      "name": "GitHub 直连",
+      "mode": "direct",
+      "cors": true,
+      "range": true
+    }
+  ]
+}
