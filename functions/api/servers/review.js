@@ -1,11 +1,11 @@
 // Pages Function: POST /api/servers/review
-// Maintainer-only moderation of the visitor submission queue.
-//   action: "approve" → run a fresh health check, then append to the live list and publish
-//           "reject"  → drop the entry
-// Body: { id, action }
-// Auth: x-admin-key must match the PUBLISH_KEY secret.
+// 维护者审核队列。
+//   action: "approve" → 重新做一次健康校验 → 追加进线上清单 → **作废签名并标 unsigned**
+//           "reject"  → 丢弃该条
+// Body: { id, action }   Auth: header x-admin-key == PUBLISH_KEY secret
+// approve 的返回里带 canonicalSha256，便于确认「本机签的就是这份」。
 
-import { verifyServerHealth, validateEntries } from '../_verify.js';
+import { verifyServerHealth, payloadSha256 } from '../_verify.js';
 
 function json(data, status) {
   return new Response(JSON.stringify(data), {
@@ -56,20 +56,31 @@ export async function onRequestPost(context) {
   const liveRes = await env.R2BUCKET.get('site/servers.json');
   let live = { updated: new Date().toISOString(), servers: [] };
   if (liveRes) {
-    try { live = JSON.parse(await liveRes.text()); } catch { /* start fresh */ }
+    try { live = JSON.parse(await liveRes.text()); } catch { /* 坏了就重建骨架 */ }
   }
   const servers = Array.isArray(live.servers) ? live.servers.slice() : [];
   if (servers.some((s) => s.url === record.url)) {
     return json({ ok: true, action, id, note: '已在清单中，未重复添加' });
   }
   const entry = { id: record.id, name: record.name, url: record.url, probe: record.probe || '/healthz', enabled: true };
-  if (record.note) entry.note = record.note;
-  delete entry.verify; // verification state is not part of the published list
+  for (const k of ['note', 'region', 'tier', 'weight', 'protocol', 'app']) if (record[k] != null) entry[k] = record[k];
   servers.push(entry);
 
-  const body = JSON.stringify({ updated: new Date().toISOString(), servers }, null, 2) + '\n';
+  // 保留信封字段（v / keyId / note 等），换上新清单与时间戳，并把签名作废：
+  // 签名覆盖的是旧载荷，加了一条就必须重签，否则客户端验签会静默拒绝整份清单。
+  const next = { ...live };
+  delete next.sig;
+  next.servers = servers;
+  next.updated = new Date().toISOString();
+  next.unsigned = true;
+
+  const body = JSON.stringify(next, null, 2) + '\n';
   await env.R2BUCKET.put('site/servers.json', body, {
     httpMetadata: { contentType: 'application/json', cacheControl: 'public, max-age=60' },
   });
-  return json({ ok: true, action, id, count: servers.length });
+  return json({
+    ok: true, action, id, count: servers.length, needsSignature: true,
+    canonicalSha256: await payloadSha256(next),
+    hint: '清单已更新但签名作废；本机执行 node tools/sign-servers.mjs --sign --publish 补签',
+  });
 }

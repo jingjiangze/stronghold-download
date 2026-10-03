@@ -156,3 +156,28 @@ export function validateEntries(servers) {
 }
 
 export { validateUrl };
+
+/* ---- 清单规范化：服务端 review 与本机 tools/sign-servers.mjs 必须用同一套规则 ---- */
+export const UNSIGNED_FIELDS = ['sig', 'unsigned'];
+
+function sortDeep(v) {
+  if (Array.isArray(v)) return v.map(sortDeep);
+  if (v && typeof v === 'object') return Object.fromEntries(Object.keys(v).sort().map((k) => [k, sortDeep(v[k])]));
+  return v;
+}
+
+/**
+ * 待签载荷：剔除 sig / unsigned，对象键递归按字典序，数组顺序保持不变，无多余空白，UTF-8。
+ * `updated` 参与签名，所以「只改时间戳不改签名」在这里必然失效。
+ */
+export function canonicalPayload(doc) {
+  const copy = { ...(doc || {}) };
+  for (const k of UNSIGNED_FIELDS) delete copy[k];
+  return JSON.stringify(sortDeep(copy));
+}
+
+/** 载荷的 sha256（十六进制），给维护者在设备上核对「我要签的就是这个」。 */
+export async function payloadSha256(doc) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonicalPayload(doc)));
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
