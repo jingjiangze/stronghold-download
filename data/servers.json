@@ -1,5 +1,5 @@
 {
-  "updated": "2026-10-03T13:40:00Z",
+  "updated": "2026-10-03T14:55:00Z",
   "note": "Hot-updatable server list. Uploaded to R2 as site/servers.json; the page reads R2 first and falls back to this repository copy. Entries must be public http(s) URLs (localhost / private / reserved addresses are skipped by the page before any request).",
   "servers": [
     {
@@ -24,6 +24,14 @@
       "url": "http://106.55.43.13:3000",
       "probe": "/healthz",
       "region": "CN",
+      "enabled": true
+    },
+    {
+      "id": "weishu",
+      "name": "站长服务",
+      "url": "https://weishu.jiangjiangze.icu",
+      "probe": "/healthz",
+      "note": "官方",
       "enabled": true
     }
   ]

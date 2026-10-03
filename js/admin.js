@@ -32,7 +32,11 @@
     note: document.getElementById('ad-note'),
     err: document.getElementById('ad-err'),
     save: document.getElementById('ad-save'),
-    revert: document.getElementById('ad-revert')
+    submit: document.getElementById('ad-submit'),
+    revert: document.getElementById('ad-revert'),
+    review: document.getElementById('ad-review'),
+    pending: document.getElementById('ad-pending'),
+    reload: document.getElementById('ad-reload')
   };
 
   var base = [];   // published list as loaded
@@ -282,15 +286,130 @@
     render();
   }
 
+  /* ---- visitor submission (no key; server verifies + queues) ------------------------- */
+
+  function onSubmit() {
+    showError('');
+    var list = current();
+    if (!list.length) { showError('没有可提交的服务器'); return; }
+    if (el.submit) { el.submit.disabled = true; setText(el.submit.querySelector('.btn__label'), '校验中…'); }
+    fetch('/api/servers/submit', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ servers: list.map(function (s) {
+        return { id: s.id, name: s.name, url: s.url, probe: s.probe || '/healthz', note: s.note };
+      }) })
+    }).then(function (res) {
+      return res.json().catch(function () { return {}; }).then(function (data) {
+        return { status: res.status, data: data };
+      });
+    }).then(function (outcome) {
+      if (!outcome.data.ok) throw new Error(outcome.data.error || ('HTTP ' + outcome.status));
+      setText(el.status, '已进入待审核队列（第 ' + outcome.data.queuePosition + ' 位），维护者确认后上线');
+      if (el.note) setText(el.note, '提交成功。服务端已实测 /healthz 并确认为卫戍协议服务器；上线前由维护者审核。');
+    }).catch(function (err) {
+      showError('提交失败：' + (err && err.message ? err.message : '网络'));
+    }).finally(function () {
+      if (el.submit) { el.submit.disabled = false; setText(el.submit.querySelector('.btn__label'), '提交到公共清单'); }
+    });
+  }
+
+  /* ---- maintainer review queue ------------------------------------------------------- */
+
+  function pendingRow(record) {
+    var div = document.createElement('div');
+    div.className = 'sv-row';
+
+    var dot = document.createElement('span');
+    dot.className = 'sv-dot';
+    div.appendChild(dot);
+
+    var main = document.createElement('div');
+    main.className = 'sv-main';
+    var name = document.createElement('span');
+    name.className = 'sv-name';
+    name.textContent = record.name;
+    var host = document.createElement('span');
+    host.className = 'sv-host';
+    host.textContent = record.url + (record.note ? ' · ' + record.note : '');
+    main.appendChild(name);
+    main.appendChild(host);
+    div.appendChild(main);
+
+    var meta = document.createElement('span');
+    meta.className = 'sv-ms';
+    meta.textContent = 'rooms ' + (record.verify && record.verify.rooms != null ? record.verify.rooms : '—');
+    div.appendChild(meta);
+
+    var approve = document.createElement('button');
+    approve.type = 'button';
+    approve.className = 'btn btn--primary btn--sm admin-approve';
+    var approveLabel = document.createElement('span');
+    approveLabel.className = 'btn__label';
+    approveLabel.textContent = '通过';
+    approve.appendChild(approveLabel);
+    approve.addEventListener('click', function () { review(record.id, 'approve', approveLabel); });
+    div.appendChild(approve);
+
+    var reject = document.createElement('button');
+    reject.type = 'button';
+    reject.className = 'sv-del';
+    reject.textContent = '拒绝';
+    reject.addEventListener('click', function () { review(record.id, 'reject', reject); });
+    div.appendChild(reject);
+    return div;
+  }
+
+  function review(id, action, node) {
+    var old = node.textContent;
+    node.textContent = '…';
+    fetch('/api/servers/review', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-admin-key': publishKey() },
+      body: JSON.stringify({ id: id, action: action })
+    }).then(function (res) {
+      return res.json().catch(function () { return {}; }).then(function (data) { return { status: res.status, data: data }; });
+    }).then(function (outcome) {
+      if (!outcome.data.ok) throw new Error(outcome.data.error || ('HTTP ' + outcome.status));
+      loadPublished().then(function () { render(); loadQueue(); });
+    }).catch(function (err) {
+      node.textContent = old;
+      showError('审核操作失败：' + (err && err.message ? err.message : '网络'));
+    });
+  }
+
+  function loadQueue() {
+    var key = publishKey();
+    if (!key) { el.review.hidden = true; return; }
+    fetch('/api/servers/submit', { headers: { 'x-admin-key': key } })
+      .then(function (res) { return res.ok ? res.json() : { ok: false }; })
+      .then(function (data) {
+        if (!data.ok || !Array.isArray(data.pending)) { el.review.hidden = true; return; }
+        el.review.hidden = false;
+        el.pending.textContent = '';
+        if (!data.pending.length) {
+          var empty = document.createElement('span');
+          empty.className = 'sv-host';
+          empty.textContent = '队列为空';
+          el.pending.appendChild(empty);
+          return;
+        }
+        data.pending.forEach(function (record) { el.pending.appendChild(pendingRow(record)); });
+      }).catch(function () { el.review.hidden = true; });
+  }
+
   /* ---- boot -------------------------------------------------------------------------- */
 
   function boot() {
     if (el.form) el.form.addEventListener('submit', onAdd);
     if (el.save) el.save.addEventListener('click', onPublish);
+    if (el.submit) el.submit.addEventListener('click', onSubmit);
     if (el.revert) el.revert.addEventListener('click', onRevert);
+    if (el.reload) el.reload.addEventListener('click', loadQueue);
     loadPublished().then(function () {
       restoreDraft();
       render();
+      loadQueue();
     }).catch(function () {
       setText(el.status, '线上清单加载失败（可离线编辑）');
       restoreDraft();

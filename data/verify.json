@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "app": "0.1.0",
+  "source": "sganggs/Stronghold-Protocol",
+  "sourceFile": "shared/constants.js",
+  "recordedAt": "2026-10-03",
+  "note": "Expected /healthz identity fields for 'this project's server' verification. Update when the upstream protocol version changes."
+}

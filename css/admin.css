@@ -76,6 +76,17 @@
 }
 .admin-actions { display: flex; gap: .1rem; flex-wrap: wrap; }
 
+/* ---- review queue ------------------------------------------------------------------ */
+.admin-review {
+  display: flex;
+  flex-direction: column;
+  gap: .1rem;
+  padding-top: .12rem;
+  border-top: 1px solid var(--line);
+}
+.admin-review .sv-ms { flex: 0 0 auto; font-size: .12rem; color: var(--text-dim); }
+.admin-approve { flex: 0 0 auto; }
+
 /* ---- portrait --------------------------------------------------------------------- */
 @media (max-aspect-ratio: 12/10) {
   .admin-panel { width: min(94vw, 8.4rem); }

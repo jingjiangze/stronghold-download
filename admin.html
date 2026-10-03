@@ -103,12 +103,22 @@
           <p class="admin-err" id="ad-err" hidden></p>
           <div class="admin-actions">
             <button type="submit" class="btn btn--primary btn--sm"><span class="btn__label">添加服务器</span></button>
-            <button type="button" class="btn btn--secondary btn--sm" id="ad-save" disabled><span class="btn__label">保存并发布</span></button>
+            <button type="button" class="btn btn--primary btn--sm" id="ad-submit"><span class="btn__label">提交到公共清单</span></button>
+            <button type="button" class="btn btn--secondary btn--sm" id="ad-save" disabled><span class="btn__label">维护者发布</span></button>
             <button type="button" class="btn btn--ghost btn--sm" id="ad-revert"><span class="btn__label">放弃修改</span></button>
           </div>
         </form>
 
-        <p class="dl-note" id="ad-note">修改先在本地暂存，「保存并发布」会写入线上清单（需要发布密钥）。没有密钥时改动仅保存在本机。</p>
+        <div class="admin-review" id="ad-review" hidden>
+          <div class="servers-head">
+            <span class="micro micro--mint">待审核队列</span>
+            <button type="button" class="btn btn--ghost btn--sm" id="ad-reload"><span class="btn__label">刷新</span></button>
+          </div>
+          <div class="admin-list" id="ad-pending"></div>
+        </div>
+
+        <p class="dl-note" id="ad-note">「提交到公共清单」无需密钥：会先由服务端实测该地址的 /healthz，
+          确认是卫戍协议服务器后进入待审核队列，由维护者确认后上线；「维护者发布」需要密钥。</p>
         <p class="dl-links">
           <a href="./index.html">下载客户端</a>
           <span class="dl-links__sep">·</span>
