@@ -1,17 +1,27 @@
 // Pages Function: GET /api/download/<tag>/<file>
 // Counted download redirect for the download page's primary button.
 //
-// Flow: validate the request against a strict allowlist (tag/file patterns, https R2 or
-// GitHub hosts only, no private/loopback targets) -> resolve the target (first-party R2 CDN
-// when that object exists, GitHub asset otherwise) -> increment a KV counter -> 302.
-// The counter key is `dlcount/<tag>/<file>`; totals are read by
-// /api/download/total. Users who copy the raw R2 direct link bypass the redirect, so this
-// number is a lower bound of the true total.
+// Flow: validate the request against a strict allowlist (tag/file patterns, https first-party
+// CDN / GitHub / accelerator hosts only, no private/loopback targets) -> resolve the target
+// (first-party R2 CDN only when it verifiably holds THIS build, otherwise a public
+// accelerator in front of the GitHub asset) -> increment a KV counter -> 302.
+// The counter key is `dlcount/<tag>/<file>`; totals are read by /api/download/total. Users
+// who copy the raw CDN direct link bypass the redirect, so this number is a lower bound.
+//
+// `x-download-source` on the response says which path was taken (cdn / accelerator / github)
+// so the routing decision is auditable from the client without reading this file.
 
-const ALLOWED_HOSTS = {
-  'weishucdn.jiangjiangze.icu': true,
-  'github.com': true,
-};
+import { ACCELERATORS, accelerated, apkAssetOf, cdnHasBuild, githubAsset, R2_HOST, SNAPSHOT_ID } from '../_asset.js';
+
+const ALLOWED_HOSTS = (function () {
+  const hosts = { 'github.com': true };
+  hosts[R2_HOST] = true;
+  ACCELERATORS.forEach(function (prefix) {
+    try { hosts[new URL(prefix).hostname] = true; } catch (err) { /* ignore */ }
+  });
+  return hosts;
+})();
+
 // release asset names are stable; tags are shell-v<X.Y.Z>
 const TAG_RE = /^shell-v\d+\.\d+\.\d+$/;
 const FILE_RE = /^[A-Za-z0-9._-]+$/;
@@ -23,35 +33,34 @@ function json(data, status) {
   });
 }
 
-function githubAsset(tag, file) {
-  return 'https://github.com/jingjiangze/Stronghold-Protocol/releases/download/' + tag + '/' + file;
-}
-
-function r2Asset(tag) {
-  // Object keys keep the leading "v" of the shell tag: apk/stronghold-v2.8.0.apk.
-  return 'https://weishucdn.jiangjiangze.icu/apk/stronghold-' + tag.replace(/^shell-/, '') + '.apk';
-}
-
-/** A release published minutes ago is not on the CDN yet (the mirror upload lags), and the
- *  edge caches a 404 at that key for hours, so the probe carries a unique cache-buster.
- *  Missing object -> serve the GitHub asset: an older-but-working link is worse than a
- *  slower-but-correct one, and a 404 is worse than both. */
-async function resolveTarget(tag, file) {
-  if (file !== 'app-release.apk') return githubAsset(tag, file);
-  const r2 = r2Asset(tag);
+/** The release asset size for `tag`, from the KV snapshot written by /api/latest. Zero means
+ *  "we cannot verify what the CDN object contains" — which is treated as not usable. */
+async function expectedSize(env, tag) {
   try {
-    const probe = await fetch(r2 + '?cb=' + Date.now().toString(36) + Math.random().toString(36).slice(2), {
-      method: 'HEAD',
-      cf: { cacheTtl: 0, cacheEverything: false },
-      signal: AbortSignal.timeout(4000),
-    });
-    if (probe.ok) return r2;
-  } catch (err) { /* unreachable CDN: GitHub asset is the honest fallback */ }
-  return githubAsset(tag, file);
+    const raw = await env.SERVER_REVIEW.get(SNAPSHOT_ID);
+    const snap = raw ? JSON.parse(raw) : null;
+    if (!snap || snap.tag_name !== tag) return 0;
+    const apk = apkAssetOf(snap);
+    return (apk && apk.size) || 0;
+  } catch (err) {
+    return 0;
+  }
+}
+
+async function resolveTarget(tag, file, env) {
+  const gh = githubAsset(tag, file);
+  if (file !== 'app-release.apk') return { url: gh, source: 'github', reason: 'not-apk' };
+
+  const cdn = await cdnHasBuild(tag, await expectedSize(env, tag));
+  if (cdn.ok) return { url: cdn.url, source: 'cdn', reason: cdn.reason };
+
+  const acc = await accelerated(gh);
+  if (acc.ok) return { url: acc.url, source: 'accelerator', reason: cdn.reason };
+  return { url: gh, source: 'github', reason: cdn.reason };
 }
 
 export async function onRequestGet(context) {
-  const { request, env } = context;
+  const { env } = context;
   // [[path]] params arrive as an array of segments, not a joined string.
   const rawPath = context.params && context.params.path;
   const parts = Array.isArray(rawPath) ? rawPath : String(rawPath || '').split('/').filter(Boolean);
@@ -70,9 +79,9 @@ export async function onRequestGet(context) {
     return json({ ok: false, error: 'invalid tag or file' }, 400);
   }
 
-  const target = await resolveTarget(tag, file);
+  const chosen = await resolveTarget(tag, file, env);
   let parsed;
-  try { parsed = new URL(target); } catch { return json({ ok: false, error: 'bad target' }, 500); }
+  try { parsed = new URL(chosen.url); } catch { return json({ ok: false, error: 'bad target' }, 500); }
   if (parsed.protocol !== 'https:' || !ALLOWED_HOSTS[parsed.hostname]) {
     return json({ ok: false, error: 'target not allowed' }, 500);
   }
@@ -86,5 +95,13 @@ export async function onRequestGet(context) {
     await env.SERVER_REVIEW.put('dlcount/total', String(total + 1));
   } catch { /* counter is best-effort */ }
 
-  return Response.redirect(parsed.href, 302);
+  return new Response(null, {
+    status: 302,
+    headers: {
+      location: chosen.url,
+      'cache-control': 'no-store',
+      'x-download-source': chosen.source,
+      'x-download-reason': chosen.reason || '',
+    },
+  });
 }

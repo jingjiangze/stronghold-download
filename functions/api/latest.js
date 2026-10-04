@@ -12,8 +12,9 @@
 //
 // No request input reaches the upstream URL: repo and endpoint are fixed constants.
 
+import { apkAssetOf, cdnHasBuild, SNAPSHOT_ID } from './_asset.js';
+
 const LIST_URL = 'https://api.github.com/repos/jingjiangze/Stronghold-Protocol/releases?per_page=100';
-const SNAPSHOT_ID = 'latest-release';
 const SNAPSHOT_REFRESH_MS = 30 * 60 * 1000;
 const FRESH_MS = 5 * 60 * 1000;
 const STALE_KEEP_MS = 24 * 60 * 60 * 1000;
@@ -104,10 +105,15 @@ export async function onRequestGet(context) {
 
   const fetched = await fetchLatest(env);
   if (fetched) {
+    // Tell the page whether the first-party CDN can serve this exact build, so it can be
+    // honest about the download source instead of silently falling back to GitHub.
+    const apk = apkAssetOf(fetched.release);
+    const cdn = await cdnHasBuild(fetched.release.tag_name, apk && apk.size);
     const payload = Object.assign({}, fetched.release, {
       _cachedAt: Date.now(),
       _stale: false,
       _ghDownloads: fetched.ghDownloads,
+      _cdn: cdn,
     });
     waitUntil(cache.put(key, respond(payload, STALE_KEEP_MS / 1000)));
     waitUntil(writeSnapshot(env, payload));

@@ -33,7 +33,14 @@
 
   var state = {
     release: null, asset: null, mirrors: [], measured: {}, primaryMirrorId: null,
-    versionSuffix: '', ghDownloads: null
+    versionSuffix: '', ghDownloads: null, cdn: null
+  };
+
+  var CDN_REASON = {
+    missing: '尚未上传到首方 CDN',
+    'size-mismatch': 'CDN 上的同名字节数与本版本资产不符',
+    'size-unknown': '无法校验 CDN 上的构建',
+    'probe-failed': 'CDN 探测超时'
   };
 
   /* ---- helpers --------------------------------------------------------------------- */
@@ -102,6 +109,7 @@
       var latest = normalizeRelease(rel);
       if (!hasApk(latest)) return null;
       if (typeof rel._ghDownloads === 'number') state.ghDownloads = rel._ghDownloads;
+      state.cdn = rel._cdn || null;
       state.versionSuffix = rel._stale ? '（缓存版本）' : '';
       return latest;
     }).catch(function () { return null; }).then(function (fromEdge) {
@@ -276,6 +284,13 @@
     setText(el.version, '最新版 ' + release.tag + state.versionSuffix);
     setText(el.size, fmtMB(asset.size));
     setText(el.primaryLabel, '下载 Android 客户端');
+
+    // Be explicit when the primary button cannot use the first-party CDN: the fallback is
+    // slower by design, and silence here is what made "slow download" undiagnosable.
+    if (state.cdn && state.cdn.ok === false) {
+      setText(el.note, '首方 CDN ' + (CDN_REASON[state.cdn.reason] || '暂不可用') +
+        ' · 主按钮改走公共加速器，也可点上方镜像按钮换源');
+    }
 
     if (asset.digest && el.hash) {
       el.hash.hidden = false;
