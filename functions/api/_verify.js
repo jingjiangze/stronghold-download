@@ -4,10 +4,9 @@
 // JSON body against the identity fields recorded in data/verify.json (sourced from the
 // upstream repo sganggs/Stronghold-Protocol, shared/constants.js).
 
-const VERIFY = {
-  version: 1,
-  app: '0.1.0',
-};
+// 只有协议号（PROTOCOL_VERSION，上游 shared/constants.js）参与门禁；
+// 发布号（APP_VERSION）一律只记录不判定 —— 上游一发新版，写死版本会把已升级的好服集体误杀。
+const VERIFY = { version: 1 };
 
 const PRIVATE_V4 = [/^127\./, /^10\./, /^192\.168\./, /^169\.254\./, /^0\./,
                     /^172\.(1[6-9]|2[0-9]|3[01])\./];
@@ -103,14 +102,15 @@ export async function verifyServerHealth(origin, probe) {
   // ("0.1.0") in `version` and carries a git `build` hash instead.
   let rooms = null;
   let humans = null;
-  const isWorkers = body.runtime === 'cloudflare' || body.version === VERIFY.app;
+  let app = body.app || (typeof body.version === 'string' ? body.version : null);
+  // workers 版把发布号字符串放在 version 里（node 版是协议号数字），靠类型就能分辨，不需要版本白名单
+  const isWorkers = body.runtime === 'cloudflare' || typeof body.version === 'string';
   if (isWorkers) {
     if (typeof body.build !== 'string' || !/^[0-9a-f]{6,40}$/i.test(String(body.build))) {
       reasons.push('缺少有效的 build 哈希');
     }
   } else {
     if (body.version !== VERIFY.version) reasons.push(`version 不是 ${VERIFY.version}`);
-    if (body.app !== VERIFY.app) reasons.push(`app 不是 ${VERIFY.app}`);
     for (const field of HEALTH_FIELDS) {
       const value = body[field];
       if (typeof value !== 'number' || !Number.isFinite(value)) reasons.push(`缺少字段 ${field}`);
@@ -121,7 +121,7 @@ export async function verifyServerHealth(origin, probe) {
   if (reasons.length) return fail(cacheKey, `不是卫戍协议服务器（${reasons.join('、')}）`);
 
   cache.set(cacheKey, { ok: true, at: Date.now() });
-  return { ok: true, elapsedMs: Date.now() - started, rooms, humans, variant: isWorkers ? 'workers' : 'node' };
+  return { ok: true, elapsedMs: Date.now() - started, rooms, humans, app, variant: isWorkers ? 'workers' : 'node' };
 }
 
 function fail(cacheKey, error) {

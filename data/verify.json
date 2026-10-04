@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "app": "0.1.0",
+  "app": "0.1.1",
   "source": "sganggs/Stronghold-Protocol",
   "sourceFile": "shared/constants.js",
-  "recordedAt": "2026-10-03",
-  "note": "Expected /healthz identity fields for 'this project's server' verification. Update when the upstream protocol version changes."
+  "recordedAt": "2026-10-04",
+  "note": "Only `version` (PROTOCOL_VERSION) gates verification. `app` (APP_VERSION) is recorded for display/debugging and intentionally NOT a gate — bump it here when you want the current upstream release number on record."
 }
