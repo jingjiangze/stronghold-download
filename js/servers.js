@@ -434,7 +434,7 @@
       var hostVer = document.createElement('span');
       hostVer.className = 'sv-hostver';
       hostVer.title = '服务器当前版本（不强制，仅标注）';
-      hostVer.textContent = ' · ' + versionText;
+      hostVer.textContent = versionText;
       host.appendChild(hostVer);
     }
 

@@ -131,6 +131,7 @@
   white-space: nowrap;
 }
 .sv-hostver {
+  margin-left: .05rem;
   color: var(--text-dim);
   letter-spacing: .04em;
 }
@@ -191,7 +192,10 @@
 @media (max-aspect-ratio: 12/10) {
   .servers-main { margin: .5rem 0 .9rem; }
   .servers-panel { width: min(94vw, 7.6rem); }
-  .sv-meter { display: none; }
+  /* the load meter and the version label are the two things a phone user checks first, so
+     they stay on narrow screens: the meter gets a shorter track, the version its own line */
+  .sv-meter { flex: 0 0 .95rem; height: .12rem; }
+  .sv-hostver { display: block; margin-left: 0; font-size: .14rem; color: var(--text-md); }
   .sv-ms { flex: 0 0 1.05rem; font-size: .15rem; }
   .sv-row { padding: .14rem .12rem; }
   .sv-modal__card .admin-grid { grid-template-columns: 1fr; }
