@@ -46,6 +46,19 @@
   letter-spacing: .06em;
   min-height: .2rem;
 }
+
+.dl-fork {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: .1rem;
+  flex-wrap: wrap;
+}
+.dl-fork__hint {
+  font-size: .11rem;
+  letter-spacing: .04em;
+  color: var(--text-dim);
+}
 .dl-size { color: var(--text-md); }
 .dl-downloads { color: var(--gold); letter-spacing: .08em; }
 .dl-copy {
