@@ -160,6 +160,9 @@
   function loadVerified() {
     return fetchJson(VERIFIED_URL).then(function (doc) {
       var hidden = applyVerified(doc);
+      // Cache occupancy (rooms/humans/version) alongside the latency cache so the page
+      // renders complete rows from the local snapshot even before the network answers.
+      try { saveOccupancy(doc.occupancy, doc.updated); } catch (err) { /* ignore */ }
       if (hidden) {
         setText(el.note, hidden + ' 台服务器因服务端校验未通过已暂时隐藏（可在恢复后自动重新展示）。');
       }
@@ -179,6 +182,31 @@
   }
 
   /* ---- result cache (localStorage) --------------------------------------------------- */
+
+  var OCC_CACHE_KEY = 'sp.serverOccupancyCache.v1';
+
+  function loadOccupancyCache() {
+    try {
+      var raw = localStorage.getItem(OCC_CACHE_KEY);
+      if (!raw) return null;
+      var doc = JSON.parse(raw);
+      if (!doc || typeof doc.occupancy !== 'object') return null;
+      if (Date.now() - (doc.at || 0) > CACHE_TTL_MS) return null;
+      return doc;
+    } catch (err) { return null; }
+  }
+
+  function saveOccupancy(occupancy, updated) {
+    if (!occupancy || typeof occupancy !== 'object') return;
+    localStorage.setItem(OCC_CACHE_KEY, JSON.stringify({ at: Date.now(), updated: updated || null, occupancy: occupancy }));
+  }
+
+  function applyOccupancyCache(doc) {
+    if (!doc) return false;
+    var hidden = applyVerified(doc);
+    state.fromCache = true;
+    return hidden >= 0;
+  }
 
   function loadCache() {
     try {
@@ -563,6 +591,9 @@
     loadList().then(function (data) {
       prepare(data);
       var hits = applyCache(loadCache());
+      // Occupancy/version from the local cache first (same as latency), then the live
+      // verified.json refreshes it in the background.
+      applyOccupancyCache(loadOccupancyCache());
       render();
       if (!state.servers.length) {
         setText(el.note, '清单为空或不可用，请稍后再试。');
