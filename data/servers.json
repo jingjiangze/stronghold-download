@@ -1,5 +1,5 @@
 {
-  "updated": "2026-10-03T10:27:49Z",
+  "updated": "2026-10-04T05:43:08.318Z",
   "servers": [
     {
       "id": "xiaolubao",
@@ -7,20 +7,14 @@
       "url": "https://game.xiaolubao.com",
       "probe": "/healthz",
       "enabled": true,
-      "note": "社区服",
-      "tier": 0,
-      "weight": 100
+      "note": "社区服"
     },
     {
       "id": "anciusland",
       "name": "安修斯之地",
       "url": "https://wei.anciusland.work",
       "probe": "/healthz",
-      "enabled": true,
-      "tier": 0,
-      "weight": 100,
-      "protocol": 1,
-      "app": "0.1.0"
+      "enabled": true
     },
     {
       "id": "tx-106-55",
@@ -28,11 +22,7 @@
       "url": "http://106.55.43.13:3000",
       "probe": "/healthz",
       "enabled": true,
-      "note": "社区服 · B站 13:30 访客 M1尾翼稳定脱壳穿甲弹 自建云服务器",
-      "tier": 0,
-      "weight": 100,
-      "protocol": 1,
-      "app": "0.1.0"
+      "note": "社区服 · B站 13:30 访客 M1尾翼稳定脱壳穿甲弹 自建云服务器"
     },
     {
       "id": "weishu",
@@ -40,11 +30,7 @@
       "url": "https://weishu.jiangjiangze.icu",
       "probe": "/healthz",
       "enabled": true,
-      "note": "官方",
-      "tier": 10,
-      "weight": 100,
-      "protocol": 1,
-      "app": "0.1.0"
+      "note": "官方"
     },
     {
       "id": "lunar",
@@ -52,9 +38,7 @@
       "url": "https://stronghold.lunar.ag",
       "probe": "/healthz",
       "enabled": true,
-      "note": "社区服 · CF Workers 版（BBleae fork）",
-      "tier": 0,
-      "weight": 100
+      "note": "社区服 · CF Workers 版（BBleae fork）"
     },
     {
       "id": "rinko",
@@ -62,9 +46,7 @@
       "url": "https://xn--rlr.rinko.ai",
       "probe": "/healthz",
       "enabled": true,
-      "note": "社区服 · CF Workers 版（Slapq fork）",
-      "tier": 0,
-      "weight": 100
+      "note": "社区服 · CF Workers 版（Slapq fork）"
     },
     {
       "id": "starst",
@@ -72,8 +54,7 @@
       "url": "https://game.starst.site",
       "probe": "/healthz",
       "enabled": true,
-      "note": "社区服 · B站 14:19 Starst星尘子 自建；文字/语音交流站 https://www",
-      "region": "CN"
+      "note": "社区服 · B站 14:19 Starst星尘子 自建；文字/语音交流站 https://www"
     },
     {
       "id": "mus5dhdzcc2e3b29",
@@ -84,25 +65,38 @@
     },
     {
       "id": "rincynar",
-      "name": "�ֹ��Ե�",
+      "name": "RinCynar服",
       "url": "https://ak.rincynar.top",
       "probe": "/healthz",
       "enabled": true,
-      "note": "scout ������"
+      "note": "社区服 · B站 10-03 由 fork README 自动发现"
     },
     {
-      "id": "wei-worker",
-      "name": "卫 · Workers",
-      "url": "https://stronghold-wei.yuehuibu5561.workers.dev",
-      "probe": "/healthz",
-      "region": "EDGE",
-      "note": "官方 Workers 部署",
+      "id": "raiya",
+      "name": "raiya服",
+      "url": "https://game.rainya.me/play",
+      "probe": "/api/status",
       "enabled": true,
-      "tier": 5,
-      "weight": 100
+      "note": "社区服 · B站 10-04 10:00 理智励志荔枝离职 自建"
+    },
+    {
+      "id": "linxia",
+      "name": "临夏服",
+      "url": "https://wei.linxia.dev",
+      "probe": "/healthz",
+      "enabled": true,
+      "note": "社区服 · 魔改带 redis 回溯 · B站 临夏俨然"
+    },
+    {
+      "id": "mutea3l169ce06ee",
+      "name": "misyra服",
+      "url": "https://game.misyra.com/play",
+      "probe": "/api/status",
+      "enabled": true,
+      "note": "社区服 · B站 10-04 清单维护者直供 · /healthz 被网关 403，客户端挂 /"
     }
   ],
-  "v": 1,
   "keyId": "sp-2026-10",
-  "sig": "h5V+hNyP6GkOduVwGgR9Hac/sk3O0CpPU5TkS7ra4LXRoCpGaC9ph3Qccgne5GkhFSCCR2k48As1KiV9TAOpCA=="
+  "v": 1,
+  "sig": "d/fXFE1TUh2uHNreyEeNXGx0zYOs5oUIo7Tfb3DAvsVlrQxQkjXtFlJjpeR3DCZr4K8akqw5QUoyLq/adnzrCw=="
 }
