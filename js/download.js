@@ -426,6 +426,22 @@
     }
   }
 
+  /** QQ group number: tap opens the QQ join page; 复制 copies the number. */
+  function wireQqFooter() {
+    var copyBtn = document.getElementById('dl-qq-copy');
+    if (!copyBtn) return;
+    var done = function () {
+      copyBtn.classList.add('is-done');
+      var old = copyBtn.textContent;
+      copyBtn.textContent = '已复制';
+      setTimeout(function () { copyBtn.classList.remove('is-done'); copyBtn.textContent = old; }, 1600);
+    };
+    copyBtn.addEventListener('click', function () { copyText('293032860', done); });
+    copyBtn.addEventListener('keydown', function (ev) {
+      if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); copyText('293032860', done); }
+    });
+  }
+
   function wireHashButton() {
     if (!el.hash) return;
     el.hash.addEventListener('click', function () {
@@ -494,6 +510,7 @@
   function start() {
     wireHashButton();
     wireAria2Button();
+    wireQqFooter();
     fetchDownloadTotal();
 
     fetchJson('./data/mirrors.json', 8000).then(function (data) {

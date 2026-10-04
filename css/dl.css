@@ -109,11 +109,23 @@
   letter-spacing: .06em;
   color: var(--text-lo);
 }
-.dl-footer__item b {
+.dl-footer__item b,
+.dl-footer__qq {
   color: var(--gold);
   font-weight: 700;
   letter-spacing: .1em;
+  text-decoration: none;
 }
+.dl-footer__qq:hover { color: var(--gold-2); text-decoration: underline; }
+.dl-footer__copy {
+  margin-left: .08rem;
+  font-size: .11rem;
+  color: var(--text-lo);
+  cursor: pointer;
+  border-bottom: 1px dashed var(--line-3);
+}
+.dl-footer__copy:hover { color: var(--mint-500); }
+.dl-footer__copy.is-done { color: var(--mint-500); }
 .dl-disclaimer {
   margin: 0;
   font-size: .11rem;
