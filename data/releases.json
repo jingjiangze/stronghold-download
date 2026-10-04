@@ -1,21 +1,20 @@
 {
-  "generated": "2026-10-03T14:44:35.330Z",
+  "generated": "2026-10-04T03:27:42.595Z",
   "repo": "jingjiangze/Stronghold-Protocol",
   "releases": [
     {
-      "tag": "shell-v2.7.5",
-      "name": "卫戍协议 Android 壳 v2.7.5（离线服务 P0 修复 · 启动层重构）",
-      "published_at": "2026-10-03T13:20:44Z",
+      "tag": "shell-v2.7.6",
+      "name": "卫戍协议 Android 壳 v2.7.6（内容升 v0.1.1 · 清单切服 · 上游先行）",
+      "published_at": "2026-10-04T03:17:46Z",
       "prerelease": false,
-      "html_url": "https://github.com/jingjiangze/Stronghold-Protocol/releases/tag/shell-v2.7.5",
-      "body": "v2.7.5：离线服务 P0 修复——启动层重构（专用入口 + 显式 startServer + 随机端口 + 握手 + 真实状态机）。\n\n**P0 根因（本地复现实锤）**：壳的启动链是 `libnode.so -e \"bootstrap → import(server/index.js)\"`，而 upstream 的 `isMain()` 用 `process.argv[1]` 判断入口——`-e` 动态导入下 `argv[1]` 是 undefined → **isMain() 恒为 false → main() 从未执行 → Node 空转退出** → healthz 永不通 → 60 秒超时。离线服务**从未真正跑通过**（v2.4 审计文档当时已记录「v2.3 未过真机」，但只修了进程存活验证，没修 main() 不执行这个根因）。连带：本机房主的 presence 上报、房间枚举、dc-bridge 全在 main() 里——全部从未运行。\n\n**修复（借鉴 Fuhua 启动模型，upstream 源码零改动）**：\n- 新增专用入口 `server/android-main.mjs`（随包 extra）：读 launch.json → **显式调用导出的 `startServer()`**（正是 upstream 测试自己用的编程接口）→ 轮询 /healthz → 原子写 handshake.json → SIGTERM 优雅退出；presence 挂载也显式执行（补上从未运行的那段）。\n- **端口 0**：OS 分配空闲端口，彻底消除 EADDRINUSE 失败模式；handshake.json 携带真实端口，HostService 监听线程采纳它（`HostParams.port` 降级为兜底值）。\n- **真实状态机**：`isUp()` 拆为 STARTING/READY/FAILED——只有 handshake(ok)+Node 存活才是 READY；onDestroy 重置；「离线服务」二次点击能真正重启。\n- upstream 的 `if (isMain()) main()` 原样保留（CLI/测试不受影响）；launch.json 新增 handshake/upstreamEntry 字段（Java 侧 argv 仍全字面量，安全扫描合规）。\n\n**Hub v1 收尾**：`currentServerId()` 对本机 127.0.0.1 返回 `sp-phone-host`（与 NodeRunner 的 SP_SERVER_ID 对齐）——此前恒为空导致客户端见证（/observe）从未上报；现在手机房主的房间 presence+observe 双通道进入目录，其他设备 resolveInvite 可跨服发现。\n\nAPK 直链 https://weishucdn.jiangjiangze.icu/apk/stronghold-v2.7.5.apk",
+      "html_url": "https://github.com/jingjiangze/Stronghold-Protocol/releases/tag/shell-v2.7.6",
+      "body": "v2.7.6：内容轴升 v0.1.1（热分发含素材增量）+ 清单切服（延迟胶囊直开服务器面板、人/房/当前/版本不同徽标、对局中禁切）+ app 版本软门禁（仅协议硬拦）+ 上游先行（assets.js 回归上游、补丁引擎 CRLF 归一、文档清单）。\n- 首次启动即内嵌 v0.1.1，可直接进 v0.1.0 服务器（仅协议硬拦）。\n- 行动观察（observe）改为事件驱动 + 页面隐藏暂停。",
       "assets": [
         {
-          "name": "stronghold-v2.7.5.apk",
-          "size": null,
-          "url": "https://weishucdn.jiangjiangze.icu/apk/stronghold-v2.7.5.apk",
-          "digest": null,
-          "external": true
+          "name": "app-release.apk",
+          "size": 521171605,
+          "url": "https://github.com/jingjiangze/Stronghold-Protocol/releases/download/shell-v2.7.6/app-release.apk",
+          "digest": "sha256:db54036be2974c35bd8a2a04670fe7ac5ecca5b4acbacb040653c7c991bbbe06"
         }
       ]
     }

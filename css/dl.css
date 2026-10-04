@@ -100,6 +100,28 @@
 .dl-links a:hover { color: var(--gold-2); border-bottom-color: var(--gold-a20); }
 .dl-links__sep { margin: 0 .06rem; opacity: .6; }
 
+/* ---- QQ group + disclaimer (bottom of the panel) ----------------------------------- */
+.dl-footer {
+  display: flex;
+  justify-content: center;
+  margin: 0;
+  font-size: .13rem;
+  letter-spacing: .06em;
+  color: var(--text-lo);
+}
+.dl-footer__item b {
+  color: var(--gold);
+  font-weight: 700;
+  letter-spacing: .1em;
+}
+.dl-disclaimer {
+  margin: 0;
+  font-size: .11rem;
+  line-height: 1.6;
+  color: var(--text-dim);
+  text-align: left;
+}
+
 /* ---- portrait / narrow screens ----------------------------------------------------- */
 /* The game client is landscape-only; a download page is opened on portrait phones,
    so allow scrolling and give buttons comfortable tap sizes instead of rotating. */
