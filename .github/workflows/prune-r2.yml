@@ -53,11 +53,12 @@ jobs:
             secret_access_key="$R2_SECRET_KEY" endpoint="$R2_ENDPOINT" acl=private \
             --non-interactive > /dev/null
 
-          # Filter in the shell, not with --include: rclone's filter semantics silently
-          # matched nothing here on the first run (log said "found 0" with 2 APKs present).
-          mapfile -t keys < <(rclone lsf "r2/$BUCKET/apk/" --files-only 2>/dev/null \
-            | grep -E '^stronghold-v[0-9][0-9.]*\.apk$' \
-            | sed 's|^|apk/|')
+          # rclone remote syntax is "remote:bucket/path" — a slash after the remote name makes
+          # it a local path, which listed nothing and (with stderr suppressed) looked like an
+          # empty bucket. Keep stderr visible and fail loudly if the listing itself fails.
+          rclone lsf "r2:$BUCKET/apk/" --files-only > /tmp/all.txt
+          grep -E '^stronghold-v[0-9][0-9.]*\.apk$' /tmp/all.txt | sed 's|^|apk/|' > /tmp/apks.txt || true
+          mapfile -t keys < /tmp/apks.txt
           echo "APK objects found: ${#keys[@]} (keep $KEEP)"
           printf '%s\n' "${keys[@]:-}" | sed 's/^/  /'
 
@@ -71,8 +72,8 @@ jobs:
           while read -r v; do
             [ -n "$v" ] || continue
             echo "deleting apk/stronghold-v$v.apk"
-            rclone deletefile "r2/$BUCKET/apk/stronghold-v$v.apk"
+            rclone deletefile "r2:$BUCKET/apk/stronghold-v$v.apk"
           done < /tmp/stale.txt
 
           echo "remaining:"
-          rclone lsf "r2/$BUCKET/apk/" --files-only | grep -E '^stronghold-v[0-9][0-9.]*\.apk$' || true
+          rclone lsf "r2:$BUCKET/apk/" --files-only | grep -E '^stronghold-v[0-9][0-9.]*\.apk$' || true
