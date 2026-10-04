@@ -1,0 +1,23 @@
+ FETCH: https://weishucdn.jiangjiangze.icu/site/servers.json
+ FETCH: https://weishucdn.jiangjiangze.icu/site/verified.json
+ FETCH: https://stronghold.lunar.ag/healthz
+ FETCH: https://stronghold.lunar.ag/healthz
+ FETCH: https://stronghold.lunar.ag/healthz
+ FETCH: https://stronghold.lunar.ag/healthz
+ FETCH: /api/servers/verify
+OPEN1 occupancy cached: {"lunar":{"rooms":3,"humans":2,"variant":"workers","app":"0.1.0","build":"cb69252"}}
+ FETCH: https://weishucdn.jiangjiangze.icu/site/servers.json
+ FETCH: https://weishucdn.jiangjiangze.icu/site/verified.json
+OPEN2 (verified fetch fails):
+host line: stronghold.lunar.ag
+latency shown: —
+verify calls total: 2
+ FETCH: /api/servers/verify
+ FETCH: /api/servers/verify
+ FETCH: /api/servers/verify
+ FETCH: /api/servers/verify
+ FETCH: /api/servers/verify
+ FETCH: /api/servers/verify
+ FETCH: /api/servers/verify
+ FETCH: /api/servers/verify
+ FETCH: /api/servers/verify
