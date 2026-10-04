@@ -71,7 +71,7 @@ jobs:
         id: probe
         run: |
           set -euo pipefail
-          url="https://$CDN_HOST/apk/stronghold-v${{ steps.rel.outputs.version }}.apk"
+          url="https://$CDN_HOST/apk/stronghold-${{ steps.rel.outputs.version }}.apk"
           # A cache-buster is mandatory: the edge caches a 404 at that key for hours, and a
           # stale MISS would make this job skip an upload that is actually needed.
           hdr=$(curl -sI --max-time 30 "$url?cb=$(date +%s%N)" || true)
@@ -98,12 +98,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           R2_ACCESS_KEY: ${{ secrets.R2_ACCESS_KEY }}
           R2_SECRET_KEY: ${{ secrets.R2_SECRET_KEY }}
-          KEY: apk/stronghold-v${{ steps.rel.outputs.version }}.apk
+          KEY: apk/stronghold-${{ steps.rel.outputs.version }}.apk
         run: |
           set -euo pipefail
           test -n "$R2_ACCESS_KEY" && test -n "$R2_SECRET_KEY" || { echo "R2 secrets absent"; exit 1; }
 
-          gh release download "${{ steps.rel.outputs.tag }}" -R "$SRC_REPO" -n "$APK_NAME" -D ./dl
+          gh release download "${{ steps.rel.outputs.tag }}" -R "$SRC_REPO" -p "$APK_NAME" -D ./dl
           file="./dl/$APK_NAME"
           actual=$(sha256sum "$file" | cut -d' ' -f1)
           size=$(stat -c %s "$file")
