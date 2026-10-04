@@ -124,8 +124,9 @@ jobs:
             secret_access_key="$R2_SECRET_KEY" endpoint="$R2_ENDPOINT" acl=private \
             --non-interactive > /dev/null
           rclone copyto "$file" "r2:$BUCKET/$KEY" \
-            --s3-upload-cutoff 100M --s3-upload-concurrency 4 --part-size 100M \
-            --header "Content-Type:application/vnd.android.package-archive" -v
+            --header-upload "Content-Type: application/vnd.android.package-archive" \
+            --header-upload "Cache-Control: public, max-age=31536000, immutable" \
+            --s3-no-check-bucket --s3-upload-concurrency 4 --stats-one-line --stats 20s -v
 
           # Confirm what the public domain now serves, then stamp the summary.
           after=$(curl -sI --max-time 30 "https://$CDN_HOST/$KEY?cb=$(date +%s%N)" \
