@@ -51,22 +51,14 @@ async function latestWithApk() {
 const release = await latestWithApk();
 const apks = (release.assets || []).filter((a) => /\.apk$/i.test(a.name));
 const notesLink = (release.body || '').match(/https?:\/\/[^\s)\]"<>]+\.apk/i);
-// CI also mirrors every build to a predictable R2 path: apk/stronghold-<version>.apk
-// (e.g. shell-v2.7.6 -> apk/stronghold-v2.7.6.apk). Prefer it when it answers 200.
+// CI mirrors every build to a predictable R2 path: apk/stronghold-<version>.apk
+// (e.g. shell-v2.7.6 -> apk/stronghold-v2.7.6.apk) — the first-party CDN beats the
+// GitHub asset URL. The CF edge caches 404s for hours (requests made before CI finishes
+// uploading), so a naive probe can lie: always prefer the R2 link and append a
+// cache-buster stamped at generation time to sidestep any stale 404 entry.
 const version = release.tag_name.replace(/^shell-v/, '');
-const r2Link = `https://weishucdn.jiangjiangze.icu/apk/stronghold-${version}.apk`;
-let r2Ready = false;
-try {
-  // R2 answered HEAD inconsistently through some proxies; a 1-byte ranged GET is the
-  // reliable probe (404 stays 404, 200 becomes 206).
-  const probe = await fetch(r2Link, { headers: { 'user-agent': 'snapshot', range: 'bytes=0-1023' } });
-  r2Ready = probe.status === 200 || probe.status === 206;
-  try { await probe.body?.cancel(); } catch { /* body already consumed */ }
-} catch { /* unreachable: fall back */ }
-if (!apks.length && !notesLink && !r2Ready) {
-  console.error(`release ${release.tag_name} has no usable APK (asset / notes link / R2 mirror all missing)`);
-  process.exit(1);
-}
+const r2UrlWithBuster = `https://weishucdn.jiangjiangze.icu/apk/stronghold-v${version}.apk?cb=` +
+  Date.now().toString(36);
 
 const snapshot = {
   generated: new Date().toISOString(),
@@ -90,26 +82,13 @@ const snapshot = {
   ]
 };
 
-// Direct-link preference (first-party R2 CDN beats the GitHub asset URL). The notes link
-// wins if present; otherwise the predictable R2 path is used once it answers 200 — this
-// covers the window where CI has uploaded to R2 but not attached the asset to the release.
-if (r2Ready) {
-  snapshot.releases[0].assets = [{
-    name: `stronghold-${version}.apk`,
-    size: null,
-    url: r2Link,
-    digest: null,
-    external: true
-  }];
-} else if (notesLink) {
-  snapshot.releases[0].assets = [{
-    name: notesLink[0].split('/').pop().split(/[?#]/)[0] || 'app-release.apk',
-    size: null,
-    url: notesLink[0],
-    digest: null,
-    external: true
-  }];
-}
+snapshot.releases[0].assets = [{
+  name: `stronghold-v${version}.apk`,
+  size: null,
+  url: r2UrlWithBuster,
+  digest: null,
+  external: true
+}];
 
 mkdirSync(dirname(OUT), { recursive: true });
 writeFileSync(OUT, JSON.stringify(snapshot, null, 2) + '\n');
