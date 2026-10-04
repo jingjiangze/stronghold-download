@@ -70,15 +70,26 @@ export async function onRequestGet(context) {
     results.push(...settled);
   }
 
+  // An "ok" reading can still carry no numbers (variant without room stats, partial
+  // response). Overwriting the previous occupancy with that blanked the version label and
+  // the load bar for every visitor, so an empty fresh reading keeps the last informative one.
+  const hasSignal = function (o) {
+    return !!(o && (o.rooms != null || o.humans != null || o.app || o.build));
+  };
+
   for (const r of results) {
     if (r.ok) {
       valid.push(r.entry.id);
-      occupancy[r.entry.id] = {
+      const fresh = {
         rooms: r.rooms, humans: r.humans, variant: r.variant || 'node',
         // 标注服务器当前版本（node 版=协议协议号+app；workers 版=app/build 哈希）。
         // 不做版本准入——只展示，旧版/新版服务器都会列出。
         app: r.app || null, build: r.build || null,
       };
+      const prev = prevOccupancy[r.entry.id];
+      occupancy[r.entry.id] = !hasSignal(fresh) && hasSignal(prev)
+        ? Object.assign({}, prev, { stale: true })
+        : fresh;
     } else if (r.entry.direct_cn === true && !/已停用/.test(String(r.reason || ''))) {
       // 国内直连正常、Cloudflare 出口 403/超时的服务器（收录时已用第三方公开探测留证）。
       // 真实玩家从国内浏览器/客户端连接，边缘探测失败不该把它判死；仍照常展示，来源写在 note。

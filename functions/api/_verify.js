@@ -48,7 +48,16 @@ function validateUrl(raw) {
 
 /** Fetch with manual redirects; every hop is re-validated (scheme + host class). */
 async function safeFetch(url, init, redirects) {
-  const res = await fetch(url, { ...init, redirect: 'manual' });
+  let res;
+  try {
+    res = await fetch(url, { ...init, redirect: 'manual' });
+  } catch (err) {
+    // A timeout or an unreachable host must degrade to "this one server failed". Letting it
+    // reject used to abort Promise.all in servers/verify and 500 the whole round (CF 1101),
+    // so one flaky entry starved every visitor of fresh verdicts.
+    const name = (err && err.name) || 'Error';
+    return { error: name === 'TimeoutError' || name === 'AbortError' ? '探测超时' : '连接失败（' + name + '）' };
+  }
   if (res.status >= 300 && res.status < 400) {
     const location = res.headers.get('location');
     if (!location) return { error: '重定向缺少目标' };
@@ -70,11 +79,16 @@ const cache = new Map(); // in-memory per isolate; KV-free best-effort cache
 export async function verifyServerHealth(origin, probe) {
   const cacheKey = origin + (probe || '/healthz');
   const hit = cache.get(cacheKey);
+  // A cached verdict must carry the same payload as a fresh one: returning only {ok:true}
+  // used to blank rooms/humans/app for every server served from cache, and the list page
+  // then wrote an occupancy doc with no version and no load.
   if (hit && Date.now() - hit.at < CACHE_TTL_MS) {
-    return hit.ok ? { ok: true, cached: true } : { ok: false, error: hit.error, cached: true };
+    return Object.assign({ cached: true }, hit.verdict || (hit.ok ? {} : { ok: false, error: hit.error }));
   }
 
-  const target = new URL(probe || '/healthz', origin + '/');
+  let target;
+  try { target = new URL(probe || '/healthz', origin + '/'); }
+  catch { return fail(cacheKey, '地址无法解析'); }
   if (target.protocol !== 'https:' && target.protocol !== 'http:') {
     return fail(cacheKey, '仅允许 http/https');
   }
@@ -128,8 +142,10 @@ export async function verifyServerHealth(origin, probe) {
   // version passes and is only recorded for display.
   if (reasons.length) return fail(cacheKey, `不是卫戍协议服务器（${reasons.join('、')}）`);
 
-  cache.set(cacheKey, { ok: true, at: Date.now() });
-  return { ok: true, elapsedMs: Date.now() - started, rooms, humans, app, build, variant: isWorkers ? 'workers' : 'node' };
+  const verdict = { ok: true, elapsedMs: Date.now() - started, rooms, humans, app, build,
+                    variant: isWorkers ? 'workers' : 'node' };
+  cache.set(cacheKey, { ok: true, verdict, at: Date.now() });
+  return verdict;
 }
 
 function fail(cacheKey, error) {

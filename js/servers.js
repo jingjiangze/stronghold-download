@@ -138,13 +138,26 @@
 
   /* ---- server-side verification partition (valid vs quarantined) --------------------- */
 
+  /** Occupancy (rooms / humans / version) stands on its own: the localStorage snapshot stores
+   *  only {at, updated, occupancy}, and gating it behind the partition arrays made the cache
+   *  path a no-op — so a first visit showed no version label and no load bar until the
+   *  network answered. */
+  function applyOccupancy(doc) {
+    if (doc && doc.occupancy && typeof doc.occupancy === 'object') {
+      state.occupancy = doc.occupancy;
+      return true;
+    }
+    return false;
+  }
+
   function applyVerified(doc) {
-    if (!doc || !Array.isArray(doc.valid) || !Array.isArray(doc.invalid)) return 0;
+    if (!doc) return 0;
+    applyOccupancy(doc);
+    if (!Array.isArray(doc.valid) || !Array.isArray(doc.invalid)) return 0;
     var okIds = {};
     doc.valid.forEach(function (id) { okIds[id] = true; });
     var reasons = {};
     doc.invalid.forEach(function (item) { reasons[item.id] = item.reason || '校验未通过'; });
-    state.occupancy = (doc.occupancy && typeof doc.occupancy === 'object') ? doc.occupancy : {};
     var hidden = 0;
     state.servers.forEach(function (server) {
       // A published id must be in `valid` to stay visible; anything else quarantines.
