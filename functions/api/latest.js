@@ -13,7 +13,7 @@
 // No request input reaches the upstream URL: repo and endpoint are fixed constants.
 
 const LIST_URL = 'https://api.github.com/repos/jingjiangze/Stronghold-Protocol/releases?per_page=100';
-const SNAPSHOT_KEY = '***';
+const SNAPSHOT_ID = 'latest-release';
 const SNAPSHOT_REFRESH_MS = 30 * 60 * 1000;
 const FRESH_MS = 5 * 60 * 1000;
 const STALE_KEEP_MS = 24 * 60 * 60 * 1000;
@@ -70,7 +70,7 @@ async function fetchLatest(env) {
  *  window, instead of dropping back to the bundled file (which is only a cold-start floor). */
 async function readSnapshot(env) {
   try {
-    const raw = await env.SERVER_REVIEW.get(SNAPSHOT_KEY);
+    const raw = await env.SERVER_REVIEW.get(SNAPSHOT_ID);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     return parsed && parsed.tag_name ? parsed : null;
@@ -86,7 +86,7 @@ async function writeSnapshot(env, payload) {
   if (prev && prev.tag_name === payload.tag_name &&
       payload._cachedAt - (prev._cachedAt || 0) < SNAPSHOT_REFRESH_MS) return;
   try {
-    await env.SERVER_REVIEW.put(SNAPSHOT_KEY, JSON.stringify(payload));
+    await env.SERVER_REVIEW.put(SNAPSHOT_ID, JSON.stringify(payload));
   } catch (err) { /* KV is optional; the edge cache still covers this colo */ }
 }
 
