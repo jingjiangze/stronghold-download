@@ -5,7 +5,7 @@
 // Body: { id, action }   Auth: header x-admin-key == PUBLISH_KEY secret
 // approve 的返回里带 canonicalSha256，便于确认「本机签的就是这份」。
 
-import { verifyServerHealth, payloadSha256 } from '../_verify.js';
+import { canonicalUrl, payloadSha256, verifyServerHealth } from '../_verify.js';
 
 function json(data, status) {
   return new Response(JSON.stringify(data), {
@@ -59,7 +59,8 @@ export async function onRequestPost(context) {
     try { live = JSON.parse(await liveRes.text()); } catch { /* 坏了就重建骨架 */ }
   }
   const servers = Array.isArray(live.servers) ? live.servers.slice() : [];
-  if (servers.some((s) => s.url === record.url)) {
+  const mine = canonicalUrl(record.url);
+  if (servers.some((s) => canonicalUrl(s.url) === mine)) {
     return json({ ok: true, action, id, note: '已在清单中，未重复添加' });
   }
   const entry = { id: record.id, name: record.name, url: record.url, probe: record.probe || '/healthz', enabled: true };

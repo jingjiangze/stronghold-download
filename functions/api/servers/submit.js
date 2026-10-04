@@ -7,7 +7,7 @@
 //   pending/<id>   → 提交记录
 //   pending_index  → 待审 id 数组（读-改-写）
 
-import { verifyServerHealth, validateEntries } from '../_verify.js';
+import { canonicalUrl, validateEntries, verifyServerHealth } from '../_verify.js';
 
 const MAX_PENDING = 100;
 
@@ -60,17 +60,19 @@ export async function onRequestPost(context) {
   if (index.length >= MAX_PENDING) return json({ ok: false, error: '待审核队列已满，请稍后再试' }, 429);
 
   const liveRes = await env.R2BUCKET.get('site/servers.json');
+  const mine = canonicalUrl(entry.url);
   if (liveRes) {
     try {
       const live = JSON.parse(await liveRes.text());
-      const hosts = (live.servers || []).map((x) => { try { return new URL(x.url).host; } catch { return ''; } });
-      const dup = (live.servers || []).some((x) => x.url === entry.url) || hosts.includes(new URL(entry.url).host);
-      if (dup) return json({ ok: false, error: '该站点已在公共清单中（同一 host 视为同一台服务器）' }, 409);
+      // 同一 host 的不同路径/端口算不同服务器（一台机跑两个实例是真的），所以只在
+      // 规范化后的完整地址上判重。
+      const dup = (live.servers || []).some((x) => canonicalUrl(x.url) === mine);
+      if (dup) return json({ ok: false, error: '该地址已在公共清单中（同一台机器的其它路径或端口可以另报一条）' }, 409);
     } catch { /* 线上清单读不动时继续入队，approve 时还会再查一遍 */ }
   }
   const queued = await Promise.all(index.map((id) => env.SERVER_REVIEW.get(`pending/${id}`)));
   for (const record of queued) {
-    if (record && JSON.parse(record).url === entry.url) {
+    if (record && canonicalUrl(JSON.parse(record).url) === mine) {
       return json({ ok: false, error: '该服务器已在待审核队列中' }, 409);
     }
   }

@@ -34,6 +34,14 @@ function isUnsafeHostname(raw) {
   return PRIVATE_V4.some((re) => re.test(h));
 }
 
+/** Canonical form used for "is this the same server?" — origin + path, no query/hash, no
+ *  trailing slash. Two instances on one host under different paths or ports are different
+ *  servers, so dedup must NOT collapse to the host. */
+export function canonicalUrl(raw) {
+  const check = validateUrl(raw);
+  return check.error ? String(raw || '').trim().toLowerCase() : check.href.toLowerCase();
+}
+
 function validateUrl(raw) {
   let url;
   try { url = new URL(String(raw)); } catch { return { error: '地址无法解析' }; }

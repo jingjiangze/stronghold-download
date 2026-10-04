@@ -122,7 +122,8 @@
         if (root.href !== candidates[0].href) candidates.push(root);
       }
       return {
-        id: String(s.id || (target && target.hostname) || 'server'),
+        // 同一 host 可以挂多个实例，所以缺 id 时用 host+path 兜底，避免两行共用一份 occupancy
+        id: String(s.id || (target && (target.hostname + (target.pathname === '/' ? '' : target.pathname))) || 'server'),
         name: String(s.name || (target && target.hostname) || '未命名'),
         url: target,
         candidates: candidates,
