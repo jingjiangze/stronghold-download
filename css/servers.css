@@ -122,6 +122,14 @@
 }
 .sv-occ__humans { color: var(--mint-500); }
 .sv-occ--na { color: var(--text-dim); }
+.sv-ver {
+  flex: 0 0 auto;
+  font-family: var(--font-display);
+  font-size: .12rem;
+  letter-spacing: .06em;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
 
 /* [hidden] must win over the flex display on panels/rows */
 .admin-panel[hidden], .admin-review[hidden], .sv-row[hidden], .servers-head[hidden] { display: none !important; }

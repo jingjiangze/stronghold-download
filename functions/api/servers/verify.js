@@ -67,9 +67,12 @@ export async function onRequestGet(context) {
   for (const r of results) {
     if (r.ok) {
       valid.push(r.entry.id);
-      if (r.rooms != null || r.humans != null) {
-        occupancy[r.entry.id] = { rooms: r.rooms, humans: r.humans, variant: r.variant || 'node' };
-      }
+      occupancy[r.entry.id] = {
+        rooms: r.rooms, humans: r.humans, variant: r.variant || 'node',
+        // 标注服务器当前版本（node 版=协议协议号+app；workers 版=app/build 哈希）。
+        // 不做版本准入——只展示，旧版/新版服务器都会列出。
+        app: r.app || null, build: r.build || null,
+      };
     } else {
       invalid.push({ id: r.entry.id, name: r.entry.name, url: r.entry.url, reason: r.reason });
       // infra failure (timeout etc.) on a previously valid server: keep last known occupancy

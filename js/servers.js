@@ -398,7 +398,8 @@
     div.appendChild(ms);
 
     // Occupancy from the shared server-side verification (node builds report rooms/humans;
-    // workers builds have none -> show a dash via title only).
+    // workers builds have none -> show a dash via title only). App/build labels annotate
+    // the server's current version — no version gate, older builds stay listed.
     var occ = state.occupancy[server.id];
     if (occ) {
       var occSpan = document.createElement('span');
@@ -421,6 +422,16 @@
         occSpan.className = 'sv-occ sv-occ--na';
       }
       div.appendChild(occSpan);
+      // version label: node servers show app (e.g. 0.1.0), workers show build hash
+      var versionText = occ.build ? 'build ' + String(occ.build).slice(0, 7)
+        : (occ.app ? 'v' + occ.app : '');
+      if (versionText) {
+        var vSpan = document.createElement('span');
+        vSpan.className = 'sv-ver';
+        vSpan.title = '服务器当前版本（不强制，仅标注）';
+        vSpan.textContent = versionText;
+        div.appendChild(vSpan);
+      }
     }
 
     if (server.url) {

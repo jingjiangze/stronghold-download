@@ -97,20 +97,22 @@ export async function verifyServerHealth(origin, probe) {
   const reasons = [];
   if (body.ok !== true) reasons.push('ok 字段不是 true');
 
-  // Variant detection BEFORE version comparison: the node/server build uses a numeric
-  // protocol version (1) while the cloudflare workers build puts the app release string
-  // ("0.1.0") in `version` and carries a git `build` hash instead.
+  // Variant detection: the node/server build uses a numeric protocol version while the
+  // cloudflare workers build puts the app release string ("0.1.0") in `version` and
+  // carries a git `build` hash instead. VERSION IS NOT ENFORCED any more (user decision
+  // 2026-10-03): the server is only *labelled* with the app/build it reports, so servers
+  // on older or newer builds stay listed instead of being hidden.
   let rooms = null;
   let humans = null;
   let app = body.app || (typeof body.version === 'string' ? body.version : null);
-  // workers 版把发布号字符串放在 version 里（node 版是协议号数字），靠类型就能分辨，不需要版本白名单
+  let build = null;
   const isWorkers = body.runtime === 'cloudflare' || typeof body.version === 'string';
   if (isWorkers) {
-    if (typeof body.build !== 'string' || !/^[0-9a-f]{6,40}$/i.test(String(body.build))) {
-      reasons.push('缺少有效的 build 哈希');
+    if (typeof body.build === 'string' && /^[0-9a-f]{6,40}$/i.test(body.build)) {
+      build = body.build;
     }
+    app = app || body.build || null;
   } else {
-    if (body.version !== VERIFY.version) reasons.push(`version 不是 ${VERIFY.version}`);
     for (const field of HEALTH_FIELDS) {
       const value = body[field];
       if (typeof value !== 'number' || !Number.isFinite(value)) reasons.push(`缺少字段 ${field}`);
@@ -118,10 +120,12 @@ export async function verifyServerHealth(origin, probe) {
     rooms = body.rooms;
     humans = body.humans;
   }
+  // Identity gate: must be recognisably a Stronghold Protocol server, but any app/build
+  // version passes and is only recorded for display.
   if (reasons.length) return fail(cacheKey, `不是卫戍协议服务器（${reasons.join('、')}）`);
 
   cache.set(cacheKey, { ok: true, at: Date.now() });
-  return { ok: true, elapsedMs: Date.now() - started, rooms, humans, app, variant: isWorkers ? 'workers' : 'node' };
+  return { ok: true, elapsedMs: Date.now() - started, rooms, humans, app, build, variant: isWorkers ? 'workers' : 'node' };
 }
 
 function fail(cacheKey, error) {
