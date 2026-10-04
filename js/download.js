@@ -38,9 +38,9 @@
   };
 
   var CDN_REASON = {
-    missing: '首方 CDN 还没有这个构建',
-    'size-unknown': '无法校验首方 CDN 上的构建',
-    'probe-failed': '首方 CDN 探测超时'
+    missing: 'CDN加速还没有这个构建',
+    'size-unknown': '无法校验CDN加速上的构建',
+    'probe-failed': 'CDN加速探测超时'
   };
 
   /** Why the primary button is not using the first-party CDN, in one readable line. The
@@ -48,8 +48,8 @@
   function cdnNote(cdn) {
     if (!cdn || cdn.ok !== false) return '';
     var why = cdn.reason === 'size-mismatch' && cdn.size && cdn.expected
-      ? '首方 CDN 上的同名文件与本版本字节数不一致（CDN ' + cdn.size + ' B · 发布 ' + cdn.expected + ' B）'
-      : (CDN_REASON[cdn.reason] || '首方 CDN 暂不可用');
+      ? 'CDN加速上的同名文件与本版本字节数不一致（CDN加速 ' + cdn.size + ' B · 发布 ' + cdn.expected + ' B）'
+      : (CDN_REASON[cdn.reason] || 'CDN加速暂不可用');
     return why + ' · 主按钮改走公共加速器，也可点上方镜像按钮换源';
   }
 
@@ -290,11 +290,11 @@
     a.href = cdn.url;
     a.rel = 'noopener';
     a.referrerPolicy = 'no-referrer';
-    a.title = '首方 CDN（Cloudflare R2）直链 · 与本页版本同一构建，支持断点续传';
+    a.title = 'CDN加速（Cloudflare R2 首方直链）· 与本页版本同一构建，支持断点续传';
     var label = document.createElement('span');
     label.className = 'btn__label';
     var name = document.createElement('span');
-    name.textContent = '首方 CDN';
+    name.textContent = 'CDN加速';
     label.appendChild(name);
     a.appendChild(label);
     var badge = document.createElement('span');
@@ -380,7 +380,7 @@
       // not pick. Say what is actually decided: verified first-party CDN, or a fallback.
       el.primary.title = '下载最新版 Android 客户端（' +
         (!state.cdn ? chosen.name :
-          state.cdn.ok ? '首方 CDN' : '首方 CDN 未校验 · 服务端自动选加速器') + '）';
+          state.cdn.ok ? 'CDN加速' : 'CDN加速未校验 · 服务端自动选加速器') + '）';
     }
     renderMirrors();
   }
@@ -466,7 +466,7 @@
       var m = state.mirrors.filter(function (x) { return x.id === id; })[0];
       setText(el.note, '已实测：' + (m ? m.name : id) + ' ≈ ' + probe.mbps.toFixed(1) +
         ' MB/s（本次网络）· 支持断点续传；慢时切换其它镜像' +
-        (state.cdn && state.cdn.ok === false ? ' · 首方 CDN 未通过校验，主按钮走加速器' : ''));
+        (state.cdn && state.cdn.ok === false ? ' · CDN加速未通过校验，主按钮走加速器' : ''));
       var fastest = fastestMirror();
       Object.keys(state.measured).forEach(function (key) { state.measured[key].fastest = false; });
       if (fastest && state.measured[fastest.id]) state.measured[fastest.id].fastest = true;
