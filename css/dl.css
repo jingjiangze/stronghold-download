@@ -3,8 +3,7 @@
    Keeps the title-screen look; only layout for the mirrors row and the meta line is new.
    ========================================================================================== */
 
-/* Landscape: wide enough that the five nav entries stay on a single row. */
-.title-login.dl-console { width: 8.6rem; }
+.title-login.dl-console { width: 5.8rem; }
 
 /* The game's title screen widens .btn--xl letter spacing for its one-character "开始"
    button; a long download label needs the normal button metrics instead. */
@@ -48,20 +47,16 @@
   min-height: .2rem;
 }
 
-/* ---- nav row: 服务器清单 CTA + 分支/仓库/发布页/QQ 并列 -------------------------- */
-/* One row on landscape: the five entries must not wrap, so the small buttons are tighter
-   than the game's default btn--sm metrics. */
+/* ---- nav row: 服务器清单（放大）+ 其他分支 APK ------------------------------------- */
 .dl-nav {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: .08rem;
+  gap: .12rem;
   flex-wrap: wrap;
 }
 .dl-nav .btn { flex: 0 0 auto; }
-.dl-nav .btn--sm { padding: 0 .12rem; font-size: .14rem; letter-spacing: .04em; }
-.dl-nav__servers { letter-spacing: .08em; padding: 0 .26rem; }
-.dl-nav__qq { display: inline-flex; align-items: center; gap: .05rem; }
+.dl-nav__servers { letter-spacing: .1em; }
 .dl-size { color: var(--text-md); }
 .dl-downloads { color: var(--gold); letter-spacing: .08em; }
 .dl-copy {
@@ -86,7 +81,7 @@
   color: var(--text-dim);
 }
 
-/* fine print: upstream repository + APK release page (servers.html / admin.html too) */
+/* fine print links: upstream repository + APK release page + QQ group */
 .dl-links {
   margin: 0;
   text-align: center;
@@ -101,6 +96,7 @@
 }
 .dl-links a:hover { color: var(--gold-2); border-bottom-color: var(--gold-a20); }
 .dl-links__sep { margin: 0 .06rem; opacity: .6; }
+.dl-links .dl-copy { margin-left: .06rem; vertical-align: baseline; }
 
 .dl-disclaimer {
   margin: 0;
