@@ -5,6 +5,11 @@
 export const R2_HOST = 'weishucdn.jiangjiangze.icu';
 export const SNAPSHOT_ID = 'latest-release';
 
+/** How far the CDN object's byte size may drift from the release asset and still be served.
+ *  Covers the publish pipeline's rebuild delta (single-digit bytes) while still refusing a
+ *  genuinely different build (the 2.8.0 case was 22 MB off). */
+export const SIZE_TOLERANCE = 65536;
+
 /** Public accelerators in front of a GitHub URL, in preference order. Only used when the
  *  first-party CDN cannot serve the exact build. */
 export const ACCELERATORS = [
@@ -29,12 +34,18 @@ function busted(url) {
 }
 
 /**
- * Does the first-party CDN hold *this exact build*?
+ * Does the first-party CDN hold *this* build?
  *
  * The key name alone is not trustworthy: apk/stronghold-v2.8.0.apk turned out to be a
  * 2.7.7-generation binary (521,193,612 B) while the shell-v2.8.0 release asset is
- * 543,630,883 B. Serving that silently hands out an old client labelled as the newest one,
- * so the object must answer AND match the release asset size when the size is known.
+ * 543,630,883 B. So the object must answer and its size must sit within SIZE_TOLERANCE of
+ * the release asset.
+ *
+ * The tolerance is deliberate: the publish pipeline rebuilds the APK for the CDN copy, so a
+ * current release differs by a few bytes (shell-v2.8.4: +4 B, three zip entries with
+ * different CRCs — a build stamp and two patch manifests). Refusing that cost every visitor
+ * the fast first-party link, so small deltas now prefer the CDN; a large delta is a
+ * different build and is still refused.
  */
 export async function cdnHasBuild(tag, expectedSize) {
   const url = r2Asset(tag);
@@ -47,10 +58,13 @@ export async function cdnHasBuild(tag, expectedSize) {
     });
     const size = Number(res.headers.get('content-length') || 0);
     if (!res.ok) return { ok: false, url: url, reason: 'missing', expected: expectedSize, size: 0 };
-    if (size && size !== expectedSize) {
+    if (size && Math.abs(size - expectedSize) > SIZE_TOLERANCE) {
       return { ok: false, url: url, reason: 'size-mismatch', expected: expectedSize, size: size };
     }
-    return { ok: true, url: url, reason: 'ok', expected: expectedSize, size: size };
+    return {
+      ok: true, url: url, expected: expectedSize, size: size,
+      reason: size === expectedSize ? 'ok' : 'size-close',
+    };
   } catch (err) {
     return { ok: false, url: url, reason: 'probe-failed', expected: expectedSize, size: 0 };
   }

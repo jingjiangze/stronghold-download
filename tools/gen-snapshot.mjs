@@ -74,10 +74,13 @@ async function probeCdn(url) {
 }
 
 const ghSize = (apks[0] && apks[0].size) || 0;
+// Same tolerance as functions/api/_asset.js: the CDN copy is a rebuild of the release, so a
+// few bytes of drift is normal; a large gap means a different build.
+const SIZE_TOLERANCE = 65536;
 const cdn = await probeCdn(r2Url + buster);
-const useR2 = cdn.ok && (!ghSize || cdn.size === ghSize);
+const useR2 = cdn.ok && (!ghSize || Math.abs(cdn.size - ghSize) <= SIZE_TOLERANCE);
 if (!useR2 && !ghApk) throw new Error(`neither the R2 mirror nor a GitHub apk asset is available for ${release.tag_name}`);
-console.log(`r2 probe: ${cdn.ok ? 'live' : 'missing'} | cdn ${cdn.size} B vs release asset ${ghSize} B | 采用 ${useR2 ? 'CDN' : 'GitHub 资产'}`);
+console.log(`r2 probe: ${cdn.ok ? 'live' : 'missing'} | cdn ${cdn.size} B vs release asset ${ghSize} B (Δ ${cdn.size - ghSize}) | 采用 ${useR2 ? 'CDN' : 'GitHub 资产'}`);
 
 const snapshot = {
   generated: new Date().toISOString(),

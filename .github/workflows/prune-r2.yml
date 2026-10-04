@@ -1,0 +1,74 @@
+name: prune-r2
+
+# Keeps only the newest two shell APKs in the R2 bucket. Each build is ~518 MB and the
+# first-party bucket has a 10 GB free storage ceiling, so a few releases' worth of APKs
+# alone can blow past it (it hit 10.7 GB on 2026-10-04). The download page only ever links
+# the current release, and keeping one extra covers an immediate rollback.
+#
+# Never touches apk/content-slim-*.zip or apk/latest.json: those are hot-update payloads the
+# shipped clients read, not app installers.
+
+on:
+  schedule:
+    - cron: '17 * * * *' # hourly
+  workflow_dispatch:
+    inputs:
+      keep:
+        description: 'How many newest APKs to keep'
+        required: false
+        default: '2'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prune-r2
+  cancel-in-progress: false
+
+env:
+  BUCKET: stronghold-assets
+  R2_ENDPOINT: https://8641802a2d46497f1cc4e7a4cba365d2.r2.cloudflarestorage.com
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Install rclone
+        run: |
+          set -euo pipefail
+          curl -fsSL https://downloads.rclone.org/rclone-current-linux-amd64.zip -o rclone.zip
+          unzip -q rclone.zip
+          sudo install -m 0755 rclone-*/rclone /usr/local/bin/rclone
+
+      - name: Delete APK objects beyond the newest N
+        env:
+          R2_ACCESS_KEY: ${{ secrets.R2_ACCESS_KEY }}
+          R2_SECRET_KEY: ${{ secrets.R2_SECRET_KEY }}
+          KEEP: ${{ github.event.inputs.keep || '2' }}
+        run: |
+          set -euo pipefail
+          test -n "$R2_ACCESS_KEY" && test -n "$R2_SECRET_KEY" || { echo "R2 secrets absent"; exit 1; }
+          rclone config create r2 s3 provider=Cloudflare access_key_id="$R2_ACCESS_KEY" \
+            secret_access_key="$R2_SECRET_KEY" endpoint="$R2_ENDPOINT" acl=private \
+            --non-interactive > /dev/null
+
+          mapfile -t keys < <(rclone lsf "r2/$BUCKET/apk/" --files-only --include 'stronghold-v*.apk' \
+            | sed 's|^|apk/|')
+          echo "APK objects found: ${#keys[@]} (keep $KEEP)"
+
+          # Guard: with nothing to compare against, delete nothing.
+          if [ "${#keys[@]}" -le "$KEEP" ]; then echo "nothing to prune"; exit 0; fi
+
+          printf '%s\n' "${keys[@]}" | sed 's|.*/stronghold-v||; s|\.apk$||' > /tmp/versions.txt
+          sort -V /tmp/versions.txt | head -n -"$KEEP" > /tmp/stale.txt
+          echo "stale:"; sed 's/^/  v/' /tmp/stale.txt
+
+          while read -r v; do
+            [ -n "$v" ] || continue
+            echo "deleting apk/stronghold-v$v.apk"
+            rclone deletefile "r2/$BUCKET/apk/stronghold-v$v.apk"
+          done < /tmp/stale.txt
+
+          echo "remaining:"
+          rclone lsf "r2/$BUCKET/apk/" --files-only --include 'stronghold-v*.apk'
