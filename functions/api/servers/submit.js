@@ -35,6 +35,8 @@ function pickExtras(raw) {
   if (Number.isInteger(raw.weight) && raw.weight >= 0 && raw.weight <= 1000) out.weight = raw.weight;
   if (Number.isInteger(raw.protocol) && raw.protocol >= 0) out.protocol = raw.protocol;
   if (typeof raw.app === 'string' && raw.app.trim()) out.app = raw.app.trim().slice(0, 32);
+  // 维护者自己提交的国内直连服：边缘探测不通是预期内的，见下面的分支
+  if (raw.direct_cn === true) out.direct_cn = true;
   return out;
 }
 
@@ -53,8 +55,12 @@ export async function onRequestPost(context) {
   const entry = { ...checked.servers[0], ...pickExtras(rawEntry) };
 
   // 服务端身份校验：不过 /healthz 指纹的一律拒收，省得污染队列。
-  const verdict = await verifyServerHealth(entry.url, entry.probe);
-  if (!verdict.ok) return json({ ok: false, error: `校验失败：${verdict.error}` }, 400);
+  // 提交路径给 12s：国内主机从边缘 PoP 过去常常 5s 内握不上手，那不等于"不是卫戍服务器"。
+  const verdict = await verifyServerHealth(entry.url, entry.probe, 12000);
+  // direct_cn 是维护者留证的"国内直连可达、边缘出口不通"条目，边缘探测失败只记录不拦提交。
+  if (!verdict.ok && entry.direct_cn !== true) {
+    return json({ ok: false, error: `校验失败：${verdict.error}` }, 400);
+  }
 
   const index = await readIndex(env);
   if (index.length >= MAX_PENDING) return json({ ok: false, error: '待审核队列已满，请稍后再试' }, 429);
@@ -64,15 +70,21 @@ export async function onRequestPost(context) {
   if (liveRes) {
     try {
       const live = JSON.parse(await liveRes.text());
-      // 同一 host 的不同路径/端口算不同服务器（一台机跑两个实例是真的），所以只在
-      // 规范化后的完整地址上判重。
-      const dup = (live.servers || []).some((x) => canonicalUrl(x.url) === mine);
-      if (dup) return json({ ok: false, error: '该地址已在公共清单中（同一台机器的其它路径或端口可以另报一条）' }, 409);
+      // 与 scout 侧一致的判据：同 host 且有一方是根路径（深链 ?room= 归一后就是根）算同一台；
+      // 两边子路径不同则视为另一台实例，允许另报一条。
+      const sameServer = (a, b) => {
+        const cut = (u) => { try { const x = new URL(u); const p = x.pathname.replace(/\/+$/, ''); return { host: x.host, path: p || '/' }; } catch { return null; } };
+        const x = cut(a); const y = cut(b);
+        if (!x || !y || x.host !== y.host) return false;
+        return x.path === y.path || x.path === '/' || y.path === '/';
+      };
+      const dup = (live.servers || []).some((x) => sameServer(x.url, entry.url));
+      if (dup) return json({ ok: false, error: '该服务器已在公共清单中（同一 host 的根地址视为同一台；不同子路径可另报一条）' }, 409);
     } catch { /* 线上清单读不动时继续入队，approve 时还会再查一遍 */ }
   }
   const queued = await Promise.all(index.map((id) => env.SERVER_REVIEW.get(`pending/${id}`)));
   for (const record of queued) {
-    if (record && canonicalUrl(JSON.parse(record).url) === mine) {
+    if (record && sameServer(JSON.parse(record).url, entry.url)) {
       return json({ ok: false, error: '该服务器已在待审核队列中' }, 409);
     }
   }

@@ -84,7 +84,7 @@ async function safeFetch(url, init, redirects) {
  *  per origin for CACHE_TTL_MS so the Function cannot be abused as a scan amplifier. */
 const cache = new Map(); // in-memory per isolate; KV-free best-effort cache
 
-export async function verifyServerHealth(origin, probe) {
+export async function verifyServerHealth(origin, probe, timeoutMs) {
   const cacheKey = origin + (probe || '/healthz');
   const hit = cache.get(cacheKey);
   // A cached verdict must carry the same payload as a fresh one: returning only {ok:true}
@@ -106,7 +106,7 @@ export async function verifyServerHealth(origin, probe) {
   const outcome = await safeFetch(target.href, {
     method: 'GET',
     headers: { accept: 'application/json', 'user-agent': 'stronghold-list-verify/1' },
-    signal: AbortSignal.timeout(VERIFY_TIMEOUT_MS),
+    signal: AbortSignal.timeout(Math.min(timeoutMs || VERIFY_TIMEOUT_MS, 20000)),
   }, 0);
   if (outcome.error) return fail(cacheKey, outcome.error);
   const res = outcome.res;

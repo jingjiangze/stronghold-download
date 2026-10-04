@@ -125,6 +125,8 @@ export async function onRequestPut(context) {
     if (Number.isInteger(entry.weight)) clean.weight = entry.weight;
     if (Number.isInteger(entry.protocol)) clean.protocol = entry.protocol;
     if (typeof entry.app === 'string' && entry.app.trim()) clean.app = entry.app.trim().slice(0, 32);
+    // 国内直连可达、边缘出口不通的条目：这个标记决定它会不会被 verify 隔离，必须留住
+    if (entry.direct_cn === true) clean.direct_cn = true;
     cleaned.push(clean);
   }
 

@@ -50,8 +50,12 @@ export async function onRequestPost(context) {
   }
 
   // approve: fresh verification (the queue may be stale), then publish.
-  const verdict = await verifyServerHealth(record.url, record.probe);
-  if (!verdict.ok) return json({ ok: false, error: `复核失败：${verdict.error}（已从队列移除）` }, 400);
+  const verdict = await verifyServerHealth(record.url, record.probe, 12000);
+  // direct_cn 条目允许在边缘复核失败时发布：真实玩家从国内连接，verify.js 的 direct_cn
+  // 分支会让它留在 valid 里，不会被隔离。
+  if (!verdict.ok && record.direct_cn !== true) {
+    return json({ ok: false, error: `复核失败：${verdict.error}（已从队列移除）` }, 400);
+  }
 
   const liveRes = await env.R2BUCKET.get('site/servers.json');
   let live = { updated: new Date().toISOString(), servers: [] };
