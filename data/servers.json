@@ -1,5 +1,5 @@
 {
-  "updated": "2026-10-04T13:50:11.090Z",
+  "updated": "2026-10-04T18:08:59.844Z",
   "servers": [
     {
       "id": "xiaolubao",
@@ -120,9 +120,18 @@
       "probe": "/healthz",
       "enabled": true,
       "note": "社区服 · B站 10-04 评论区 灬岁年/simpfun"
+    },
+    {
+      "id": "raiya-10166",
+      "name": "raiya 二服",
+      "url": "https://sp.rainya.me:10166/play",
+      "probe": "/healthz",
+      "enabled": true,
+      "note": "社区服 · 仅国内可达（CF 边缘超时）· raiya 另一端口",
+      "direct_cn": true
     }
   ],
   "keyId": "sp-2026-10",
   "v": 1,
-  "sig": "mZBTxUgwkB7i7upi1fV056YpiJjISqsr6u6KMgv72QV3aa6OZENdc/AiSI7vI49mPNCF/PLV2oSIo+/ve52VAw=="
+  "sig": "4ntfNHeycqjYz9v46vAe+boE6m8A4V0Kp77M/mu5JurCjn1mxAUdr0FHBt2bOppmiIYZIWKfgNIt+9yg2rqFBg=="
 }
