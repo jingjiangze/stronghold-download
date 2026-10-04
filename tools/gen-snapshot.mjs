@@ -50,15 +50,29 @@ async function latestWithApk() {
 
 const release = await latestWithApk();
 const apks = (release.assets || []).filter((a) => /\.apk$/i.test(a.name));
-const notesLink = (release.body || '').match(/https?:\/\/[^\s)\]"<>]+\.apk/i);
-// CI mirrors every build to a predictable R2 path: apk/stronghold-<version>.apk
+// CI mirrors every build to a predictable R2 path: apk/stronghold-v<version>.apk
 // (e.g. shell-v2.7.6 -> apk/stronghold-v2.7.6.apk) — the first-party CDN beats the
-// GitHub asset URL. The CF edge caches 404s for hours (requests made before CI finishes
-// uploading), so a naive probe can lie: always prefer the R2 link and append a
-// cache-buster stamped at generation time to sidestep any stale 404 entry.
+// GitHub asset URL. But a brand-new release is not on the CDN yet, and the CF edge caches
+// that 404 for hours, so probe with a cache-buster stamped at generation time and only
+// bake the R2 link in when the object actually answers: a snapshot that hands out a 404 is
+// worse than one that hands out the (slower) GitHub asset.
 const version = release.tag_name.replace(/^shell-v/, '');
-const r2UrlWithBuster = `https://weishucdn.jiangjiangze.icu/apk/stronghold-v${version}.apk?cb=` +
-  Date.now().toString(36);
+const r2Url = `https://weishucdn.jiangjiangze.icu/apk/stronghold-v${version}.apk`;
+const buster = `?cb=` + Date.now().toString(36);
+const ghApk = apks[0] ? apks[0].browser_download_url : null;
+
+async function r2IsLive(url) {
+  try {
+    const res = await fetch(url, { headers: { range: 'bytes=0-1023' }, redirect: 'manual' });
+    return res.status === 200 || res.status === 206;
+  } catch {
+    return false;
+  }
+}
+
+const useR2 = await r2IsLive(r2Url + buster);
+if (!useR2 && !ghApk) throw new Error(`neither the R2 mirror nor a GitHub apk asset is available for ${release.tag_name}`);
+console.log(`r2 probe: ${useR2 ? 'live' : 'missing'} for ${r2Url}`);
 
 const snapshot = {
   generated: new Date().toISOString(),
@@ -82,13 +96,24 @@ const snapshot = {
   ]
 };
 
-snapshot.releases[0].assets = [{
-  name: `stronghold-v${version}.apk`,
-  size: null,
-  url: r2UrlWithBuster,
-  digest: null,
-  external: true
-}];
+if (useR2) {
+  snapshot.releases[0].assets = [{
+    name: `stronghold-v${version}.apk`,
+    size: null,
+    url: r2Url + buster,
+    digest: null,
+    external: true
+  }];
+} else {
+  // Keep the GitHub asset: the page routes it through /api/download/<tag>/<file>, which
+  // re-checks the CDN at click time and picks up the R2 object once CI has uploaded it.
+  snapshot.releases[0].assets = [{
+    name: apks[0].name,
+    size: apks[0].size,
+    url: ghApk,
+    digest: apks[0].digest || null
+  }];
+}
 
 mkdirSync(dirname(OUT), { recursive: true });
 writeFileSync(OUT, JSON.stringify(snapshot, null, 2) + '\n');

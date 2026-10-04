@@ -2,8 +2,9 @@
 // Counted download redirect for the download page's primary button.
 //
 // Flow: validate the request against a strict allowlist (tag/file patterns, https R2 or
-// GitHub hosts only, no private/loopback targets) -> increment a KV counter -> 302 to the
-// real asset. The counter key is `dlcount/<tag>/<file>`; totals are read by
+// GitHub hosts only, no private/loopback targets) -> resolve the target (first-party R2 CDN
+// when that object exists, GitHub asset otherwise) -> increment a KV counter -> 302.
+// The counter key is `dlcount/<tag>/<file>`; totals are read by
 // /api/download/total. Users who copy the raw R2 direct link bypass the redirect, so this
 // number is a lower bound of the true total.
 
@@ -22,13 +23,31 @@ function json(data, status) {
   });
 }
 
-function buildTarget(tag, file) {
-  if (file === 'app-release.apk') {
-    // Prefer the first-party R2 direct link; fall back to the GitHub asset.
-    // Object keys keep the leading "v" of the shell tag: apk/stronghold-v2.8.0.apk.
-    return 'https://weishucdn.jiangjiangze.icu/apk/stronghold-' + tag.replace(/^shell-/, '') + '.apk';
-  }
+function githubAsset(tag, file) {
   return 'https://github.com/jingjiangze/Stronghold-Protocol/releases/download/' + tag + '/' + file;
+}
+
+function r2Asset(tag) {
+  // Object keys keep the leading "v" of the shell tag: apk/stronghold-v2.8.0.apk.
+  return 'https://weishucdn.jiangjiangze.icu/apk/stronghold-' + tag.replace(/^shell-/, '') + '.apk';
+}
+
+/** A release published minutes ago is not on the CDN yet (the mirror upload lags), and the
+ *  edge caches a 404 at that key for hours, so the probe carries a unique cache-buster.
+ *  Missing object -> serve the GitHub asset: an older-but-working link is worse than a
+ *  slower-but-correct one, and a 404 is worse than both. */
+async function resolveTarget(tag, file) {
+  if (file !== 'app-release.apk') return githubAsset(tag, file);
+  const r2 = r2Asset(tag);
+  try {
+    const probe = await fetch(r2 + '?cb=' + Date.now().toString(36) + Math.random().toString(36).slice(2), {
+      method: 'HEAD',
+      cf: { cacheTtl: 0, cacheEverything: false },
+      signal: AbortSignal.timeout(4000),
+    });
+    if (probe.ok) return r2;
+  } catch (err) { /* unreachable CDN: GitHub asset is the honest fallback */ }
+  return githubAsset(tag, file);
 }
 
 export async function onRequestGet(context) {
@@ -51,7 +70,7 @@ export async function onRequestGet(context) {
     return json({ ok: false, error: 'invalid tag or file' }, 400);
   }
 
-  const target = buildTarget(tag, file);
+  const target = await resolveTarget(tag, file);
   let parsed;
   try { parsed = new URL(target); } catch { return json({ ok: false, error: 'bad target' }, 500); }
   if (parsed.protocol !== 'https:' || !ALLOWED_HOSTS[parsed.hostname]) {

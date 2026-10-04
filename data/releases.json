@@ -1,21 +1,20 @@
 {
-  "generated": "2026-10-04T04:51:26.668Z",
+  "generated": "2026-10-04T06:11:39.629Z",
   "repo": "jingjiangze/Stronghold-Protocol",
   "releases": [
     {
-      "tag": "shell-v2.7.7",
-      "name": "卫戍协议 Android 壳 v2.7.7（检查更新 · 门禁移除 · 玩家数据 v1 · 热更新 P0 修复）",
-      "published_at": "2026-10-04T04:20:31Z",
+      "tag": "shell-v2.8.2",
+      "name": "卫戍协议 内容 shell-v2.8.2（上游 v0.1.2）",
+      "published_at": "2026-10-04T06:00:51Z",
       "prerelease": false,
-      "html_url": "https://github.com/jingjiangze/Stronghold-Protocol/releases/tag/shell-v2.7.7",
-      "body": "v2.7.7：① 首页右下「检查更新」按钮（内容轴静默检查→已最新/发现更新对话框）② 兼容门禁移除：所有服务器均可加入，协议/版本差异只显示「版本不同」徽标（版本提示弹窗删除）③ 内容路由：本地树未命中直接放行给当前服务器，第三方内容同意弹窗移除 ④ 玩家数据 v1：壳内真源 player-v1.json（跨服务器共享）+ 采集对战结果/去过的服务器/房间/干员配置 + 导出导入；spData 桥 + player-data.js 注入（App 覆盖全部站点）⑤ 热更新 P0 修复：slimEntry 双布局（RAW slim 从此可解包）+ Android 补丁引擎对齐 Node 五语义（already-applied/optional/shrink/CRLF/minApp）——这是热更新首次真正可用的版本。",
+      "html_url": "https://github.com/jingjiangze/Stronghold-Protocol/releases/tag/shell-v2.8.2",
+      "body": "内容轴 shell-v2.8.2：基于上游 v0.1.2（反馈修复版）的 L1 内容包（8.6MB）。\n- 新素材（ui/emoticon、ui/guide，约 22MB）已同步 R2；美术仍走 CDN。\n- minApk 22：内容轴仅 v2.7.7+ 壳承接（热更新 P0 已修）；v2.7.6 及更早会收到「需要新版应用」提示。\n- 配套壳版本：v2.8.1。",
       "assets": [
         {
-          "name": "stronghold-v2.7.7.apk",
-          "size": null,
-          "url": "https://weishucdn.jiangjiangze.icu/apk/stronghold-v2.7.7.apk?cb=mutcfoss",
-          "digest": null,
-          "external": true
+          "name": "app-release.apk",
+          "size": 543646372,
+          "url": "https://github.com/jingjiangze/Stronghold-Protocol/releases/download/shell-v2.8.2/app-release.apk",
+          "digest": "sha256:6241ccec50ad233fa5b5f240078fe1281287e1363cdc538b7028cd5966aa6b5d"
         }
       ]
     }

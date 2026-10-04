@@ -11,8 +11,10 @@
   'use strict';
 
   var REPO = 'jingjiangze/Stronghold-Protocol';
+  var API_EDGE = '/api/latest';
   var API_LATEST = 'https://api.github.com/repos/' + REPO + '/releases/latest';
   var API_LIST = 'https://api.github.com/repos/' + REPO + '/releases?per_page=10';
+  var API_DOWNLOADS = 'https://api.github.com/repos/' + REPO + '/releases?per_page=100';
   var PRIMARY_ASSET = 'app-release.apk';
   var PROBE_BYTES = 3 * 1024 * 1024;
   var PROBE_TIMEOUT_MS = 12000;
@@ -29,7 +31,10 @@
     downloads: document.getElementById('dl-downloads')
   };
 
-  var state = { release: null, asset: null, mirrors: [], measured: {}, primaryMirrorId: null };
+  var state = {
+    release: null, asset: null, mirrors: [], measured: {}, primaryMirrorId: null,
+    versionSuffix: '', ghDownloads: null
+  };
 
   /* ---- helpers --------------------------------------------------------------------- */
 
@@ -88,9 +93,27 @@
     return ctrl.signal;
   }
 
-  /** Newest stable release that carries an APK; falls back to the release list when the
-   *  brand-newest release exists but its APK has not been attached yet. */
+  /** Newest stable release that carries an APK. The same-origin edge endpoint comes first:
+   *  it works where the browser cannot reach api.github.com (per-IP 403s are the norm on
+   *  shared and mainland-China uplinks, and falling back to the bundled snapshot silently
+   *  showed an older version as if it were current). Resolves to null when nothing answered. */
   function fetchLatestWithApk() {
+    return fetchJson(API_EDGE, API_TIMEOUT_MS).then(function (rel) {
+      var latest = normalizeRelease(rel);
+      if (!hasApk(latest)) return null;
+      if (typeof rel._ghDownloads === 'number') state.ghDownloads = rel._ghDownloads;
+      state.versionSuffix = rel._stale ? '（缓存版本）' : '';
+      return latest;
+    }).catch(function () { return null; }).then(function (fromEdge) {
+      if (fromEdge) return fromEdge;
+      return fetchLatestFromGithub().then(function (latest) {
+        state.versionSuffix = '';
+        return latest;
+      }).catch(function () { return null; });
+    });
+  }
+
+  function fetchLatestFromGithub() {
     return fetchJson(API_LATEST, API_TIMEOUT_MS).then(function (rel) {
       var latest = normalizeRelease(rel);
       if (hasApk(latest)) return latest;
@@ -250,7 +273,7 @@
     var asset = state.asset;
     if (!release || !asset) return;
 
-    setText(el.version, '最新版 ' + release.tag);
+    setText(el.version, '最新版 ' + release.tag + state.versionSuffix);
     setText(el.size, fmtMB(asset.size));
     setText(el.primaryLabel, '下载 Android 客户端');
 
@@ -456,28 +479,33 @@
   }
 
   /** Total download count = GitHub release assets (download_count, all releases) + the
-   *  page's own counted redirects. Rendered in the meta line, gold, best-effort. */
+   *  page's own counted redirects. Rendered in the meta line, gold, best-effort. The edge
+   *  endpoint already sums the GitHub side, so the browser only calls GitHub when it has to. */
   function fetchDownloadTotal() {
     if (!el.downloads) return;
-    var ghCount = 0;
-    fetchJson('https://api.github.com/repos/' + REPO + '/releases?per_page=100', 9000)
-      .then(function (list) {
+    var ghSide;
+    if (typeof state.ghDownloads === 'number') {
+      ghSide = Promise.resolve(state.ghDownloads);
+    } else {
+      ghSide = fetchJson(API_DOWNLOADS, 9000).then(function (list) {
+        var n = 0;
         (Array.isArray(list) ? list : []).forEach(function (r) {
           (r.assets || []).forEach(function (a) {
-            if (/\.apk$/i.test(a.name)) ghCount += a.download_count || 0;
+            if (/\.apk$/i.test(a.name)) n += a.download_count || 0;
           });
         });
-      }).catch(function () { /* gh count optional */ })
-      .then(function () {
-        return fetchJson('/api/download/total', 6000).then(function (out) {
-          return out && out.ok ? (out.total || 0) : 0;
-        }).catch(function () { return 0; });
-      }).then(function (fnCount) {
-        var total = ghCount + fnCount;
-        if (total <= 0) return;
-        el.downloads.hidden = false;
-        setText(el.downloads, '⬇ ' + total.toLocaleString('zh-CN') + ' 次下载');
-      });
+        return n;
+      }).catch(function () { return 0; });
+    }
+    ghSide.then(function (ghCount) {
+      return fetchJson('/api/download/total', 6000).then(function (out) {
+        return out && out.ok ? (out.total || 0) : 0;
+      }).catch(function () { return 0; }).then(function (fnCount) { return ghCount + fnCount; });
+    }).then(function (total) {
+      if (total <= 0) return;
+      el.downloads.hidden = false;
+      setText(el.downloads, '⬇ ' + total.toLocaleString('zh-CN') + ' 次下载');
+    });
   }
 
   /* ---- boot ------------------------------------------------------------------------ */
@@ -485,7 +513,6 @@
   function start() {
     wireHashButton();
     wireQqFooter();
-    fetchDownloadTotal();
 
     fetchJson('./data/mirrors.json', 8000).then(function (data) {
       state.mirrors = (data && data.mirrors) || [];
@@ -503,15 +530,22 @@
           render();
         }
         return fetchLatestWithApk().then(function (live) {
-          if (live && (!state.release || live.tag !== state.release.tag)) {
-            state.release = live;
-            state.asset = pickAsset(live);
-            state.measured = {};
-            render();
+          if (live) {
+            if (!state.release || live.tag !== state.release.tag) {
+              state.release = live;
+              state.asset = pickAsset(live);
+              state.measured = {};
+            }
+          } else if (state.release) {
+            // Nothing answered: what is on screen came from the bundled snapshot and may be
+            // an older build — label it instead of presenting it as the latest.
+            state.versionSuffix = '（离线快照，可能非最新）';
           }
-        }).catch(function () { /* offline / rate-limited: the snapshot stays */ });
+          render();
+        });
       });
     }).then(function () {
+      fetchDownloadTotal();
       if (!state.release || !state.asset) {
         setText(el.version, '暂无法获取版本信息');
         setText(el.note, '请点击上方按钮前往 GitHub Releases 页面下载。');
