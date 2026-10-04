@@ -4,7 +4,7 @@
 // Flow: validate the request against a strict allowlist (tag/file patterns, https R2 or
 // GitHub hosts only, no private/loopback targets) -> increment a KV counter -> 302 to the
 // real asset. The counter key is `dlcount/<tag>/<file>`; totals are read by
-// /api/download/total. aria2 power users copy the raw R2 direct link instead, so this
+// /api/download/total. Users who copy the raw R2 direct link bypass the redirect, so this
 // number is a lower bound of the true total.
 
 const ALLOWED_HOSTS = {
@@ -25,7 +25,8 @@ function json(data, status) {
 function buildTarget(tag, file) {
   if (file === 'app-release.apk') {
     // Prefer the first-party R2 direct link; fall back to the GitHub asset.
-    return 'https://weishucdn.jiangjiangze.icu/apk/stronghold-' + tag.replace(/^shell-v/, '') + '.apk';
+    // Object keys keep the leading "v" of the shell tag: apk/stronghold-v2.8.0.apk.
+    return 'https://weishucdn.jiangjiangze.icu/apk/stronghold-' + tag.replace(/^shell-/, '') + '.apk';
   }
   return 'https://github.com/jingjiangze/Stronghold-Protocol/releases/download/' + tag + '/' + file;
 }

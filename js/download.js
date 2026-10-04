@@ -26,7 +26,6 @@
     size: document.getElementById('dl-size'),
     hash: document.getElementById('dl-hash'),
     note: document.getElementById('dl-note'),
-    aria2: document.getElementById('dl-aria2'),
     downloads: document.getElementById('dl-downloads')
   };
 
@@ -243,7 +242,7 @@
       if (state.primaryMirrorId === null) state.primaryMirrorId = mirror.id;
       el.mirrors.appendChild(mirrorButton(mirror, url, state.asset));
     });
-    if (!applicable) setText(el.note, '镜像清单暂不可用，可直接使用上方按钮从 GitHub 下载。');
+    if (!applicable) setText(el.note, '镜像清单暂不可用，请直接使用上方下载按钮。');
   }
 
   function render() {
@@ -266,11 +265,10 @@
 
     renderMirrors();
     applyPrimary();
-    showAria2Button();
   }
 
   /** Primary button routes through the counting redirect (/api/download/<tag>/<file>);
-   *  the aria2 one-liner keeps the raw direct link for power users. */
+   *  first-party direct links keep their raw URL. */
   function countedUrl() {
     if (!state.release || !state.asset) return null;
     if (state.asset.external) return state.asset.url; // raw direct link (no counter)
@@ -408,7 +406,7 @@
     var probe = id ? state.measured[id] : null;
     if (probe && probe.mbps > 0) {
       var m = state.mirrors.filter(function (x) { return x.id === id; })[0];
-      setText(el.note, '已实测：' + (m ? m.name : id) + ' ≈ ' + probe.mbps.toFixed(1) + ' MB/s（本次网络）· 支持断点续传；慢时切换其它镜像或用 aria2c -x8 -s8 多线程');
+      setText(el.note, '已实测：' + (m ? m.name : id) + ' ≈ ' + probe.mbps.toFixed(1) + ' MB/s（本次网络）· 支持断点续传；慢时切换其它镜像');
       var fastest = fastestMirror();
       Object.keys(state.measured).forEach(function (key) { state.measured[key].fastest = false; });
       if (fastest && state.measured[fastest.id]) state.measured[fastest.id].fastest = true;
@@ -457,29 +455,6 @@
     });
   }
 
-  /** aria2c one-liner for the current asset: 16 connections make the R2 CDN ~8x faster
-   *  than a browser's single connection. Button appears once the asset is known. */
-  function wireAria2Button() {
-    if (!el.aria2) return;
-    el.aria2.addEventListener('click', function () {
-      if (!state.asset) return;
-      var name = state.asset.name || 'app-release.apk';
-      var cmd = 'aria2c -x16 -s16 -k 4M --file-allocation=none -o "' + name + '" "' +
-                el.primary.href + '"';
-      var done = function () {
-        el.aria2.classList.add('is-done');
-        var old = el.aria2.textContent;
-        el.aria2.textContent = '已复制';
-        setTimeout(function () { el.aria2.classList.remove('is-done'); el.aria2.textContent = old; }, 1600);
-      };
-      copyText(cmd, done);
-    });
-  }
-
-  function showAria2Button() {
-    if (el.aria2 && state.asset) el.aria2.hidden = false;
-  }
-
   /** Total download count = GitHub release assets (download_count, all releases) + the
    *  page's own counted redirects. Rendered in the meta line, gold, best-effort. */
   function fetchDownloadTotal() {
@@ -509,7 +484,6 @@
 
   function start() {
     wireHashButton();
-    wireAria2Button();
     wireQqFooter();
     fetchDownloadTotal();
 

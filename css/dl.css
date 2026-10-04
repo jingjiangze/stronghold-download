@@ -3,7 +3,8 @@
    Keeps the title-screen look; only layout for the mirrors row and the meta line is new.
    ========================================================================================== */
 
-.title-login.dl-console { width: 5.8rem; }
+/* Landscape: wide enough that the five nav entries stay on a single row. */
+.title-login.dl-console { width: 8.6rem; }
 
 /* The game's title screen widens .btn--xl letter spacing for its one-character "开始"
    button; a long download label needs the normal button metrics instead. */
@@ -47,18 +48,20 @@
   min-height: .2rem;
 }
 
-.dl-fork {
+/* ---- nav row: 服务器清单 CTA + 分支/仓库/发布页/QQ 并列 -------------------------- */
+/* One row on landscape: the five entries must not wrap, so the small buttons are tighter
+   than the game's default btn--sm metrics. */
+.dl-nav {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: .1rem;
+  gap: .08rem;
   flex-wrap: wrap;
 }
-.dl-fork__hint {
-  font-size: .11rem;
-  letter-spacing: .04em;
-  color: var(--text-dim);
-}
+.dl-nav .btn { flex: 0 0 auto; }
+.dl-nav .btn--sm { padding: 0 .12rem; font-size: .14rem; letter-spacing: .04em; }
+.dl-nav__servers { letter-spacing: .08em; padding: 0 .26rem; }
+.dl-nav__qq { display: inline-flex; align-items: center; gap: .05rem; }
 .dl-size { color: var(--text-md); }
 .dl-downloads { color: var(--gold); letter-spacing: .08em; }
 .dl-copy {
@@ -83,21 +86,7 @@
   color: var(--text-dim);
 }
 
-/* ---- aria2 multi-connection helper -------------------------------------------------- */
-.dl-aria2 {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: .1rem;
-  flex-wrap: wrap;
-}
-.dl-aria2__hint {
-  font-size: .12rem;
-  letter-spacing: .06em;
-  color: var(--text-dim);
-}
-
-/* fine print: upstream repository + APK release page */
+/* fine print: upstream repository + APK release page (servers.html / admin.html too) */
 .dl-links {
   margin: 0;
   text-align: center;
@@ -113,32 +102,6 @@
 .dl-links a:hover { color: var(--gold-2); border-bottom-color: var(--gold-a20); }
 .dl-links__sep { margin: 0 .06rem; opacity: .6; }
 
-/* ---- QQ group + disclaimer (bottom of the panel) ----------------------------------- */
-.dl-footer {
-  display: flex;
-  justify-content: center;
-  margin: 0;
-  font-size: .13rem;
-  letter-spacing: .06em;
-  color: var(--text-lo);
-}
-.dl-footer__item b,
-.dl-footer__qq {
-  color: var(--gold);
-  font-weight: 700;
-  letter-spacing: .1em;
-  text-decoration: none;
-}
-.dl-footer__qq:hover { color: var(--gold-2); text-decoration: underline; }
-.dl-footer__copy {
-  margin-left: .08rem;
-  font-size: .11rem;
-  color: var(--text-lo);
-  cursor: pointer;
-  border-bottom: 1px dashed var(--line-3);
-}
-.dl-footer__copy:hover { color: var(--mint-500); }
-.dl-footer__copy.is-done { color: var(--mint-500); }
 .dl-disclaimer {
   margin: 0;
   font-size: .11rem;
@@ -160,6 +123,8 @@
   .title-login.dl-console { width: min(92vw, 6.6rem); margin-top: .3rem; }
   .dl-mirrors { gap: .12rem; }
   .dl-mirrors .btn { height: .56rem; padding: 0 .2rem; font-size: .16rem; }
+  .dl-nav { gap: .12rem; }
+  .dl-nav .btn--sm { height: .52rem; padding: 0 .18rem; font-size: .15rem; }
   .title-bg__radar { left: 50%; top: 30%; width: 7.2rem; height: 7.2rem; opacity: .35; }
   .title-bg__target { display: none; }
 }

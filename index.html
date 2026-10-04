@@ -20,7 +20,7 @@
   <link rel="stylesheet" href="./css/components.css?v=4" />
   <link rel="stylesheet" href="./css/screens/title.css?v=4" />
   <link rel="stylesheet" href="./css/devices.css?v=4" />
-  <link rel="stylesheet" href="./css/dl.css?v=12" />
+  <link rel="stylesheet" href="./css/dl.css?v=13" />
 </head>
 <body>
   <div class="screen title-screen">
@@ -85,34 +85,32 @@
           <svg class="icon btn__icon" viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true" focusable="false"><path fill="currentColor" d="M5.6 5 4.2 6.4 9.8 12l-5.6 5.6L5.6 19l7-7zm7 0-1.4 1.4 5.6 5.6-5.6 5.6 1.4 1.4 7-7z" /></svg>
         </a>
         <div class="dl-mirrors" id="dl-mirrors" aria-label="下载镜像"></div>
-        <div class="dl-fork">
-          <a class="btn btn--secondary btn--sm" rel="noopener noreferrer" referrerpolicy="no-referrer"
-             href="https://github.com/Fuhua-code/Stronghold-Protocol/releases/latest"
-             title="Fuhua 分支的独立 APK 构建（版本/内容与主分支不同）">
-            <span class="btn__label">其他 APK 分支（Fuhua）</span></a>
-          <span class="dl-fork__hint">分支构建 · 与本站版本互不通用</span>
-        </div>
         <div class="dl-meta">
           <span id="dl-version">正在获取版本信息…</span>
           <span id="dl-size" class="dl-size"></span>
           <button type="button" class="dl-copy" id="dl-hash" title="复制 SHA256 校验值" hidden>SHA256</button>
           <span id="dl-downloads" class="dl-downloads" title="GitHub 资产 + 页面直链下载合计" hidden></span>
         </div>
-        <p class="dl-note" id="dl-note">支持断点续传 · 下载缓慢时使用多线程下载工具（实测约 8 倍速度）</p>
-        <div class="dl-aria2">
-          <button type="button" class="dl-copy" id="dl-aria2" title="复制 aria2c 多线程命令" hidden>复制多线程命令</button>
-          <span class="dl-aria2__hint">aria2c -x16 -s16 直链高速下载</span>
-        </div>
-        <p class="dl-links">
-          <a href="./servers.html">服务器清单</a>
-          <span class="dl-links__sep">·</span>
-          <a href="https://github.com/sganggs/Stronghold-Protocol" target="_blank" rel="noopener noreferrer">主仓库</a>
-          <span class="dl-links__sep">·</span>
-          <a href="https://github.com/jingjiangze/Stronghold-Protocol/releases/latest" target="_blank" rel="noopener noreferrer">APK 发布页</a>
-        </p>
-        <div class="dl-footer">
-          <span class="dl-footer__item">QQ 交流群：<a class="dl-footer__qq" href="https://qm.qq.com/cgi-bin/qm/qr?groupUin=293032860" target="_blank" rel="noopener noreferrer" title="跳转到 QQ 加群页面">293032860</a><span class="dl-footer__copy" id="dl-qq-copy" role="button" tabindex="0" title="复制群号">复制</span></span>
-        </div>
+        <p class="dl-note" id="dl-note">支持断点续传 · 下载缓慢时切换其它镜像</p>
+        <nav class="dl-nav" aria-label="相关入口">
+          <a class="btn btn--amber btn--lg dl-nav__servers" href="./servers.html"
+             title="查看自制联机服务器清单"><span class="btn__label">服务器清单</span></a>
+          <a class="btn btn--secondary btn--sm" rel="noopener noreferrer" referrerpolicy="no-referrer"
+             href="https://github.com/Fuhua-code/Stronghold-Protocol/releases/latest"
+             title="Fuhua 分支的独立 APK 构建（与本站版本互不通用）"><span class="btn__label">其他分支 APK</span></a>
+          <a class="btn btn--secondary btn--sm" rel="noopener noreferrer" referrerpolicy="no-referrer"
+             href="https://github.com/sganggs/Stronghold-Protocol"
+             title="《卫戍协议：盟约》主仓库"><span class="btn__label">主仓库</span></a>
+          <a class="btn btn--secondary btn--sm" rel="noopener noreferrer" referrerpolicy="no-referrer"
+             href="https://github.com/jingjiangze/Stronghold-Protocol/releases/latest"
+             title="GitHub 上的 APK 发布页"><span class="btn__label">APK 发布页</span></a>
+          <span class="dl-nav__qq">
+            <a class="btn btn--secondary btn--sm" rel="noopener noreferrer"
+               href="https://qm.qq.com/cgi-bin/qm/qr?groupUin=293032860"
+               title="跳转到 QQ 加群页面"><span class="btn__label">QQ 群 293032860</span></a>
+            <span class="dl-copy" id="dl-qq-copy" role="button" tabindex="0" title="复制群号">复制</span>
+          </span>
+        </nav>
         <p class="dl-disclaimer">
           免责声明：本 APK 为《卫戍协议：盟约》主仓库（明日方舟非官方同人项目）的衍生内容，
           仅供学习交流与个人体验使用，与官方无关，不得用于任何商业用途。
@@ -122,6 +120,6 @@
     </main>
   </div>
 
-  <script src="./js/download.js?v=12" defer></script>
+  <script src="./js/download.js?v=13" defer></script>
 </body>
 </html>
