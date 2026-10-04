@@ -1,20 +1,20 @@
 {
-  "generated": "2026-10-04T06:11:39.629Z",
+  "generated": "2026-10-04T08:09:25.474Z",
   "repo": "jingjiangze/Stronghold-Protocol",
   "releases": [
     {
-      "tag": "shell-v2.8.2",
-      "name": "卫戍协议 内容 shell-v2.8.2（上游 v0.1.2）",
-      "published_at": "2026-10-04T06:00:51Z",
+      "tag": "shell-v2.8.4",
+      "name": "卫戍协议 Android 壳 v2.8.4（配置采集修复 · 全屏 · 服务器选择器 · 出口代理覆盖层）",
+      "published_at": "2026-10-04T07:34:40Z",
       "prerelease": false,
-      "html_url": "https://github.com/jingjiangze/Stronghold-Protocol/releases/tag/shell-v2.8.2",
-      "body": "内容轴 shell-v2.8.2：基于上游 v0.1.2（反馈修复版）的 L1 内容包（8.6MB）。\n- 新素材（ui/emoticon、ui/guide，约 22MB）已同步 R2；美术仍走 CDN。\n- minApk 22：内容轴仅 v2.7.7+ 壳承接（热更新 P0 已修）；v2.7.6 及更早会收到「需要新版应用」提示。\n- 配套壳版本：v2.8.1。",
+      "html_url": "https://github.com/jingjiangze/Stronghold-Protocol/releases/tag/shell-v2.8.4",
+      "body": "v2.8.4：\n- 修复「配置未生效」：recordLoadout/sanitizeDoc 把干员 skill（整数索引）误判为字符串而剥空——现在数值保留、none 模组哨兵保留，16 项单测覆盖真实模型形状。\n- 修复四边黑边：显示挖孔 layoutInDisplayCutoutMode（Android 11+ ALWAYS / 9-10 SHORT_EDGES），并在 onResume/onPageFinished 加固沉浸式。\n- 首页双按钮横向并排（本地服务 | 线上服务）；点线上服务 → 服务器选择器：统一列表（本机/自动/全部签名清单服务器/自定义），单行两格网格，仅显示 名称·v版本·延迟；选中即切服并自动进入（新增 autostart 桥）。\n- 覆盖层首个实现 sp-connect：/ws 出口代理 + /sp/probe 进入前硬化探测（手动跟重定向逐跳校验）；控制面仅环回+Origin 校验、目标一律拒私网环回、被拒目标零触达（18 单测含真 ws 端到端）。武装/解除暂走本机控制路由，面板开关下批。",
       "assets": [
         {
           "name": "app-release.apk",
-          "size": 543646372,
-          "url": "https://github.com/jingjiangze/Stronghold-Protocol/releases/download/shell-v2.8.2/app-release.apk",
-          "digest": "sha256:6241ccec50ad233fa5b5f240078fe1281287e1363cdc538b7028cd5966aa6b5d"
+          "size": 543667471,
+          "url": "https://github.com/jingjiangze/Stronghold-Protocol/releases/download/shell-v2.8.4/app-release.apk",
+          "digest": "sha256:cebabef59f7081a4e9dc59cfac13ea70582ebefa27e7285886e764aa831d2141"
         }
       ]
     }

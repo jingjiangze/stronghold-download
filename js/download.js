@@ -312,34 +312,18 @@
     applyPrimary();
   }
 
-  /** True when the first-party CDN copy failed byte verification (or could not be verified):
-   *  then nothing derived from it — including the direct link in the release notes — may be
-   *  handed out as "the latest build". */
-  function cdnUnverified() {
-    return !!(state.cdn && state.cdn.ok === false);
-  }
-
-  /** Primary button routes through the counting redirect (/api/download/<tag>/<file>);
-   *  a verified first-party direct link keeps its raw URL. */
+  /** Primary button always routes through the counting redirect (/api/download/<tag>/<file>).
+   *  The server verifies the first-party CDN copy and answers with a *query-free* CDN URL:
+   *  the R2 custom domain ignores Range as soon as the request carries a query string
+   *  (200 + whole body), so a `?cb=` direct link silently costs users resume support and
+   *  makes multi-connection downloaders refetch the entire file per connection. */
   function countedUrl() {
-    if (!state.release || !state.asset) return null;
-    if (state.asset.external && !cdnUnverified()) return state.asset.url; // raw direct link
-    // The GitHub asset name is stable; a CDN object name is not a release asset name.
+    if (!state.release) return null;
     return '/api/download/' + encodeURIComponent(state.release.tag) + '/' + PRIMARY_ASSET;
   }
 
   function applyPrimary() {
     var counted = countedUrl();
-    // Verified first-party direct link: always the primary — nothing can beat it, and the
-    // accelerator row below serves the GitHub asset instead.
-    if (state.asset && state.asset.external && !cdnUnverified()) {
-      state.primaryMirrorId = 'direct-external';
-      el.primary.href = state.asset.url;
-      el.primary.title = '下载最新版 Android 客户端（首方直链）';
-      renderMirrors();
-      return;
-    }
-    if (counted) { el.primary.href = counted; }
     var url = null;
     var chosen = null;
     var fastest = fastestMirror();
@@ -354,9 +338,11 @@
     if (chosen) {
       state.primaryMirrorId = chosen.id;
       el.primary.href = counted || url;
-      // With a counted redirect the server picks the route, so naming a mirror here would lie.
+      // The href is a server-side route, so the label must not name a mirror the server may
+      // not pick. Say what is actually decided: verified first-party CDN, or a fallback.
       el.primary.title = '下载最新版 Android 客户端（' +
-        (cdnUnverified() ? '首方 CDN 未校验 · 服务端自动选加速器' : chosen.name) + '）';
+        (!state.cdn ? chosen.name :
+          state.cdn.ok ? '首方 CDN' : '首方 CDN 未校验 · 服务端自动选加速器') + '）';
     }
     renderMirrors();
   }

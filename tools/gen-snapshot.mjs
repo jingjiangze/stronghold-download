@@ -53,26 +53,31 @@ const apks = (release.assets || []).filter((a) => /\.apk$/i.test(a.name));
 // CI mirrors every build to a predictable R2 path: apk/stronghold-v<version>.apk
 // (e.g. shell-v2.7.6 -> apk/stronghold-v2.7.6.apk) — the first-party CDN beats the
 // GitHub asset URL. But a brand-new release is not on the CDN yet, and the CF edge caches
-// that 404 for hours, so probe with a cache-buster stamped at generation time and only
-// bake the R2 link in when the object actually answers: a snapshot that hands out a 404 is
-// worse than one that hands out the (slower) GitHub asset.
+// that 404 for hours, so the *probe* carries a cache-buster while the published link never
+// does: the R2 custom domain ignores Range as soon as a query string is present, which
+// would cost users resume support and make multi-connection downloaders refetch the file.
+// Only publish the CDN link when the object actually answers with the release asset size.
 const version = release.tag_name.replace(/^shell-v/, '');
 const r2Url = `https://weishucdn.jiangjiangze.icu/apk/stronghold-v${version}.apk`;
 const buster = `?cb=` + Date.now().toString(36);
 const ghApk = apks[0] ? apks[0].browser_download_url : null;
 
-async function r2IsLive(url) {
+async function probeCdn(url) {
   try {
     const res = await fetch(url, { headers: { range: 'bytes=0-1023' }, redirect: 'manual' });
-    return res.status === 200 || res.status === 206;
+    if (!(res.status === 200 || res.status === 206)) return { ok: false, size: 0 };
+    const len = Number(res.headers.get('content-length') || 0);
+    return { ok: true, size: res.status === 206 ? len + 1024 : len };
   } catch {
-    return false;
+    return { ok: false, size: 0 };
   }
 }
 
-const useR2 = await r2IsLive(r2Url + buster);
+const ghSize = (apks[0] && apks[0].size) || 0;
+const cdn = await probeCdn(r2Url + buster);
+const useR2 = cdn.ok && (!ghSize || cdn.size === ghSize);
 if (!useR2 && !ghApk) throw new Error(`neither the R2 mirror nor a GitHub apk asset is available for ${release.tag_name}`);
-console.log(`r2 probe: ${useR2 ? 'live' : 'missing'} for ${r2Url}`);
+console.log(`r2 probe: ${cdn.ok ? 'live' : 'missing'} | cdn ${cdn.size} B vs release asset ${ghSize} B | 采用 ${useR2 ? 'CDN' : 'GitHub 资产'}`);
 
 const snapshot = {
   generated: new Date().toISOString(),
@@ -99,9 +104,9 @@ const snapshot = {
 if (useR2) {
   snapshot.releases[0].assets = [{
     name: `stronghold-v${version}.apk`,
-    size: null,
-    url: r2Url + buster,
-    digest: null,
+    size: cdn.size || null,
+    url: r2Url,
+    digest: (apks[0] && apks[0].digest) || null,
     external: true
   }];
 } else {
