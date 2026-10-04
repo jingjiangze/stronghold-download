@@ -141,6 +141,28 @@ export async function onRequestPut(context) {
     httpMetadata: { contentType: 'application/json', cacheControl: 'public, max-age=60' }
   });
 
+  // 审计：清单被整份重写的事已经发生过两次，光靠 Last-Modified 查不出是谁。每次成功发布留一条。
+  try {
+    const auditKey = 'site/publish-log.json';
+    const prevRes = await bucket.get(auditKey);
+    let log = prevRes ? JSON.parse(await prevRes.text()) : { entries: [] };
+    if (!log || !Array.isArray(log.entries)) log = { entries: [] };
+    let sha = null;
+    try {
+      const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw));
+      sha = Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, '0')).join('').slice(0, 16);
+    } catch { /* 算不出不挡发布 */ }
+    log.entries.push({
+      at: new Date().toISOString(), count: cleaned.length, incomingUpdated: doc.updated || null,
+      signed, forced: !!force, sha,
+      ua: (request.headers.get('user-agent') || '').slice(0, 120),
+      ip: (request.headers.get('cf-connecting-ip') || request.headers.get('x-forwarded-for') || '').slice(0, 60),
+      country: (request.cf && request.cf.country) || null,
+    });
+    if (log.entries.length > 60) log.entries = log.entries.slice(-60);
+    await bucket.put(auditKey, JSON.stringify(log, null, 1) + '\n', {
+      httpMetadata: { contentType: 'application/json', cacheControl: 'private, no-store' } });
+  } catch { /* 审计失败不影响发布 */ }
   return json({ ok: true, count: cleaned.length, updated: new Date().toISOString() });
 }
 

@@ -103,7 +103,12 @@ export async function onRequestGet(context) {
         return { entry, ok: false, reason: '已停用', rooms: null, humans: null, variant: null };
       }
       const cool = cooled(entry.id);
-      if (cool) { skipped++; return { entry, ok: false, cooled: true, reason: cool.reason }; }
+      if (cool) {
+        skipped++;
+        // 冷却只是省掉一次探测，不该顺手把「维护者留证 / 玩家实测可达」的条目判死
+        if (entry.direct_cn === true || browserOk(entry.id)) return { entry, ok: false, cooled: true, spared: true, reason: cool.reason };
+        return { entry, ok: false, cooled: true, reason: cool.reason };
+      }
       // 单个服务器抛异常（解压失败、非法 probe 路径等）不能把整轮 verify 打成 1101，
       // 否则所有人看到的都是上一次的成功结果。
       try {
@@ -127,9 +132,22 @@ export async function onRequestGet(context) {
     const id = r.entry.id;
     if (r.cooled) {
       // 冷却期内不打扰它，也不改判：上次活的继续算活，上次死的继续挂原因。
-      if (prevValid.has(id)) {
+      if (r.spared) {
+        const p = browserOk(id);
+        if (p) evidence[id] = { at: p.at, country: p.country, ms: p.ms, okHits: p.okHits, via: 'browser' };
+        valid.push(id);
+        occupancy[id] = prevOccupancy[id]
+          || { rooms: null, humans: null, variant: p ? 'browser' : 'direct-cn', app: null, build: null };
+      } else if (prevValid.has(id)) {
         valid.push(id);
         occupancy[id] = prevOccupancy[id] || { rooms: null, humans: null, variant: 'cooled', app: null, build: null };
+      } else if (r.entry.direct_cn === true || browserOk(id)) {
+        // 但正向证据不吃冷却：新收录的国内服第一次探测必然超时，若按"上次结论"继续判死，
+        // 它会永远锁在 invalid 里（direct_cn / 玩家回执本来就该越过边缘探测）。
+        delete backoff[id];
+        valid.push(id);
+        occupancy[id] = prevOccupancy[id] || { rooms: null, humans: null,
+          variant: r.entry.direct_cn === true ? 'direct-cn' : 'browser', app: null, build: null };
       } else {
         invalid.push({ id, name: r.entry.name, url: r.entry.url, reason: (backoff[id] && backoff[id].reason) || '冷却中' });
       }

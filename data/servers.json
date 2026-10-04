@@ -1,5 +1,5 @@
 {
-  "updated": "2026-10-04T18:08:59.844Z",
+  "updated": "2026-10-04T18:42:34.757Z",
   "servers": [
     {
       "id": "xiaolubao",
@@ -127,11 +127,11 @@
       "url": "https://sp.rainya.me:10166/play",
       "probe": "/healthz",
       "enabled": true,
-      "note": "社区服 · 仅国内可达（CF 边缘超时）· raiya 另一端口",
+      "note": "社区服 · 国内 IDC（海外探测不通，靠玩家回执为证）· 地址按原样收录",
       "direct_cn": true
     }
   ],
   "keyId": "sp-2026-10",
   "v": 1,
-  "sig": "4ntfNHeycqjYz9v46vAe+boE6m8A4V0Kp77M/mu5JurCjn1mxAUdr0FHBt2bOppmiIYZIWKfgNIt+9yg2rqFBg=="
+  "sig": "pSRhsLhhUgnfuo+XmVNAqcir1FByzr9zWnAaEnMF9Mz98NXOJboih17woO4cJk4Tp9uCUW4kPZGqCXNCZZucDQ=="
 }
