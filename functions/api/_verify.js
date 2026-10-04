@@ -40,6 +40,9 @@ function validateUrl(raw) {
   if (url.protocol !== 'https:' && url.protocol !== 'http:') return { error: '仅允许 http/https' };
   if (url.username || url.password) return { error: '地址中不能包含账号密码' };
   if (isUnsafeHostname(url.hostname)) return { error: '拒绝内网/环回/保留地址' };
+  // ?room=CODE 这类深链只是邀请进房，不是另一台服务器：丢 query/hash，保留 path（子路径挂载是真的）
+  url.search = '';
+  url.hash = '';
   return { href: url.href.replace(/\/+$/, '') || url.href, host: url.host, origin: url.origin };
 }
 
@@ -54,6 +57,7 @@ async function safeFetch(url, init, redirects) {
     try { next = new URL(location, url); } catch { return { error: '重定向目标无效' }; }
     if (next.protocol !== 'https:' && next.protocol !== 'http:') return { error: '重定向到非 http(s)' };
     if (isUnsafeHostname(next.hostname)) return { error: '重定向到内网地址' };
+    next.search = ''; next.hash = '';
     return safeFetch(next, init, redirects + 1);
   }
   return { res };

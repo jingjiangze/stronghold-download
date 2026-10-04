@@ -63,9 +63,9 @@ export async function onRequestPost(context) {
   if (liveRes) {
     try {
       const live = JSON.parse(await liveRes.text());
-      if ((live.servers || []).some((s) => s.url === entry.url)) {
-        return json({ ok: false, error: '该服务器已在公共清单中' }, 409);
-      }
+      const hosts = (live.servers || []).map((x) => { try { return new URL(x.url).host; } catch { return ''; } });
+      const dup = (live.servers || []).some((x) => x.url === entry.url) || hosts.includes(new URL(entry.url).host);
+      if (dup) return json({ ok: false, error: '该站点已在公共清单中（同一 host 视为同一台服务器）' }, 409);
     } catch { /* 线上清单读不动时继续入队，approve 时还会再查一遍 */ }
   }
   const queued = await Promise.all(index.map((id) => env.SERVER_REVIEW.get(`pending/${id}`)));

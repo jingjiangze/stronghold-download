@@ -42,6 +42,7 @@ function validateUrl(raw) {
   if (url.protocol !== 'https:' && url.protocol !== 'http:') return { error: 'scheme' };
   if (url.username || url.password) return { error: 'credentials' };
   if (isUnsafeHostname(url.hostname)) return { error: 'private host' };
+  url.search = ''; url.hash = '';   // 深链 ?room= 不算另一台服务器
   return { href: url.href.replace(/\/+$/, '') || url.href, host: url.host };
 }
 
