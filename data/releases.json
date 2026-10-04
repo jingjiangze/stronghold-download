@@ -1,20 +1,20 @@
 {
-  "generated": "2026-10-04T03:27:42.595Z",
+  "generated": "2026-10-04T04:27:27.124Z",
   "repo": "jingjiangze/Stronghold-Protocol",
   "releases": [
     {
-      "tag": "shell-v2.7.6",
-      "name": "卫戍协议 Android 壳 v2.7.6（内容升 v0.1.1 · 清单切服 · 上游先行）",
-      "published_at": "2026-10-04T03:17:46Z",
+      "tag": "shell-v2.7.7",
+      "name": "卫戍协议 Android 壳 v2.7.7（检查更新 · 门禁移除 · 玩家数据 v1 · 热更新 P0 修复）",
+      "published_at": "2026-10-04T04:20:31Z",
       "prerelease": false,
-      "html_url": "https://github.com/jingjiangze/Stronghold-Protocol/releases/tag/shell-v2.7.6",
-      "body": "v2.7.6：内容轴升 v0.1.1（热分发含素材增量）+ 清单切服（延迟胶囊直开服务器面板、人/房/当前/版本不同徽标、对局中禁切）+ app 版本软门禁（仅协议硬拦）+ 上游先行（assets.js 回归上游、补丁引擎 CRLF 归一、文档清单）。\n- 首次启动即内嵌 v0.1.1，可直接进 v0.1.0 服务器（仅协议硬拦）。\n- 行动观察（observe）改为事件驱动 + 页面隐藏暂停。",
+      "html_url": "https://github.com/jingjiangze/Stronghold-Protocol/releases/tag/shell-v2.7.7",
+      "body": "v2.7.7：① 首页右下「检查更新」按钮（内容轴静默检查→已最新/发现更新对话框）② 兼容门禁移除：所有服务器均可加入，协议/版本差异只显示「版本不同」徽标（版本提示弹窗删除）③ 内容路由：本地树未命中直接放行给当前服务器，第三方内容同意弹窗移除 ④ 玩家数据 v1：壳内真源 player-v1.json（跨服务器共享）+ 采集对战结果/去过的服务器/房间/干员配置 + 导出导入；spData 桥 + player-data.js 注入（App 覆盖全部站点）⑤ 热更新 P0 修复：slimEntry 双布局（RAW slim 从此可解包）+ Android 补丁引擎对齐 Node 五语义（already-applied/optional/shrink/CRLF/minApp）——这是热更新首次真正可用的版本。",
       "assets": [
         {
           "name": "app-release.apk",
-          "size": 521171605,
-          "url": "https://github.com/jingjiangze/Stronghold-Protocol/releases/download/shell-v2.7.6/app-release.apk",
-          "digest": "sha256:db54036be2974c35bd8a2a04670fe7ac5ecca5b4acbacb040653c7c991bbbe06"
+          "size": 521189875,
+          "url": "https://github.com/jingjiangze/Stronghold-Protocol/releases/download/shell-v2.7.7/app-release.apk",
+          "digest": "sha256:8df6810a3a68bbeacf8c068a57b958c5c5799763c551124e6f0df04b693c1cd1"
         }
       ]
     }

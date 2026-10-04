@@ -15,10 +15,15 @@ import { fileURLToPath } from 'node:url';
 const REPO = 'jingjiangze/Stronghold-Protocol';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const OUT = join(HERE, '..', 'data', 'releases.json');
+// Optional GH_TOKEN / GITHUB_TOKEN: raises the API limit from 60/h to 5000/h and avoids
+// the random 403s an anonymous caller hits on a busy connection.
 const HEADERS = {
   accept: 'application/vnd.github+json',
   'user-agent': 'stronghold-download-snapshot'
 };
+if (process.env.GH_TOKEN || process.env.GITHUB_TOKEN) {
+  HEADERS.authorization = 'Bearer ' + (process.env.GH_TOKEN || process.env.GITHUB_TOKEN);
+}
 
 async function getJson(url) {
   const res = await fetch(url, { headers: HEADERS });
@@ -46,8 +51,20 @@ async function latestWithApk() {
 const release = await latestWithApk();
 const apks = (release.assets || []).filter((a) => /\.apk$/i.test(a.name));
 const notesLink = (release.body || '').match(/https?:\/\/[^\s)\]"<>]+\.apk/i);
-if (!apks.length && !notesLink) {
-  console.error(`release ${release.tag_name} has neither an .apk asset nor an .apk link in the notes`);
+// CI also mirrors every build to a predictable R2 path: apk/stronghold-<version>.apk
+// (e.g. shell-v2.7.6 -> apk/stronghold-v2.7.6.apk). Prefer it when it answers 200.
+const version = release.tag_name.replace(/^shell-v/, '');
+const r2Link = `https://weishucdn.jiangjiangze.icu/apk/stronghold-${version}.apk`;
+let r2Ready = false;
+try {
+  // R2 answered HEAD inconsistently through some proxies; a 1-byte ranged GET is the
+  // reliable probe (404 stays 404, 200 becomes 206).
+  const probe = await fetch(r2Link, { headers: { 'user-agent': 'snapshot', range: 'bytes=0-1023' } });
+  r2Ready = probe.status === 200 || probe.status === 206;
+  try { await probe.body?.cancel(); } catch { /* body already consumed */ }
+} catch { /* unreachable: fall back */ }
+if (!apks.length && !notesLink && !r2Ready) {
+  console.error(`release ${release.tag_name} has no usable APK (asset / notes link / R2 mirror all missing)`);
   process.exit(1);
 }
 
@@ -73,9 +90,18 @@ const snapshot = {
   ]
 };
 
-// Direct-link preference: when the notes carry an .apk URL (first-party R2 CDN), it wins
-// over the GitHub release asset; otherwise keep the .apk asset as-is.
-if (notesLink) {
+// Direct-link preference (first-party R2 CDN beats the GitHub asset URL). The notes link
+// wins if present; otherwise the predictable R2 path is used once it answers 200 — this
+// covers the window where CI has uploaded to R2 but not attached the asset to the release.
+if (r2Ready) {
+  snapshot.releases[0].assets = [{
+    name: `stronghold-${version}.apk`,
+    size: null,
+    url: r2Link,
+    digest: null,
+    external: true
+  }];
+} else if (notesLink) {
   snapshot.releases[0].assets = [{
     name: notesLink[0].split('/').pop().split(/[?#]/)[0] || 'app-release.apk',
     size: null,
