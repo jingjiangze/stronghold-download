@@ -38,19 +38,21 @@ function busted(url) {
  */
 export async function cdnHasBuild(tag, expectedSize) {
   const url = r2Asset(tag);
-  if (!expectedSize) return { ok: false, url: url, reason: 'size-unknown' };
+  if (!expectedSize) return { ok: false, url: url, reason: 'size-unknown', expected: 0, size: 0 };
   try {
     const res = await fetch(busted(url), {
       method: 'HEAD',
       cf: { cacheTtl: 0, cacheEverything: false },
       signal: AbortSignal.timeout(4000),
     });
-    if (!res.ok) return { ok: false, url: url, reason: 'missing' };
-    const len = Number(res.headers.get('content-length') || 0);
-    if (len && len !== expectedSize) return { ok: false, url: url, reason: 'size-mismatch' };
-    return { ok: true, url: url, reason: 'ok' };
+    const size = Number(res.headers.get('content-length') || 0);
+    if (!res.ok) return { ok: false, url: url, reason: 'missing', expected: expectedSize, size: 0 };
+    if (size && size !== expectedSize) {
+      return { ok: false, url: url, reason: 'size-mismatch', expected: expectedSize, size: size };
+    }
+    return { ok: true, url: url, reason: 'ok', expected: expectedSize, size: size };
   } catch (err) {
-    return { ok: false, url: url, reason: 'probe-failed' };
+    return { ok: false, url: url, reason: 'probe-failed', expected: expectedSize, size: 0 };
   }
 }
 

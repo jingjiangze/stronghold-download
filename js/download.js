@@ -37,11 +37,20 @@
   };
 
   var CDN_REASON = {
-    missing: '尚未上传到首方 CDN',
-    'size-mismatch': 'CDN 上的同名字节数与本版本资产不符',
-    'size-unknown': '无法校验 CDN 上的构建',
-    'probe-failed': 'CDN 探测超时'
+    missing: '首方 CDN 还没有这个构建',
+    'size-unknown': '无法校验首方 CDN 上的构建',
+    'probe-failed': '首方 CDN 探测超时'
   };
+
+  /** Why the primary button is not using the first-party CDN, in one readable line. The
+   *  byte counts are printed because "size-mismatch" is only actionable with them. */
+  function cdnNote(cdn) {
+    if (!cdn || cdn.ok !== false) return '';
+    var why = cdn.reason === 'size-mismatch' && cdn.size && cdn.expected
+      ? '首方 CDN 上的同名文件与本版本字节数不一致（CDN ' + cdn.size + ' B · 发布 ' + cdn.expected + ' B）'
+      : (CDN_REASON[cdn.reason] || '首方 CDN 暂不可用');
+    return why + ' · 主按钮改走公共加速器，也可点上方镜像按钮换源';
+  }
 
   /* ---- helpers --------------------------------------------------------------------- */
 
@@ -287,10 +296,8 @@
 
     // Be explicit when the primary button cannot use the first-party CDN: the fallback is
     // slower by design, and silence here is what made "slow download" undiagnosable.
-    if (state.cdn && state.cdn.ok === false) {
-      setText(el.note, '首方 CDN ' + (CDN_REASON[state.cdn.reason] || '暂不可用') +
-        ' · 主按钮改走公共加速器，也可点上方镜像按钮换源');
-    }
+    var cdnText = cdnNote(state.cdn);
+    if (cdnText) setText(el.note, cdnText);
 
     if (asset.digest && el.hash) {
       el.hash.hidden = false;
@@ -305,20 +312,27 @@
     applyPrimary();
   }
 
+  /** True when the first-party CDN copy failed byte verification (or could not be verified):
+   *  then nothing derived from it — including the direct link in the release notes — may be
+   *  handed out as "the latest build". */
+  function cdnUnverified() {
+    return !!(state.cdn && state.cdn.ok === false);
+  }
+
   /** Primary button routes through the counting redirect (/api/download/<tag>/<file>);
-   *  first-party direct links keep their raw URL. */
+   *  a verified first-party direct link keeps its raw URL. */
   function countedUrl() {
     if (!state.release || !state.asset) return null;
-    if (state.asset.external) return state.asset.url; // raw direct link (no counter)
-    return '/api/download/' + encodeURIComponent(state.release.tag) + '/' +
-           encodeURIComponent(state.asset.name);
+    if (state.asset.external && !cdnUnverified()) return state.asset.url; // raw direct link
+    // The GitHub asset name is stable; a CDN object name is not a release asset name.
+    return '/api/download/' + encodeURIComponent(state.release.tag) + '/' + PRIMARY_ASSET;
   }
 
   function applyPrimary() {
     var counted = countedUrl();
-    // First-party direct link (notes URL): always the primary — nothing can beat it, and
-    // the accelerator row below serves the GitHub asset instead.
-    if (state.asset && state.asset.external) {
+    // Verified first-party direct link: always the primary — nothing can beat it, and the
+    // accelerator row below serves the GitHub asset instead.
+    if (state.asset && state.asset.external && !cdnUnverified()) {
       state.primaryMirrorId = 'direct-external';
       el.primary.href = state.asset.url;
       el.primary.title = '下载最新版 Android 客户端（首方直链）';
@@ -340,7 +354,9 @@
     if (chosen) {
       state.primaryMirrorId = chosen.id;
       el.primary.href = counted || url;
-      el.primary.title = '下载最新版 Android 客户端（' + chosen.name + '）';
+      // With a counted redirect the server picks the route, so naming a mirror here would lie.
+      el.primary.title = '下载最新版 Android 客户端（' +
+        (cdnUnverified() ? '首方 CDN 未校验 · 服务端自动选加速器' : chosen.name) + '）';
     }
     renderMirrors();
   }
@@ -444,7 +460,9 @@
     var probe = id ? state.measured[id] : null;
     if (probe && probe.mbps > 0) {
       var m = state.mirrors.filter(function (x) { return x.id === id; })[0];
-      setText(el.note, '已实测：' + (m ? m.name : id) + ' ≈ ' + probe.mbps.toFixed(1) + ' MB/s（本次网络）· 支持断点续传；慢时切换其它镜像');
+      setText(el.note, '已实测：' + (m ? m.name : id) + ' ≈ ' + probe.mbps.toFixed(1) +
+        ' MB/s（本次网络）· 支持断点续传；慢时切换其它镜像' +
+        (state.cdn && state.cdn.ok === false ? ' · 首方 CDN 未通过校验，主按钮走加速器' : ''));
       var fastest = fastestMirror();
       Object.keys(state.measured).forEach(function (key) { state.measured[key].fastest = false; });
       if (fastest && state.measured[fastest.id]) state.measured[fastest.id].fastest = true;
