@@ -5,12 +5,16 @@
 // Why: the page used to call api.github.com from the visitor's browser. GitHub's anonymous
 // limit is per-IP, so a shared or mainland-China uplink hits 403 constantly and the page
 // kept showing the bundled offline snapshot — an older version — as if it were current.
-// Cloudflare fetches upstream once every few minutes from its own egress and serves the
-// rest from the edge cache, so visitors never need to reach GitHub at all.
+// Cloudflare fetches upstream once every few minutes from its own egress, serves the rest
+// from the edge cache, and keeps a durable copy in KV, so visitors never need to reach
+// GitHub at all and a GitHub outage or rate-limit window cannot push the page back onto the
+// bundled `data/releases.json` (which stays a cold-start floor, not the normal path).
 //
 // No request input reaches the upstream URL: repo and endpoint are fixed constants.
 
 const LIST_URL = 'https://api.github.com/repos/jingjiangze/Stronghold-Protocol/releases?per_page=100';
+const SNAPSHOT_KEY = '***';
+const SNAPSHOT_REFRESH_MS = 30 * 60 * 1000;
 const FRESH_MS = 5 * 60 * 1000;
 const STALE_KEEP_MS = 24 * 60 * 60 * 1000;
 const UPSTREAM_TIMEOUT_MS = 8000;
@@ -61,6 +65,31 @@ async function fetchLatest(env) {
   }
 }
 
+/** Durable copy of the last good answer. The edge cache is per-colo and gets evicted; KV
+ *  is what lets the page stay on the newest version across a GitHub outage or a rate-limit
+ *  window, instead of dropping back to the bundled file (which is only a cold-start floor). */
+async function readSnapshot(env) {
+  try {
+    const raw = await env.SERVER_REVIEW.get(SNAPSHOT_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && parsed.tag_name ? parsed : null;
+  } catch (err) {
+    return null;
+  }
+}
+
+async function writeSnapshot(env, payload) {
+  const prev = await readSnapshot(env);
+  // KV writes are the scarce side of the free tier: refresh at most every
+  // SNAPSHOT_REFRESH_MS unless the release itself changed.
+  if (prev && prev.tag_name === payload.tag_name &&
+      payload._cachedAt - (prev._cachedAt || 0) < SNAPSHOT_REFRESH_MS) return;
+  try {
+    await env.SERVER_REVIEW.put(SNAPSHOT_KEY, JSON.stringify(payload));
+  } catch (err) { /* KV is optional; the edge cache still covers this colo */ }
+}
+
 export async function onRequestGet(context) {
   const { env, waitUntil } = context;
   const cache = caches.default;
@@ -81,9 +110,13 @@ export async function onRequestGet(context) {
       _ghDownloads: fetched.ghDownloads,
     });
     waitUntil(cache.put(key, respond(payload, STALE_KEEP_MS / 1000)));
+    waitUntil(writeSnapshot(env, payload));
     return respond(payload, FRESH_MS / 1000);
   }
 
+  // Upstream unavailable: edge copy first, then the durable KV copy, both flagged stale.
   if (cached && cached.tag_name) return respond(Object.assign({}, cached, { _stale: true }), 30);
+  const snapshot = await readSnapshot(env);
+  if (snapshot) return respond(Object.assign({}, snapshot, { _stale: true }), 30);
   return respond({ error: 'upstream unavailable' }, 0, 502);
 }
