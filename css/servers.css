@@ -130,6 +130,14 @@
   color: var(--text-dim);
   white-space: nowrap;
 }
+.sv-hostver {
+  color: var(--text-dim);
+  letter-spacing: .04em;
+}
+/* load colors: mint = light load, gold = near capacity, red = full */
+.sv-bar { background: linear-gradient(90deg, var(--mint-600), var(--mint-glow)); }
+.sv-row.is-hot .sv-bar { background: linear-gradient(90deg, var(--amber), var(--gold)); }
+.sv-row.is-full .sv-bar { background: var(--red); }
 
 /* [hidden] must win over the flex display on panels/rows */
 .admin-panel[hidden], .admin-review[hidden], .sv-row[hidden], .servers-head[hidden] { display: none !important; }

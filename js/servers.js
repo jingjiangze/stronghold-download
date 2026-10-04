@@ -30,6 +30,7 @@
   var GOOD_MS = 150;
   var OK_MS = 400;
   var SLOW_MS = 1000;
+  var ROOM_CAPACITY = 1000; // 满载房间数（负载条分母）
   // Results are cached per server in localStorage so the page opens with last round's
   // numbers instantly; a fresh measurement only runs on the 5-minute timer or when the
   // user hits 立即测速.
@@ -360,6 +361,11 @@
   function row(server) {
     var div = document.createElement('div');
     div.className = 'sv-row is-' + (server.level || 'pending');
+    var occ = state.occupancy[server.id];
+    if (occ && typeof occ.rooms === 'number') {
+      if (occ.rooms >= ROOM_CAPACITY) div.className = 'sv-row is-full';
+      else if (occ.rooms >= ROOM_CAPACITY * 0.7) div.className = 'sv-row is-hot';
+    }
 
     var dot = document.createElement('span');
     dot.className = 'sv-dot';
@@ -379,15 +385,30 @@
     main.appendChild(host);
     div.appendChild(main);
 
+    // Meter = room load (rooms / 1000). Occupancy comes from the shared server-side
+    // verification; node builds report rooms/humans, workers builds have none (dash).
+    var occ = state.occupancy[server.id];
     var meter = document.createElement('span');
     meter.className = 'sv-meter';
     var bar = document.createElement('span');
     bar.className = 'sv-bar';
-    bar.style.width = server.ms
-      ? Math.min(100, Math.max(6, Math.round((server.ms / SLOW_MS) * 100))) + '%'
-      : '0%';
+    var occLoad = occ && typeof occ.rooms === 'number' ? Math.min(1, occ.rooms / ROOM_CAPACITY) : null;
+    bar.style.width = occLoad != null ? Math.max(4, Math.round(occLoad * 100)) + '%' : '0%';
     meter.appendChild(bar);
+    meter.title = occLoad != null
+      ? '负载：' + occ.rooms + ' / ' + ROOM_CAPACITY + ' 房间'
+      : '该服务器类型不提供房间统计';
     div.appendChild(meter);
+    // version label sits right after the host line (append inside `main`)
+    var versionText = occ ? (occ.build ? 'build ' + String(occ.build).slice(0, 7)
+      : (occ.app ? 'v' + occ.app : '')) : '';
+    if (versionText && host) {
+      var hostVer = document.createElement('span');
+      hostVer.className = 'sv-hostver';
+      hostVer.title = '服务器当前版本（不强制，仅标注）';
+      hostVer.textContent = ' · ' + versionText;
+      host.appendChild(hostVer);
+    }
 
     var ms = document.createElement('span');
     ms.className = 'sv-ms';
@@ -396,43 +417,6 @@
       ? '缓存于 ' + new Date(server.cachedAt).toLocaleString('zh-CN', { hour12: false })
       : '';
     div.appendChild(ms);
-
-    // Occupancy from the shared server-side verification (node builds report rooms/humans;
-    // workers builds have none -> show a dash via title only). App/build labels annotate
-    // the server's current version — no version gate, older builds stay listed.
-    var occ = state.occupancy[server.id];
-    if (occ) {
-      var occSpan = document.createElement('span');
-      occSpan.className = 'sv-occ';
-      if (typeof occ.rooms === 'number' && typeof occ.humans === 'number') {
-        occSpan.innerHTML = '';
-        var roomIcon = document.createElement('span');
-        roomIcon.className = 'sv-occ__item';
-        roomIcon.title = '房间数 · 在线人数（每 5 分钟随服务端校验刷新）';
-        roomIcon.textContent = '🏠 ' + occ.rooms;
-        var humanIcon = document.createElement('span');
-        humanIcon.className = 'sv-occ__item sv-occ__humans';
-        humanIcon.title = roomIcon.title;
-        humanIcon.textContent = '👤 ' + occ.humans;
-        occSpan.appendChild(roomIcon);
-        occSpan.appendChild(humanIcon);
-      } else {
-        occSpan.title = '该服务器类型不提供房间/人数统计';
-        occSpan.textContent = '·';
-        occSpan.className = 'sv-occ sv-occ--na';
-      }
-      div.appendChild(occSpan);
-      // version label: node servers show app (e.g. 0.1.0), workers show build hash
-      var versionText = occ.build ? 'build ' + String(occ.build).slice(0, 7)
-        : (occ.app ? 'v' + occ.app : '');
-      if (versionText) {
-        var vSpan = document.createElement('span');
-        vSpan.className = 'sv-ver';
-        vSpan.title = '服务器当前版本（不强制，仅标注）';
-        vSpan.textContent = versionText;
-        div.appendChild(vSpan);
-      }
-    }
 
     if (server.url) {
       var open = document.createElement('a');
