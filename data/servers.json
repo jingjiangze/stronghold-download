@@ -1,5 +1,5 @@
 {
-  "updated": "2026-10-04T05:43:08.318Z",
+  "updated": "2026-10-04T10:35:43.813Z",
   "servers": [
     {
       "id": "xiaolubao",
@@ -94,9 +94,17 @@
       "probe": "/api/status",
       "enabled": true,
       "note": "社区服 · B站 10-04 清单维护者直供 · /healthz 被网关 403，客户端挂 /"
+    },
+    {
+      "id": "mutoqe2z77ae6a01",
+      "name": "梨服",
+      "url": "https://sp.lain42.top",
+      "probe": "/healthz",
+      "enabled": true,
+      "note": "社区服 · B站 10-04 评论区 lilyco42 分享（深链 ?room=EYLJ 已归一"
     }
   ],
   "keyId": "sp-2026-10",
   "v": 1,
-  "sig": "d/fXFE1TUh2uHNreyEeNXGx0zYOs5oUIo7Tfb3DAvsVlrQxQkjXtFlJjpeR3DCZr4K8akqw5QUoyLq/adnzrCw=="
+  "sig": "lNcKJNM/GCM48RWM/oUZyQyV9kpOh4DTFzFIsL6PV+MtBLltFPk/ow4yTUJlFbIkNQk6Pzumw5SusfPFCiDyAA=="
 }
