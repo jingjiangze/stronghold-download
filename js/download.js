@@ -11,6 +11,7 @@
   'use strict';
 
   var REPO = 'jingjiangze/Stronghold-Protocol';
+  var FIRST_PARTY_HOST = 'weishucdn.jiangjiangze.icu'; // our own R2 CDN, not a config entry
   var API_EDGE = '/api/latest';
   var API_LATEST = 'https://api.github.com/repos/' + REPO + '/releases/latest';
   var API_LIST = 'https://api.github.com/repos/' + REPO + '/releases?per_page=10';
@@ -65,6 +66,7 @@
 
   function allowedHosts() {
     var hosts = { 'github.com': true, 'api.github.com': true };
+    hosts[FIRST_PARTY_HOST] = true;
     state.mirrors.forEach(function (m) {
       [m.prefix, m.template].forEach(function (tpl) {
         if (!tpl) return;
@@ -244,7 +246,9 @@
     a.href = url;
     a.rel = 'noopener';
     a.referrerPolicy = 'no-referrer';
-    a.title = '通过 ' + mirror.name + ' 下载' + (mirror.range === false ? '（该镜像不支持断点续传）' : '');
+    a.title = '通过 ' + mirror.name + ' 下载'
+      + (mirror.mode === 'prefix' ? '（代理 GitHub 资产，第三方可能缓存旧字节或同步滞后）' : '')
+      + (mirror.range === false ? '；该镜像不支持断点续传' : '');
 
     var label = document.createElement('span');
     label.className = 'btn__label';
@@ -271,10 +275,44 @@
     return span;
   }
 
+  /** First-party R2 link, built from what the edge actually verified (`_cdn`). It leads the
+   *  row because the public accelerators proxy GitHub and can lag or serve cached bytes, so
+   *  only our own object is guaranteed to be the release the page is naming. */
+  function firstPartyButton() {
+    var cdn = state.cdn;
+    if (!cdn || !cdn.ok || !cdn.url) return null;
+    var parsed;
+    try { parsed = new URL(cdn.url); } catch (e) { return null; }
+    if (parsed.protocol !== 'https:' || parsed.hostname !== FIRST_PARTY_HOST) return null;
+
+    var a = document.createElement('a');
+    a.className = 'btn btn--secondary btn--sm dl-mirror is-active';
+    a.href = cdn.url;
+    a.rel = 'noopener';
+    a.referrerPolicy = 'no-referrer';
+    a.title = '首方 CDN（Cloudflare R2）直链 · 与本页版本同一构建，支持断点续传';
+    var label = document.createElement('span');
+    label.className = 'btn__label';
+    var name = document.createElement('span');
+    name.textContent = '首方 CDN';
+    label.appendChild(name);
+    a.appendChild(label);
+    var badge = document.createElement('span');
+    badge.className = 'dl-badge dl-badge--gold';
+    badge.textContent = cdn.reason === 'size-close' ? '推荐 · 字节差 ' + (cdn.size - cdn.expected) : '推荐';
+    a.appendChild(badge);
+    return a;
+  }
+
   function renderMirrors() {
     if (!el.mirrors) return;
     el.mirrors.textContent = '';
     var applicable = 0;
+    var firstParty = firstPartyButton();
+    if (firstParty) {
+      el.mirrors.appendChild(firstParty);
+      applicable += 1;
+    }
     state.mirrors.forEach(function (mirror) {
       var url = buildMirrorUrl(mirror, state.asset, state.release.tag);
       if (!url) return;
@@ -358,26 +396,6 @@
       }
     });
     return best;
-  }
-
-  /* ---- mirror manifests (R2 first-party mirror advertises what it holds) ------------ */
-
-  function refreshManifests() {
-    var targets = state.mirrors.filter(function (m) { return !!m.manifest; });
-    return Promise.all(targets.map(function (mirror) {
-      return fetchJson(mirror.manifest, 8000).then(function (manifest) {
-        // Base URL must stay on the mirror's own host before anything is built from it.
-        var host = null;
-        try { host = new URL(mirror.manifest).host; } catch (err) { host = null; }
-        if (!host || !manifest || typeof manifest.tag !== 'string') return;
-        if (!allowedHosts()[host]) return;
-        var names = Array.isArray(manifest.assets) ? manifest.assets : [];
-        var holdsApk = !names.length || names.some(function (n) { return n === state.asset.name; });
-        if (holdsApk) mirror.tags = [manifest.tag];
-      }).catch(function () { /* unreachable manifest: keep the static tags gate */ });
-    })).then(function () {
-      render();
-    });
   }
 
   /* ---- browser speed probe (only for mirrors that send CORS headers) ---------------- */
@@ -570,8 +588,7 @@
         setText(el.note, '请点击上方按钮前往 GitHub Releases 页面下载。');
         return;
       }
-      return refreshManifests()
-        .then(function () { return probeMirrors(); })
+      return probeMirrors()
         .then(announceProbe)
         .catch(function () { /* probe is best-effort */ });
     }).catch(function () {

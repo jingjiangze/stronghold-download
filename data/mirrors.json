@@ -1,17 +1,7 @@
 {
   "updated": "2026-10-04",
-  "note": "Mirror list for the download page. Prefix mirrors get the GitHub asset URL appended; template mirrors fill {tag}/{name}. Hosts must stay on this list; the page re-validates every built URL against it. Policy: only the CURRENT release is served — template mirrors keep just one tag in \"tags\" and old tag objects are deleted when a new version ships. No raw GitHub direct link is offered: the page is for networks where github.com is unusable.",
+  "note": "Third-party accelerators for the download page. Prefix mirrors get the GitHub asset URL appended. Hosts must stay on this list; the page re-validates every built URL against it. The first-party R2 link is NOT configured here: download.js renders it from /api/latest's verified `_cdn` verdict so it always points at the object that was checked against this release. No raw GitHub direct link is offered: the page is for networks where github.com is unusable.",
   "mirrors": [
-    {
-      "id": "r2",
-      "name": "R2 首方镜像",
-      "mode": "template",
-      "template": "https://weishucdn.jiangjiangze.icu/releases/{tag}/{name}",
-      "cors": true,
-      "range": true,
-      "tags": [],
-      "manifest": "https://weishucdn.jiangjiangze.icu/releases/manifest.json"
-    },
     {
       "id": "ghfast",
       "name": "ghfast.top",

@@ -1,0 +1,134 @@
+name: mirror-apk
+
+# Keeps the first-party R2 copy of the CURRENT release in step with GitHub.
+#
+# Why: the game repo's own publish job skips content-axis tags, which left the download page
+# without an R2 object for the current release for 24+ minutes (shell-v2.9.3), and before that
+# produced CDN objects that were *different builds* than the release asset (shell-v2.8.4:
+# +4 bytes, three zip entries with different CRCs). Both cases force the page to fall back to
+# third-party accelerators, which is exactly what visitors complain about.
+#
+# This job copies the release asset verbatim, so the CDN object is byte-identical to what
+# GitHub publishes (sha256 is checked against the asset digest before uploading). That makes
+# the download page's "prefer the first-party CDN" rule actually hold.
+#
+# Pruning to the newest two APKs is a separate job (.github/workflows/prune-r2.yml).
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Force a release tag (default: newest stable release with an APK)'
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mirror-apk
+  cancel-in-progress: false
+
+env:
+  SRC_REPO: jingjiangze/Stronghold-Protocol
+  BUCKET: stronghold-assets
+  R2_ENDPOINT: https://8641802a2d46497f1cc4e7a4cba365d2.r2.cloudflarestorage.com
+  CDN_HOST: weishucdn.jiangjiangze.icu
+  APK_NAME: app-release.apk
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Resolve the release to mirror
+        id: rel
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WANT: ${{ github.event.inputs.tag }}
+        run: |
+          set -euo pipefail
+          if [ -n "${WANT:-}" ]; then
+            meta=$(gh api "repos/$SRC_REPO/releases/tags/$WANT" \
+              --jq '{tag: .tag_name, apk: ([.assets[] | select(.name=="'$APK_NAME'")] | first)} | select(.apk != null)')
+          else
+            meta=$(gh api "repos/$SRC_REPO/releases?per_page=10" --jq \
+              '[.[] | select(.draft == false and .prerelease == false)
+                    | {tag: .tag_name, apk: ([.assets[] | select(.name == "'"$APK_NAME"'")] | first)}]
+               | map(select(.apk != null)) | first')
+          fi
+          test -n "$meta" || { echo "no stable release with $APK_NAME found"; exit 1; }
+          tag=$(echo "$meta" | jq -r .tag)
+          version=${tag#shell-}
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "size=$(echo "$meta" | jq -r .apk.size)" >> "$GITHUB_OUTPUT"
+          echo "digest=$(echo "$meta" | jq -r '.apk.digest // ""')" >> "$GITHUB_OUTPUT"
+          echo "release: $tag (v$version, $(echo "$meta" | jq -r .apk.size) bytes)"
+
+      - name: Check whether the CDN already holds this build
+        id: probe
+        run: |
+          set -euo pipefail
+          url="https://$CDN_HOST/apk/stronghold-v${{ steps.rel.outputs.version }}.apk"
+          # A cache-buster is mandatory: the edge caches a 404 at that key for hours, and a
+          # stale MISS would make this job skip an upload that is actually needed.
+          hdr=$(curl -sI --max-time 30 "$url?cb=$(date +%s%N)" || true)
+          code=$(printf '%s' "$hdr" | awk 'NR==1{print $2}')
+          len=$(printf '%s' "$hdr" | awk 'tolower($1)=="content-length:"{gsub(/\r/,"");print $2}')
+          echo "cdn says: HTTP $code, $len bytes (release asset: ${{ steps.rel.outputs.size }})"
+          if [ "$code" = "200" ] && [ "$len" = "${{ steps.rel.outputs.size }}" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install rclone
+        if: steps.probe.outputs.skip == 'false'
+        run: |
+          set -euo pipefail
+          curl -fsSL https://downloads.rclone.org/rclone-current-linux-amd64.zip -o rclone.zip
+          unzip -q rclone.zip
+          sudo install -m 0755 rclone-*/rclone /usr/local/bin/rclone
+
+      - name: Download, verify and publish to R2
+        if: steps.probe.outputs.skip == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          R2_ACCESS_KEY: ${{ secrets.R2_ACCESS_KEY }}
+          R2_SECRET_KEY: ${{ secrets.R2_SECRET_KEY }}
+          KEY: apk/stronghold-v${{ steps.rel.outputs.version }}.apk
+        run: |
+          set -euo pipefail
+          test -n "$R2_ACCESS_KEY" && test -n "$R2_SECRET_KEY" || { echo "R2 secrets absent"; exit 1; }
+
+          gh release download "${{ steps.rel.outputs.tag }}" -R "$SRC_REPO" -n "$APK_NAME" -D ./dl
+          file="./dl/$APK_NAME"
+          actual=$(sha256sum "$file" | cut -d' ' -f1)
+          size=$(stat -c %s "$file")
+          echo "downloaded $size bytes, sha256 $actual"
+
+          want="${{ steps.rel.outputs.digest }}"
+          want="${want#sha256:}"
+          if [ -n "$want" ] && [ "$actual" != "$want" ]; then
+            echo "::error::asset digest mismatch (want $want, got $actual) — refusing to publish"
+            exit 1
+          fi
+          if [ "$size" != "${{ steps.rel.outputs.size }}" ]; then
+            echo "::error::size mismatch ($size vs ${{ steps.rel.outputs.size }})"
+            exit 1
+          fi
+
+          rclone config create r2 s3 provider=Cloudflare access_key_id="$R2_ACCESS_KEY" \
+            secret_access_key="$R2_SECRET_KEY" endpoint="$R2_ENDPOINT" acl=private \
+            --non-interactive > /dev/null
+          rclone copyto "$file" "r2:$BUCKET/$KEY" \
+            --s3-upload-cutoff 100M --s3-upload-concurrency 4 --part-size 100M \
+            --header "Content-Type:application/vnd.android.package-archive" -v
+
+          # Confirm what the public domain now serves, then stamp the summary.
+          after=$(curl -sI --max-time 30 "https://$CDN_HOST/$KEY?cb=$(date +%s%N)" \
+            | awk 'tolower($1)=="content-length:"{gsub(/\r/,"");print $2}')
+          echo "published $KEY (cdn now reports $after bytes)"
+          echo "## mirror-apk: ${{ steps.rel.outputs.tag }} → \`$KEY\` ($after bytes, sha256 \`${actual:0:12}…\`)" >> "$GITHUB_STEP_SUMMARY"
