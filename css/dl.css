@@ -3,7 +3,9 @@
    Keeps the title-screen look; only layout for the mirrors row and the meta line is new.
    ========================================================================================== */
 
-.title-login.dl-console { width: 5.8rem; }
+/* 6.1rem: wide enough that the five download sources sit on one row without
+   needing the sideways scroll (content box 287px vs 279px of buttons). */
+.title-login.dl-console { width: 6.1rem; }
 
 /* The game's title screen widens .btn--xl letter spacing for its one-character "开始"
    button; a long download label needs the normal button metrics instead. */
@@ -13,14 +15,27 @@
 .dl-mirrors .btn { flex: 0 0 auto; }
 
 /* ---- mirrors row ------------------------------------------------------------------- */
+/* One row: the first-party link and the accelerators are peers, and wrapping the last one
+   onto its own line read as "something is broken". When they cannot all fit the row scrolls
+   sideways with the scrollbar hidden; the auto margins centre the group when it does fit. */
 .dl-mirrors {
   display: flex;
-  flex-wrap: wrap;
-  gap: .1rem;
-  justify-content: center;
+  flex-wrap: nowrap;
+  gap: .08rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
   min-height: .36rem;
+  max-width: 100%;
+  padding: .02rem 0;
 }
-.dl-mirrors .dl-mirror { font-weight: 500; letter-spacing: .04em; }
+.dl-mirrors::-webkit-scrollbar { display: none; }
+.dl-mirrors > .btn:first-child { margin-left: auto; }
+.dl-mirrors > .btn:last-child { margin-right: auto; }
+/* tighter than the game's default btn--sm so all five sources fit the card without needing
+   the sideways scroll at all; the scroll above is only the safety net */
+.dl-mirrors .btn { flex: 0 0 auto; padding: 0 .1rem; font-size: .13rem; letter-spacing: .02em; }
+.dl-mirrors .dl-mirror { font-weight: 500; }
 .dl-mirrors .dl-mirror .btn__label { display: inline-flex; align-items: center; gap: .05rem; }
 .dl-badge {
   font-size: .11rem;
@@ -116,8 +131,8 @@
   .title-cn { font-size: .86rem; }
   .title-corner { display: none; }
   .title-login.dl-console { width: min(92vw, 6.6rem); margin-top: .3rem; }
-  .dl-mirrors { gap: .12rem; }
-  .dl-mirrors .btn { height: .56rem; padding: 0 .2rem; font-size: .16rem; }
+  .dl-mirrors { gap: .07rem; }
+  .dl-mirrors .btn { height: .46rem; }
   .dl-nav { gap: .12rem; }
   .dl-nav .btn--sm { height: .52rem; padding: 0 .18rem; font-size: .15rem; }
   .title-bg__radar { left: 50%; top: 30%; width: 7.2rem; height: 7.2rem; opacity: .35; }
