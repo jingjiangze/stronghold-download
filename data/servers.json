@@ -1,5 +1,5 @@
 {
-  "updated": "2026-10-04T10:35:43.813Z",
+  "updated": "2026-10-04T11:25:51.719Z",
   "servers": [
     {
       "id": "xiaolubao",
@@ -22,7 +22,8 @@
       "url": "http://106.55.43.13:3000",
       "probe": "/healthz",
       "enabled": true,
-      "note": "社区服 · B站 13:30 访客 M1尾翼稳定脱壳穿甲弹 自建云服务器"
+      "note": "社区服 · B站 13:30 访客 M1尾翼稳定脱壳穿甲弹 自建云服务器",
+      "direct_cn": true
     },
     {
       "id": "weishu",
@@ -102,9 +103,18 @@
       "probe": "/healthz",
       "enabled": true,
       "note": "社区服 · B站 10-04 评论区 lilyco42 分享（深链 ?room=EYLJ 已归一"
+    },
+    {
+      "id": "ali-121",
+      "name": "阿里云服",
+      "url": "http://121.199.43.133:3000",
+      "probe": "/healthz",
+      "enabled": true,
+      "note": "国内直连 · CF 出口 403 · B站 10-04 Rosie-Park",
+      "direct_cn": true
     }
   ],
   "keyId": "sp-2026-10",
   "v": 1,
-  "sig": "lNcKJNM/GCM48RWM/oUZyQyV9kpOh4DTFzFIsL6PV+MtBLltFPk/ow4yTUJlFbIkNQk6Pzumw5SusfPFCiDyAA=="
+  "sig": "kgL+bwYMqVYN4exqU3kgXdjpyZtgDdsj+nZ1sXK2SdIIdM0Zi8uosJfH3+fyduuTMnsrRjpkR9fNKjFIkkeUCA=="
 }

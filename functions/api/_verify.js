@@ -158,6 +158,8 @@ export function validateEntries(servers) {
       clean.probe = entry.probe.slice(0, 64);
     }
     if (typeof entry.note === 'string' && entry.note.trim()) clean.note = entry.note.trim().slice(0, 48);
+    // 国内直连可达、但 Cloudflare 出口拿 403 的服务器：由维护者留证后显式标记，见 verify.js
+    if (entry.direct_cn === true) clean.direct_cn = true;
     cleaned.push(clean);
   }
   return { servers: cleaned };

@@ -58,8 +58,14 @@ export async function onRequestGet(context) {
       if (entry.enabled === false) {
         return { entry, ok: false, reason: '已停用', rooms: null, humans: null, variant: null };
       }
-      const verdict = await verifyServerHealth(entry.url, entry.probe || '/healthz');
-      return { entry, ...verdict };
+      // 单个服务器抛异常（解压失败、非法 probe 路径等）不能把整轮 verify 打成 1101，
+      // 否则所有人看到的都是上一次的成功结果。
+      try {
+        const verdict = await verifyServerHealth(entry.url, entry.probe || '/healthz');
+        return { entry, ...verdict };
+      } catch (e) {
+        return { entry, ok: false, error: '探测异常 ' + String((e && e.name) || e).slice(0, 40) };
+      }
     }));
     results.push(...settled);
   }
@@ -73,8 +79,14 @@ export async function onRequestGet(context) {
         // 不做版本准入——只展示，旧版/新版服务器都会列出。
         app: r.app || null, build: r.build || null,
       };
+    } else if (r.entry.direct_cn === true && !/已停用/.test(String(r.reason || ''))) {
+      // 国内直连正常、Cloudflare 出口 403/超时的服务器（收录时已用第三方公开探测留证）。
+      // 真实玩家从国内浏览器/客户端连接，边缘探测失败不该把它判死；仍照常展示，来源写在 note。
+      valid.push(r.entry.id);
+      occupancy[r.entry.id] = prevOccupancy[r.entry.id]
+        || { rooms: null, humans: null, variant: 'direct-cn', app: null, build: null };
     } else {
-      invalid.push({ id: r.entry.id, name: r.entry.name, url: r.entry.url, reason: r.reason });
+      invalid.push({ id: r.entry.id, name: r.entry.name, url: r.entry.url, reason: r.reason || r.error || '校验未通过' });
       // infra failure (timeout etc.) on a previously valid server: keep last known occupancy
       if (prevValid.has(r.entry.id) && prevOccupancy[r.entry.id]) {
         occupancy[r.entry.id] = prevOccupancy[r.entry.id];
