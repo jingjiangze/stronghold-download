@@ -78,6 +78,23 @@ export async function onRequestPut(context) {
     return json({ ok: false, error: 'too many entries' }, 400);
   }
 
+  // 防「拿旧快照整份覆盖」：签过名的清单一旦被较旧的文档覆盖，玩家只会看到服务器凭空少几条，
+  // 而签名仍然有效，谁都发现不了（2026-10-04 就发生过一次：15 条被 11:25 的 14 条原样盖回去）。
+  // 确需回滚/整体替换时显式加 ?force=1。
+  const force = new URL(request.url).searchParams.get('force');
+  if (!force) {
+    const prevRes = await bucket.get(LIST_KEY);
+    if (prevRes) {
+      let prev = null;
+      try { prev = JSON.parse(await prevRes.text()); } catch { /* 现网已损坏时允许覆盖修复 */ }
+      const a = Date.parse((prev && prev.updated) || '');
+      const b = Date.parse(doc.updated || '');
+      if (a && b && b < a) {
+        return json({ ok: false, error: `stale write refused: 来单 updated ${doc.updated} 早于现网 ${prev.updated}（确需覆盖请加 ?force=1）` }, 409);
+      }
+    }
+  }
+
   const seen = new Set();
   const cleaned = [];
   for (const entry of doc.servers) {

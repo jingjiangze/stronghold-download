@@ -1,5 +1,5 @@
 {
-  "updated": "2026-10-04T11:25:51.719Z",
+  "updated": "2026-10-04T13:50:11.090Z",
   "servers": [
     {
       "id": "xiaolubao",
@@ -112,9 +112,17 @@
       "enabled": true,
       "note": "国内直连 · CF 出口 403 · B站 10-04 Rosie-Park",
       "direct_cn": true
+    },
+    {
+      "id": "mutvog2635f1b291",
+      "name": "simpfun服",
+      "url": "http://play.simpfun.cn:31349",
+      "probe": "/healthz",
+      "enabled": true,
+      "note": "社区服 · B站 10-04 评论区 灬岁年/simpfun"
     }
   ],
   "keyId": "sp-2026-10",
   "v": 1,
-  "sig": "kgL+bwYMqVYN4exqU3kgXdjpyZtgDdsj+nZ1sXK2SdIIdM0Zi8uosJfH3+fyduuTMnsrRjpkR9fNKjFIkkeUCA=="
+  "sig": "mZBTxUgwkB7i7upi1fV056YpiJjISqsr6u6KMgv72QV3aa6OZENdc/AiSI7vI49mPNCF/PLV2oSIo+/ve52VAw=="
 }
