@@ -27,7 +27,7 @@ function json(data, status) {
 }
 
 export async function onRequestGet(context) {
-  const { env } = context;
+  const { env, request } = context;
   if (!env.R2BUCKET) return json({ ok: false, error: 'R2 binding missing' }, 500);
 
   const listRes = await env.R2BUCKET.get(LIST_KEY);
@@ -47,6 +47,36 @@ export async function onRequestGet(context) {
   if (prevRes) { try { previous = JSON.parse(await prevRes.text()); } catch { /* ignore */ } }
   const prevValid = new Set(Array.isArray(previous.valid) ? previous.valid : []);
   const prevOccupancy = (previous.occupancy && typeof previous.occupancy === 'object') ? previous.occupancy : {};
+  // 整体节奏：默认 30 分钟才真打一轮（VERIFY_FLOOR_MIN 可覆盖）。页面开着也只是读这份结论，
+  // 不再每 5 分钟去敲每一台服务器 —— rincynar 就是被这样打到 429 的。
+  // 清单本身变过（新服上线）则立刻重探，否则新条目会被隐藏半个钟头。
+  const FLOOR_MS = (Number(env.VERIFY_FLOOR_MIN) || 30) * 60 * 1000;
+  const force = new URL(request.url).searchParams.get('force');
+  const prevAt = Date.parse(previous.updated || '');
+  const listUnchanged = previous.listUpdated && previous.listUpdated === doc.updated;
+  if (!force && prevAt && listUnchanged && Date.now() - prevAt < FLOOR_MS) {
+    return json({ ok: true, cached: true, updated: previous.updated, listUpdated: previous.listUpdated,
+                  nextRetryAt: new Date(prevAt + FLOOR_MS).toISOString(),
+                  valid: (previous.valid || []).length, invalid: previous.invalid || [],
+                  backoff: previous.backoff || {} });
+  }
+
+  // 单台冷却：429/限流 → 两个档位；超时/5xx/网络异常 → 一个档位。
+  // 冷却期内不打它，直接沿用上次结论（上次是活的就算活的），避免把人家打到限流。
+  const nowMs = Date.now();
+  const backoff = (previous.backoff && typeof previous.backoff === 'object') ? previous.backoff : {};
+  const cooled = (id) => {
+    const b = backoff[id];
+    return b && Number(b.until) > nowMs ? b : null;
+  };
+  const nextBackoff = (reason) => {
+    const s = String(reason || '');
+    if (/429|rate.?limit|限流/i.test(s)) return FLOOR_MS * 2;
+    if (/超时|timeout|探测异常|502|503|520|522|526|connection|ECONN|网络/i.test(s)) return FLOOR_MS;
+    if (/403|404|不是 JSON|ok 字段|无合法|拒绝|dead/i.test(s)) return FLOOR_MS;
+    return 0;
+  };
+  let skipped = 0;
 
   // Verify in parallel batches of 4: a cold isolate must finish 10 servers within the
   // Functions wall-clock budget (sequential 5s timeouts add up to a guaranteed abort).
@@ -58,6 +88,8 @@ export async function onRequestGet(context) {
       if (entry.enabled === false) {
         return { entry, ok: false, reason: '已停用', rooms: null, humans: null, variant: null };
       }
+      const cool = cooled(entry.id);
+      if (cool) { skipped++; return { entry, ok: false, cooled: true, reason: cool.reason }; }
       // 单个服务器抛异常（解压失败、非法 probe 路径等）不能把整轮 verify 打成 1101，
       // 否则所有人看到的都是上一次的成功结果。
       try {
@@ -78,7 +110,19 @@ export async function onRequestGet(context) {
   };
 
   for (const r of results) {
+    const id = r.entry.id;
+    if (r.cooled) {
+      // 冷却期内不打扰它，也不改判：上次活的继续算活，上次死的继续挂原因。
+      if (prevValid.has(id)) {
+        valid.push(id);
+        occupancy[id] = prevOccupancy[id] || { rooms: null, humans: null, variant: 'cooled', app: null, build: null };
+      } else {
+        invalid.push({ id, name: r.entry.name, url: r.entry.url, reason: (backoff[id] && backoff[id].reason) || '冷却中' });
+      }
+      continue;
+    }
     if (r.ok) {
+      delete backoff[id];
       valid.push(r.entry.id);
       const fresh = {
         rooms: r.rooms, humans: r.humans, variant: r.variant || 'node',
@@ -93,28 +137,41 @@ export async function onRequestGet(context) {
     } else if (r.entry.direct_cn === true && !/已停用/.test(String(r.reason || ''))) {
       // 国内直连正常、Cloudflare 出口 403/超时的服务器（收录时已用第三方公开探测留证）。
       // 真实玩家从国内浏览器/客户端连接，边缘探测失败不该把它判死；仍照常展示，来源写在 note。
+      delete backoff[id];
       valid.push(r.entry.id);
       occupancy[r.entry.id] = prevOccupancy[r.entry.id]
         || { rooms: null, humans: null, variant: 'direct-cn', app: null, build: null };
     } else {
-      invalid.push({ id: r.entry.id, name: r.entry.name, url: r.entry.url, reason: r.reason || r.error || '校验未通过' });
+      const reason = r.reason || r.error || '校验未通过';
+      invalid.push({ id: r.entry.id, name: r.entry.name, url: r.entry.url, reason });
+      const wait = nextBackoff(reason);
+      if (wait) backoff[id] = { until: nowMs + wait, reason: String(reason).slice(0, 60) };
+      else delete backoff[id];
       // infra failure (timeout etc.) on a previously valid server: keep last known occupancy
       if (prevValid.has(r.entry.id) && prevOccupancy[r.entry.id]) {
         occupancy[r.entry.id] = prevOccupancy[r.entry.id];
       }
     }
   }
+  const liveIds = new Set(servers.map((s) => s.id));
+  for (const k of Object.keys(backoff)) {
+    if (!liveIds.has(k) || Number(backoff[k].until) <= nowMs) delete backoff[k];
+  }
 
   const verifiedDoc = {
     updated: new Date().toISOString(),
+    listUpdated: doc.updated, // 清单一变就立刻重探，否则新上的服务器会被缓存挡到下个档位
     valid,
     invalid,
     occupancy,
+    backoff,
   };
   await env.R2BUCKET.put(VERIFIED_KEY, JSON.stringify(verifiedDoc, null, 2) + '\n', {
     httpMetadata: { contentType: 'application/json', cacheControl: 'public, max-age=120' },
   });
 
   return json({ ok: true, updated: verifiedDoc.updated, valid: valid.length,
-                invalid: invalid.map((i) => ({ id: i.id, name: i.name, reason: i.reason })) });
+                invalid: invalid.map((i) => ({ id: i.id, name: i.name, reason: i.reason })),
+                skipped: skipped, cooling: Object.keys(backoff).length,
+                nextRetryAt: new Date(Date.now() + FLOOR_MS).toISOString() });
 }

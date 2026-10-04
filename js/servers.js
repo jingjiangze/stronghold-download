@@ -20,12 +20,12 @@
     './data/servers.json'                                    // repository fallback snapshot
   ];
   var VERIFIED_URL = 'https://weishucdn.jiangjiangze.icu/site/verified.json';
-  var VERIFY_REFRESH_MS = 5 * 60 * 1000; // matches the probe cadence
+  var VERIFY_REFRESH_MS = 30 * 60 * 1000; // 与后端档位一致：整体默认 30 分钟才真打一轮
   var PROBE_TIMEOUT_MS = 5000;
   var WARMUP_TIMEOUT_MS = 6000;
   var LIST_TIMEOUT_MS = 8000;
   var SAMPLES = 3;
-  var CYCLE_MS = 5 * 60 * 1000;
+  var CYCLE_MS = 30 * 60 * 1000; // 浏览器实测延迟也降到 30 分钟一轮（原来 5 分钟，玩家服务器扛不住）
   var JITTER_MS = 20 * 1000;
   var GOOD_MS = 150;
   var OK_MS = 400;
