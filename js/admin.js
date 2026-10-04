@@ -95,6 +95,10 @@
           probe: s.probe || '/healthz', enabled: s.enabled !== false
         };
         if (s.note) clean.note = s.note;
+        // direct_cn 这类维护标记必须跟着走：之前重建条目会把它们抹掉，
+        // 于是「海外探不到、国内可达」的服在下次保存时又被隐藏
+        if (s.direct_cn === true) clean.direct_cn = true;
+        ["region", "tier", "weight", "protocol", "app"].forEach(function (k) { if (s[k] != null) clean[k] = s[k]; });
         return clean;
       })
     };

@@ -162,9 +162,17 @@
     var hidden = 0;
     state.servers.forEach(function (server) {
       // A published id must be in `valid` to stay visible; anything else quarantines.
-      if (okIds[server.id]) { server.quarantined = false; return; }
+      if (okIds[server.id]) {
+        server.quarantined = false;
+        // 靠玩家证据活着的条目必须继续回执，否则 24 小时后证据过期会被重新隐藏，来回抖
+        server.viaBrowser = !!(doc.evidence && doc.evidence[server.id]);
+        if (server.viaBrowser && server.ms != null && !server.offline) reportPing(server);
+        return;
+      }
       server.quarantined = true;
       server.quarantineReason = reasons[server.id] || '服务端校验未通过';
+      // 已经有成绩、这一轮才发现它被隐藏：立刻回执，不等 30 分钟后的下一轮测速
+      if (server.ms != null && !server.offline) reportPing(server);
       hidden += 1;
     });
     state.hiddenCount = hidden;
@@ -299,6 +307,23 @@
     return attempt();
   }
 
+  /**
+   * 闸门只看得到海外出口，国内 IDC 的服会被误判成「校验未通过」而整条隐藏。
+   * 玩家浏览器就是国内出口：凡是「被隐藏」但本机连得通的，回执一次（每台 10 分钟最多一条，
+   * 落 R2 的 site/pings.json，作为 /api/servers/verify 的正向证据）。
+   */
+  var PING_GAP_MS = 10 * 60 * 1000;
+  function reportPing(server) {
+    if (!server || !server.id || !(server.quarantined || server.viaBrowser)) return;
+    var now = Date.now();
+    var k = 'sp_ping_' + server.id;
+    try { if (now - (Number(localStorage.getItem(k)) || 0) < PING_GAP_MS) return; localStorage.setItem(k, String(now)); } catch (err) { /* 隐私模式照发 */ }
+    var body = JSON.stringify({ id: server.id, ok: !server.offline, ms: server.ms == null ? null : Math.round(server.ms) });
+    try {
+      fetch('/api/servers/ping', { method: 'POST', headers: { 'content-type': 'application/json' }, body: body, keepalive: true }).catch(function () {});
+    } catch (err) { /* 回执只是加分项，不打扰用户 */ }
+  }
+
   function sample(server, url) {
     var results = [];
     var chain = Promise.resolve();
@@ -322,6 +347,7 @@
       server.ms = good[Math.floor(good.length / 2)];
       server.offline = false;
       server.level = server.ms < GOOD_MS ? 'good' : server.ms < OK_MS ? 'ok' : 'slow';
+      reportPing(server);
     });
   }
 

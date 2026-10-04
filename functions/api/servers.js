@@ -92,6 +92,11 @@ export async function onRequestPut(context) {
       if (a && b && b < a) {
         return json({ ok: false, error: `stale write refused: 来单 updated ${doc.updated} 早于现网 ${prev.updated}（确需覆盖请加 ?force=1）` }, 409);
       }
+      // 光比大小挡不住「旧标签页把整份旧文档原样盖回来」这种写 —— 它带着旧 sig，
+      // 内容却比现网旧。所有正经写者都会把 updated 写成当下，所以再要它足够新鲜。
+      if (b && Math.abs(Date.now() - b) > 10 * 60 * 1000) {
+        return json({ ok: false, error: `stale write refused: 来单 updated ${doc.updated} 距现在超过 10 分钟（正常发布都写当下时间；确要重放旧文档加 ?force=1）` }, 409);
+      }
     }
   }
 

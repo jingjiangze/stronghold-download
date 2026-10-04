@@ -18,6 +18,7 @@ import { verifyServerHealth } from '../_verify.js';
 
 const LIST_KEY = 'site/servers.json';
 const VERIFIED_KEY = 'site/verified.json';
+const PINGS_KEY = 'site/pings.json';
 
 function json(data, status) {
   return new Response(JSON.stringify(data), {
@@ -45,6 +46,19 @@ export async function onRequestGet(context) {
   let previous = { valid: [], invalid: [], occupancy: {} };
   const prevRes = await env.R2BUCKET.get(VERIFIED_KEY);
   if (prevRes) { try { previous = JSON.parse(await prevRes.text()); } catch { /* ignore */ } }
+  // 玩家浏览器的实测回执：服务端校验只有海外出口，而国内 IDC / 云防火墙会把海外入站直接丢掉
+  // （sp.rainya.me:10166 就是这样：国内 163ms 200，CF 边缘超时）。所以「24 小时内有玩家连上过」
+  // 是一条正向证据，不必靠人手工打 direct_cn 标记。
+  let pings = {};
+  const pingRes = await env.R2BUCKET.get(PINGS_KEY);
+  if (pingRes) { try { pings = (JSON.parse(await pingRes.text()) || {}).pings || {}; } catch { /* 无回执 */ } }
+  const browserOk = (id) => {
+    const p = pings[id];
+    if (!p || p.ok !== true) return null;
+    const age = Date.now() - Date.parse(p.at || '');
+    return Number.isFinite(age) && age < 24 * 3600e3 ? p : null;
+  };
+  const evidence = {};
   const prevValid = new Set(Array.isArray(previous.valid) ? previous.valid : []);
   const prevOccupancy = (previous.occupancy && typeof previous.occupancy === 'object') ? previous.occupancy : {};
   // 整体节奏：默认 30 分钟才真打一轮（VERIFY_FLOOR_MIN 可覆盖）。页面开着也只是读这份结论，
@@ -141,6 +155,13 @@ export async function onRequestGet(context) {
       valid.push(r.entry.id);
       occupancy[r.entry.id] = prevOccupancy[r.entry.id]
         || { rooms: null, humans: null, variant: 'direct-cn', app: null, build: null };
+    } else if (browserOk(r.entry.id)) {
+      // 边缘探不到、玩家却连得上：以玩家为准（回执超过 24 小时没续上就退回原判）
+      const p = browserOk(r.entry.id);
+      evidence[r.entry.id] = { at: p.at, country: p.country, ms: p.ms, okHits: p.okHits, via: 'browser' };
+      valid.push(r.entry.id);
+      occupancy[r.entry.id] = prevOccupancy[r.entry.id]
+        || { rooms: null, humans: null, variant: 'browser', app: null, build: null };
     } else {
       const reason = r.reason || r.error || '校验未通过';
       invalid.push({ id: r.entry.id, name: r.entry.name, url: r.entry.url, reason });
@@ -165,6 +186,7 @@ export async function onRequestGet(context) {
     invalid,
     occupancy,
     backoff,
+    evidence,
   };
   await env.R2BUCKET.put(VERIFIED_KEY, JSON.stringify(verifiedDoc, null, 2) + '\n', {
     httpMetadata: { contentType: 'application/json', cacheControl: 'public, max-age=120' },
