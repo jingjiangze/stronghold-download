@@ -60,7 +60,7 @@ async function rateLimited(env, ip) {
 }
 
 async function handle(context) {
-  const { request, env } = context;
+  const { request, env, waitUntil } = context;
   const url = new URL(request.url);
   const ip = request.headers.get('cf-connecting-ip') || 'unknown';
   if (env.R2BUCKET && await rateLimited(env, ip)) {
@@ -93,6 +93,13 @@ async function handle(context) {
   if (res.status !== 204) note = (await res.text().catch(() => '')).slice(0, 200);
   const rec = { ok: res.status === 204, http: res.status, at: new Date().toISOString(), target, note };
   await heartbeat(env, rec);
+  // 闹钟跳进来时顺带复核一次首方直链：/api/latest 里带"缺构建就去催 mirror-apk"的判定。
+  // 这条让"没人访问页面"也能补上直链 —— 凌晨发布的新版本不至于挂到早上第一个访客。
+  if (rec.ok && waitUntil) {
+    waitUntil(fetch(new URL('/api/latest?cb=' + Date.now(), request.url).href, {
+      headers: { 'user-agent': 'stronghold-dl-tick-cdn' },
+    }).then(() => {}, () => {}));
+  }
   return json(rec, rec.ok ? 200 : 502);
 }
 

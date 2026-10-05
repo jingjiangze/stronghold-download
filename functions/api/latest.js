@@ -13,6 +13,7 @@
 // No request input reaches the upstream URL: repo and endpoint are fixed constants.
 
 import { apkAssetOf, cdnHasBuild, SNAPSHOT_ID } from './_asset.js';
+import { kickIfCdnStale, kickLog, kickMirror } from './_cdnkick.js';
 
 const LIST_URL = 'https://api.github.com/repos/jingjiangze/Stronghold-Protocol/releases?per_page=100';
 const SNAPSHOT_REFRESH_MS = 30 * 60 * 1000;
@@ -109,6 +110,18 @@ export async function onRequestGet(context) {
     // honest about the download source instead of silently falling back to GitHub.
     const apk = apkAssetOf(fetched.release);
     const cdn = await cdnHasBuild(fetched.release.tag_name, apk && apk.size);
+    const q = new URL(context.request.url).searchParams;
+    // 维护者手工催抓（也是这条链路的可测口）：出示 PUBLISH_KEY 才认，force 才跳限流
+    if (q.get('kick') && env.PUBLISH_KEY && (context.request.headers.get('x-admin-key') || '') === env.PUBLISH_KEY) {
+      return respond(await kickMirror(env, q.get('tag') || fetched.release.tag_name,
+        { force: q.get('force') === '1' }), 0, 200);
+    }
+    if (q.get('kicklog')) {
+      return respond(await kickLog(env), 0, 200);
+    }
+    // CDN 缺这份构建 → 去催 mirror-apk。GitHub 的 cron 在这是饥饿的（实测 `*/10` 五个小时
+    // 只命中一次，shell-v2.9.18 发布后挂了整整 2 小时），所以不能只等定时。
+    waitUntil(kickIfCdnStale(env, fetched.release.tag_name, cdn));
     const payload = Object.assign({}, fetched.release, {
       _cachedAt: Date.now(),
       _stale: false,
