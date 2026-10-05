@@ -62,8 +62,10 @@ export async function onRequestGet(context) {
   const browserOk = (id) => {
     const p = pings[id];
     if (!p || p.ok !== true) return null;
-    // 玩家自己连清单里那条地址都连不上（回执 entry_ok:false）时，这条证据不再免死
-    if (p.entry_ok === false) return null;
+    // 玩家自己连清单里那条地址都连不上（回执 entry_ok:false）时，这条证据不再免死 ——
+    // 但要**连着两条**才算（2026-10-05 定的）：单条浏览器噪声就藏掉一台 81 房/83 人的繁忙服，
+    // 代价明显大于留着一个入口暂时打不开的行。
+    if (p.entry_ok === false && Number(p.entryBadStreak || 0) >= 2) return null;
     const age = Date.now() - Date.parse(p.at || '');
     return Number.isFinite(age) && age < DAY_MS ? p : null;
   };
@@ -94,6 +96,9 @@ export async function onRequestGet(context) {
   // 冷却期内不打它，直接沿用上次结论（上次是活的就算活的），避免把人家打到限流。
   const nowMs = Date.now();
   const backoff = (previous.backoff && typeof previous.backoff === 'object') ? previous.backoff : {};
+  // 入口地址连续打不开的轮数（只用于标注，不再用于隐藏）
+  const entryDown = (previous.entry_down_rounds && typeof previous.entry_down_rounds === 'object')
+    ? previous.entry_down_rounds : {};
   const cooled = (id) => {
     const b = backoff[id];
     return b && Number(b.until) > nowMs ? b : null;

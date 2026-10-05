@@ -75,6 +75,12 @@ export async function onRequestPost(context) {
     // 明确连不上时这条回执不能再给死服免死。没测就写 null —— 每次回执都刷新 at，
     // 把上一次的 false 留下来会变成一条永久否决。
     entry_ok: typeof body.entry_ok === 'boolean' ? body.entry_ok : null,
+    // 入口失败的**连续**次数：一次浏览器报告不足以定罪（adblock、网络切换、页面还没加载完
+    // 都会报 entry 打不开），盒子那种只探健康端点的回执则不带这个字段、也不清零。
+    // 站点判据读它：连着两条才作废「玩家实测可达」的免死证据。
+    entryBadStreak: typeof body.entry_ok === 'boolean'
+      ? (body.entry_ok === false ? Number(prev.entryBadStreak || 0) + 1 : 0)
+      : Number(prev.entryBadStreak || 0),
   };
   doc.pings[id] = rec;
   const keys = Object.keys(doc.pings);
