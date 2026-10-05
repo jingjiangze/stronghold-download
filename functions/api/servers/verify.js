@@ -175,7 +175,9 @@ export async function onRequestGet(context) {
         if (p) evidence[id] = { at: p.at, country: p.country, ms: p.ms, okHits: p.okHits, via: 'browser' };
         valid.push(id);
         occupancy[id] = pickOccupancy(id, null, p ? 'browser' : 'direct-cn');
-      } else if (prevValid.has(id)) {
+      } else if (prevValid.has(id) && !hardDown(r.reason)) {
+        // 冷却期沿用上次结论，但上次是"亲眼看见 5xx"的不沿用 —— 否则一台 502 的服
+        // 会靠退避窗口里的这条 prevValid 一直留在清单里（anciusland 实测就是这样）。
         valid.push(id);
         occupancy[id] = pickOccupancy(id, null, 'cooled');
       } else if (r.entry.direct_cn === true || (!hardDown(r.reason) && browserOk(id))) {
