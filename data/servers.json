@@ -1,5 +1,5 @@
 {
-  "updated": "2026-10-05T05:41:29.872Z",
+  "updated": "2026-10-05T06:19:57.862Z",
   "servers": [
     {
       "id": "xiaolubao",
@@ -141,7 +141,7 @@
       "direct_cn": true
     },
     {
-      "id": "muutknk9b40b27e3",
+      "id": "muuv1cyrf238a114",
       "name": "卫-cf",
       "url": "https://wei.jiangjiangze.icu",
       "probe": "/healthz",
@@ -150,5 +150,5 @@
   ],
   "keyId": "sp-2026-10",
   "v": 1,
-  "sig": "pF8beF1VreOVSRaGgjUcYBDRU+bd8TEaDZkvs3YWVCNoOZFGLMld4V1R6eyLy45WnpLoLqPzQZVq7aEC1I23DQ=="
+  "sig": "vrxMGcbi8V3WYo+wmeyTFHnfXhPNGiAM8hDDnnCD8Fp5uGsIzRndWZzIb9Eo1DZTPwcFLY9ARvGLt7IV51EfDg=="
 }
