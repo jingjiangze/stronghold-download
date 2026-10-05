@@ -283,6 +283,21 @@ export async function onRequestGet(context) {
     }
   }
   const liveIds = new Set(servers.map((s) => s.id));
+  // 版本号是"这台真的在跑一个我们能对话的服务"的唯一硬证据。occupancy 里没有点分版本号
+  // （边缘读不到、玩家与盒子的回执也没回报过）就按**校验失败**处理 —— 而不是只让每个网页
+  // 访客自己藏自己那一份：判死一次对所有出口、包括游戏客户端一致，进 admin 暂存区可复核。
+  // 不写退避：下一轮继续真探，版本一被读到就自动回前台。
+  const isVersion = (v) => /^\d+(\.\d+){1,3}$/.test(String(v || ''));
+  const byId = new Map(servers.map((s) => [s.id, s]));
+  for (let i = valid.length - 1; i >= 0; i -= 1) {
+    const vid = valid[i];
+    if (isVersion((occupancy[vid] || {}).app)) continue;
+    const entry = byId.get(vid) || {};
+    valid.splice(i, 1);
+    invalid.push({ id: vid, name: entry.name, url: entry.url,
+      reason: '探不到版本号（健康端点不回报 app/version，各出口也没读到）' });
+    delete backoff[vid];
+  }
   for (const k of Object.keys(backoff)) {
     if (!liveIds.has(k) || Number(backoff[k].until) <= nowMs) delete backoff[k];
   }
@@ -305,9 +320,10 @@ export async function onRequestGet(context) {
   });
 
   const entryDead = invalid.filter((i) => /后端健康端点正常/.test(String(i.reason || ''))).length;
+  const versionless = invalid.filter((i) => /探不到版本号/.test(String(i.reason || ''))).length;
   return json({ ok: true, updated: verifiedDoc.updated, valid: valid.length,
                 invalid: invalid.map((i) => ({ id: i.id, name: i.name, reason: i.reason })),
                 skipped: skipped, cooling: Object.keys(backoff).length,
-                entry_dead: entryDead,
+                entry_dead: entryDead, versionless,
                 nextRetryAt: new Date(Date.now() + FLOOR_MS).toISOString() });
 }
