@@ -1,5 +1,5 @@
 {
-  "updated": "2026-10-04T18:42:34.757Z",
+  "updated": "2026-10-05T02:33:17.477Z",
   "servers": [
     {
       "id": "xiaolubao",
@@ -48,14 +48,6 @@
       "probe": "/healthz",
       "enabled": true,
       "note": "社区服 · CF Workers 版（Slapq fork）"
-    },
-    {
-      "id": "starst",
-      "name": "星尘子服",
-      "url": "https://game.starst.site",
-      "probe": "/healthz",
-      "enabled": true,
-      "note": "社区服 · B站 14:19 Starst星尘子 自建；文字/语音交流站 https://www"
     },
     {
       "id": "mus5dhdzcc2e3b29",
@@ -133,5 +125,5 @@
   ],
   "keyId": "sp-2026-10",
   "v": 1,
-  "sig": "pSRhsLhhUgnfuo+XmVNAqcir1FByzr9zWnAaEnMF9Mz98NXOJboih17woO4cJk4Tp9uCUW4kPZGqCXNCZZucDQ=="
+  "sig": "EX1j+Cw7Cayax66FJxIrYOWvhCYeMSq4h1Qm6I6ko1XSLqSA750bBoVGBmzozftLFJb76rnxodOgvvpRT258Dg=="
 }
