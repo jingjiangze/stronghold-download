@@ -216,11 +216,17 @@
       // Cache occupancy (rooms/humans/version) alongside the latency cache so the page
       // renders complete rows from the local snapshot even before the network answers.
       try { saveOccupancy(doc.occupancy, doc.updated); } catch (err) { /* ignore */ }
-      if (hidden) {
-        setText(el.note, hidden + ' 台服务器因服务端校验未通过已暂时隐藏（可在恢复后自动重新展示）。');
-      }
-      render();
-      return hidden;
+      var note = hidden ? hidden + ' 台服务器因服务端校验未通过已暂时隐藏（可在恢复后自动重新展示）。' : '';
+      // 版本号只可能来自这份 occupancy 或本机一次 CORS 读，跟测速周期无关，所以判定放在这里：
+      // 后台标签页不会跑测速（schedule 见 document.hidden），只挂在测速收尾就会漏掉这批访客。
+      return hideVersionless().then(function () {
+        if (state.noVersionCount) {
+          note += (note ? ' ' : '') + '另有 ' + state.noVersionCount + ' 台探不到版本号（连不上或不回报版本），已隐藏。';
+        }
+        if (note) setText(el.note, note);
+        render();
+        return hidden;
+      });
     }).catch(function () { return 0; /* no verdict yet: show everything */ });
   }
 
