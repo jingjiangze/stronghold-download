@@ -125,7 +125,8 @@ async function appendPublishLog(env, doc, meta) {
   } catch { /* 审计写失败不挡发布 */ }
 }
 
-/** 某 IP 在 windowMs 内自动上线了几条 —— 匿名直接进签名清单，得有个刷屏上限。 */
+/** 某 IP 在 windowMs 内**自动上线**了几条 —— 匿名直接进签名清单，得有个刷屏上限。
+ *  维护者自己的 PUT/审核发布不算在内，否则管理动作会吃掉访客额度。 */
 export async function recentPublishes(env, ip, windowMs) {
   try {
     const prev = await env.R2BUCKET.get(LOG_KEY);
@@ -133,7 +134,7 @@ export async function recentPublishes(env, ip, windowMs) {
     const log = JSON.parse(await prev.text());
     const since = Date.now() - windowMs;
     return (Array.isArray(log.entries) ? log.entries : [])
-      .filter((e) => e && e.ip === String(ip) && Date.parse(e.at || '') >= since).length;
+      .filter((e) => e && e.ip === String(ip) && e.via === 'auto-submit' && Date.parse(e.at || '') >= since).length;
   } catch {
     return 0;
   }
