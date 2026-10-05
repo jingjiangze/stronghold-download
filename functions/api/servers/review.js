@@ -68,7 +68,9 @@ export async function onRequestPost(context) {
     return json({ ok: true, action, id, note: '已在清单中，未重复添加' });
   }
   const entry = { id: record.id, name: record.name, url: record.url, probe: record.probe || '/healthz', enabled: true };
-  for (const k of ['note', 'region', 'tier', 'weight', 'protocol', 'app']) if (record[k] != null) entry[k] = record[k];
+  // direct_cn 必须一起带进清单：verify.js 靠这个字段放过「国内直连 200、CF 边缘 403」的服，
+  // 漏带的话这种服务器收录后会被整条隐藏（183.66.27.19:20522 就踩过）。
+  for (const k of ['note', 'region', 'tier', 'weight', 'protocol', 'app', 'direct_cn']) if (record[k] != null) entry[k] = record[k];
   servers.push(entry);
 
   // 保留信封字段（v / keyId / note 等），换上新清单与时间戳，并把签名作废：

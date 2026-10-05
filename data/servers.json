@@ -1,5 +1,5 @@
 {
-  "updated": "2026-10-05T02:33:17.477Z",
+  "updated": "2026-10-05T03:40:03.937Z",
   "servers": [
     {
       "id": "xiaolubao",
@@ -121,9 +121,18 @@
       "enabled": true,
       "note": "社区服 · 国内 IDC（海外探测不通，靠玩家回执为证）· 地址按原样收录",
       "direct_cn": true
+    },
+    {
+      "id": "muup8pyic391be69",
+      "name": "星空之下服",
+      "url": "http://183.66.27.19:20522",
+      "probe": "/healthz",
+      "enabled": true,
+      "note": "社区服 · B站「d星空之下」自建；国内直连正常，边缘出口 403",
+      "direct_cn": true
     }
   ],
   "keyId": "sp-2026-10",
   "v": 1,
-  "sig": "EX1j+Cw7Cayax66FJxIrYOWvhCYeMSq4h1Qm6I6ko1XSLqSA750bBoVGBmzozftLFJb76rnxodOgvvpRT258Dg=="
+  "sig": "iQzfDg1pGONg6U7uWRYbXxf0uOF5c6KdWk8EBIwimoRBLaDFAYOyerK5bKb5nK+DkS8Eq8EJHbObSQkQqhz/Cg=="
 }
