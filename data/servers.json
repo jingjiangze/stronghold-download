@@ -1,5 +1,5 @@
 {
-  "updated": "2026-10-05T09:27:10.376Z",
+  "updated": "2026-10-05T15:39:42.059Z",
   "servers": [
     {
       "id": "xiaolubao",
@@ -161,9 +161,34 @@
       "probe": "/healthz",
       "enabled": true,
       "note": "自动发现 · B 站搜索「卫戍协议 联机 服务器」"
+    },
+    {
+      "id": "muvcgbs2f9256d6d",
+      "name": "Crane_paul 服",
+      "url": "https://game.cranepaul.dpdns.org/play.html",
+      "probe": "/healthz",
+      "enabled": true,
+      "note": "社区服 · B站评论区 Crane_paul；地址按提供的原样保留（客户端在 /play.html）"
+    },
+    {
+      "id": "muvcgj7z5a23b803",
+      "name": "121.43.97.151（待核）",
+      "url": "http://121.43.97.151:8045",
+      "probe": "/healthz",
+      "enabled": true,
+      "note": "自动发现 · 评论区 hs666呦",
+      "direct_cn": true
+    },
+    {
+      "id": "muvcgt31af952cde",
+      "name": "ausevaywstr.top（待核）",
+      "url": "https://ausevaywstr.top",
+      "probe": "/healthz",
+      "enabled": true,
+      "note": "自动发现 · 评论区 Sakanine"
     }
   ],
   "keyId": "sp-2026-10",
   "v": 1,
-  "sig": "JW5oQ08ID9zZt8IjPsw9+sK5WSQJyz/ieb4wC4l8X62kqhZGolMYbZ6Ltw+VTjdVDEsA3mu4SfaBJUq4q9ZpCA=="
+  "sig": "om8NmTf7ZzoQ4rY+ff3QIntRdL7rBHiEy0WSqc6uEKVqNkCQ6wwDDfI7rAQmiiVTsg2YtvGPrp4pRHL0iKnvDA=="
 }
