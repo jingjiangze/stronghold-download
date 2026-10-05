@@ -557,6 +557,18 @@
       hostVer.textContent = versionText;
       host.appendChild(hostVer);
     }
+    // 后端在应答、清单那条入口却 5xx（闸门只标注不隐藏，10-05 定的口径）：把这半坏说出来，
+    // 否则玩家点开才知道是 502，还以为是我们给的错地址。
+    var entryBad = occ && occ.entry_status && occ.entry_status.ok === false;
+    if (entryBad) {
+      var warn = document.createElement('span');
+      warn.className = 'sv-entrywarn';
+      warn.textContent = '入口 ' + (occ.entry_status.status || '打不开');
+      warn.title = (occ.entry_status.error || '入口地址打不开') + '（后端健康端点正常）'
+        + (occ.entry_status.rounds > 1 ? ' · 已连续 ' + occ.entry_status.rounds + ' 轮' : '');
+      main.appendChild(warn);
+      div.className += ' is-degraded';
+    }
 
     var ms = document.createElement('span');
     ms.className = 'sv-ms';
