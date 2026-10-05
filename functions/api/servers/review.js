@@ -7,7 +7,7 @@
 // 匿名提交的正常路径已经不走这里了：/api/servers/submit 校验有效就当场上线，队列只留给
 // 需要维护者处置的三种情况（担保提交 / 本 IP 额度用完 / 清单并发更新）。
 
-import { canonicalUrl, checkEntryUrl, payloadSha256, verifyServerHealth } from '../_verify.js';
+import { checkEntryUrl, listCollision, payloadSha256, verifyServerHealth } from '../_verify.js';
 import { publishServersDoc, signServersDoc } from '../_publish.js';
 
 function json(data, status) {
@@ -72,15 +72,24 @@ export async function onRequestPost(context) {
     try { live = JSON.parse(await liveRes.text()); } catch { /* 坏了就重建骨架 */ }
   }
   const servers = Array.isArray(live.servers) ? live.servers.slice() : [];
-  const mine = canonicalUrl(record.url);
-  if (servers.some((s) => canonicalUrl(s.url) === mine)) {
-    return json({ ok: true, action, id, note: '已在清单中，未重复添加' });
+  // 判重口径与 submit 完全一致（一台 host 只留一条，路径更深的那条优先）：
+  // 这里以前比的是**整条 canonicalUrl**，于是同一台服换个子路径再报一次就会多出一行。
+  const collide = listCollision(servers, record.url);
+  if (collide.kind === 'duplicate') {
+    return json({ ok: true, action, id, note: `已在清单中（${servers[collide.index].url}），未重复添加` });
   }
-  const entry = { id: record.id, name: record.name, url: record.url, probe: record.probe || '/healthz', enabled: true };
-  // direct_cn 必须一起带进清单：verify.js 靠这个字段放过「国内直连 200、CF 边缘 403」的服，
-  // 漏带的话这种服务器收录后会被整条隐藏（183.66.27.19:20522 就踩过）。
-  for (const k of ['note', 'region', 'tier', 'weight', 'protocol', 'app', 'direct_cn']) if (record[k] != null) entry[k] = record[k];
-  servers.push(entry);
+  let upgraded = null;
+  if (collide.kind === 'upgrade') {
+    const existing = servers[collide.index];
+    servers[collide.index] = { ...existing, url: record.url };
+    upgraded = { id: existing.id, from: existing.url, to: record.url };
+  } else {
+    const entry = { id: record.id, name: record.name, url: record.url, probe: record.probe || '/healthz', enabled: true };
+    // direct_cn 必须一起带进清单：verify.js 靠这个字段放过「国内直连 200、CF 边缘 403」的服，
+    // 漏带的话这种服务器收录后会被整条隐藏（183.66.27.19:20522 就踩过）。
+    for (const k of ['note', 'region', 'tier', 'weight', 'protocol', 'app', 'direct_cn']) if (record[k] != null) entry[k] = record[k];
+    servers.push(entry);
+  }
 
   // 保留信封字段（v / keyId / note 等），换上新清单与时间戳。配了 SP_SIGN_KEY 就当场签好；
   // 没配（或密钥自校验没过）才标 unsigned 让本机 tools/sign-servers.mjs 补签 —— 签名覆盖的
@@ -102,6 +111,7 @@ export async function onRequestPost(context) {
   return json({
     ok: true, action, id, count: out.count, signed: !!out.signed, needsSignature: !out.signed,
     canonicalSha256: await payloadSha256(toWrite),
+    ...(upgraded ? { upgraded } : {}),
     hint: out.signed ? '已上线并完成签名' : '清单已更新但签名作废；本机执行 node tools/sign-servers.mjs --sign --publish 补签',
   });
 }

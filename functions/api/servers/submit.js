@@ -12,7 +12,7 @@
 //   pending/<id>   → 提交记录
 //   pending_index  → 待审 id 数组（读-改-写）
 
-import { checkEntryUrl, looksLikeClientPage, rootUpgradeIndex, validateEntries, verifyServerHealth } from '../_verify.js';
+import { checkEntryUrl, listCollision, looksLikeClientPage, validateEntries, verifyServerHealth } from '../_verify.js';
 import { canSign, publishServersDoc, readPublishLog, recentPublishes, signServersDoc } from '../_publish.js';
 
 const MAX_PENDING = 100;
@@ -21,17 +21,6 @@ const MAX_PENDING = 100;
 const AUTO_PER_IP = 3;
 const AUTO_WINDOW_MS = 60 * 60 * 1000;
 
-/** 与 scout 侧一致的判据：同 host 且有一方是根路径（深链 ?room= 归一后就是根）算同一台；
- *  两边子路径不同则视为另一台实例，允许另报一条。 */
-function sameServer(a, b) {
-  const cut = (u) => {
-    try { const x = new URL(u); return { host: x.host, path: x.pathname.replace(/\/+$/, '') || '/' }; }
-    catch { return null; }
-  };
-  const x = cut(a); const y = cut(b);
-  if (!x || !y || x.host !== y.host) return false;
-  return x.path === y.path || x.path === '/' || y.path === '/';
-}
 
 function json(data, status) {
   return new Response(JSON.stringify(data), {
@@ -121,8 +110,9 @@ export async function onRequestPost(context) {
   // 门槛比新增条目更严：健康端点指纹 + 新地址真打得开 + 那页**看着像客户端本体**
   // （不然后续任何人都能把某台服的条目改成同 host 下任意能打开的路径，比如 /healthz）
   // + 当场签名自校验通过才改。匿名还额外吃每 IP 额度。
-  const dupIdx = rootUpgradeIndex(servers, entry.url);
-  if (dupIdx >= 0) {
+  const collide = listCollision(servers, entry.url);
+  if (collide.kind === 'upgrade') {
+    const dupIdx = collide.index;
     const existing = servers[dupIdx];
     const upgradeIp = clientIp(request);
     const clientPage = await looksLikeClientPage(entry.url);
@@ -146,12 +136,13 @@ export async function onRequestPost(context) {
     }
     return json({ ok: false, error: '该服务器已在公共清单中，且清单刚刚被别人改过（乐观并发挡住，没硬盖）' }, 409);
   }
-  if (servers.some((x) => sameServer(x.url, entry.url))) {
-    return json({ ok: false, error: '该服务器已在公共清单中（同一 host 的根地址视为同一台；不同子路径可另报一条）' }, 409);
+  if (collide.kind === 'duplicate') {
+    // 一台 host 只留一条：路径相同、清单里已经是更深的路径、或两边是不同子路径，都算同一家服
+    return json({ ok: false, error: `该服务器已在公共清单中（${servers[collide.index].url}；同一个 host 只留一条，不同子路径也算同一台）` }, 409);
   }
   const queued = await Promise.all(index.map((id) => env.SERVER_REVIEW.get(`pending/${id}`)));
   for (const record of queued) {
-    if (record && sameServer(JSON.parse(record).url, entry.url)) {
+    if (record && listCollision([{ url: JSON.parse(record).url }], entry.url).kind !== 'none') {
       return json({ ok: false, error: '该服务器已在待审核队列中' }, 409);
     }
   }

@@ -270,19 +270,29 @@ export function splitUrlPath(u) {
 }
 
 /**
- * 清单里有没有一条「同 host 但只存了裸根地址」的条目，可以用带路径的新地址就地升级？
- * 返回那条的下标，没有就 -1。只在候选路径更深时才成立：
- *   - 路径完全相同 → 是重复，不该走这里；
- *   - 两边都是不同子路径 → 按"同一台机的另一个实例"处理，也不该改。
+ * 判重总入口：**一台 host 只留一条**，谁的路径更好就用谁。
+ *   none      清单里没有同 host 的条目 → 当新条目收
+ *   duplicate 已有等价或更好的那条（同 host 一律算同一台：路径相同、清单里存更深路径而来了裸根、
+ *             或者两边是不同子路径 —— 一台机挂两个子路径也还是一家服）→ 不该再新增
+ *   upgrade   清单那条是裸根、来的是更深路径 → 就地改 url，把玩家点得开的原样地址换上去
  */
-export function rootUpgradeIndex(servers, incomingUrl) {
+export function listCollision(servers, incomingUrl) {
   const x = splitUrlPath(incomingUrl);
-  if (!x || x.path === '/') return -1;
+  if (!x) return { kind: 'none', index: -1 };
   const list = Array.isArray(servers) ? servers : [];
-  return list.findIndex((s) => {
-    const y = splitUrlPath(s && s.url);
-    return !!y && y.host === x.host && y.path === '/';
-  });
+  for (let i = 0; i < list.length; i += 1) {
+    const y = splitUrlPath(list[i] && list[i].url);
+    if (!y || y.host !== x.host) continue;
+    if (y.path === '/' && x.path !== '/') return { kind: 'upgrade', index: i };
+    return { kind: 'duplicate', index: i };
+  }
+  return { kind: 'none', index: -1 };
+}
+
+/** 「清单存的是裸根、来的是更深路径」的判定，包一层 listCollision 让调用点读起来直接。 */
+export function rootUpgradeIndex(servers, incomingUrl) {
+  const c = listCollision(servers, incomingUrl);
+  return c.kind === 'upgrade' ? c.index : -1;
 }
 
 const CLIENT_MARKERS = [/viewport-fit=cover/i, /\/vendor\//i, /STRONGHOLD PROTOCOL/i];

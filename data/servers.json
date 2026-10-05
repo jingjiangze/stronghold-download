@@ -1,5 +1,5 @@
 {
-  "updated": "2026-10-05T15:39:42.059Z",
+  "updated": "2026-10-05T15:57:57.788Z",
   "servers": [
     {
       "id": "xiaolubao",
@@ -152,7 +152,8 @@
       "name": "stronghold2.jiangjiangze.icu",
       "url": "https://stronghold2.jiangjiangze.icu",
       "probe": "/healthz",
-      "enabled": true
+      "enabled": false,
+      "note": "站长停用（保留条目，可随时恢复展示）"
     },
     {
       "id": "muv1q1f0462c9595",
@@ -186,9 +187,16 @@
       "probe": "/healthz",
       "enabled": true,
       "note": "自动发现 · 评论区 Sakanine"
+    },
+    {
+      "id": "muvfonxl37411ef2",
+      "name": "map.u712507.nyat.app",
+      "url": "https://map.u712507.nyat.app:38916",
+      "probe": "/healthz",
+      "enabled": true
     }
   ],
   "keyId": "sp-2026-10",
   "v": 1,
-  "sig": "om8NmTf7ZzoQ4rY+ff3QIntRdL7rBHiEy0WSqc6uEKVqNkCQ6wwDDfI7rAQmiiVTsg2YtvGPrp4pRHL0iKnvDA=="
+  "sig": "NoZ1K2BPxAeYttfsx0MtUjsDBnlruL6uuWmZBLxcXO0N7Hlu8wPljHZnNXloyjfdP0K1757dPEMNQZuiaBQbCA=="
 }

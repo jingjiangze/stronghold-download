@@ -241,6 +241,12 @@ export async function onRequestGet(context) {
       }
       valid.push(r.entry.id);
       occupancy[r.entry.id] = pickOccupancy(r.entry.id, fresh, 'node');
+    } else if (/已停用/.test(String(r.reason || '') + String(r.error || ''))) {
+      // 停用是维护者的决定，属终审：玩家回执、盒子 cn-probe、上次的 valid 都不许把它捞回前台
+      // （以前只有 direct_cn 那一支挡了 已停用，结果管理页点「停用」后条目照样显示在清单上）。
+      delete backoff[id];
+      delete entryDown[id];
+      invalid.push({ id, name: r.entry.name, url: r.entry.url, reason: '已停用（管理页关掉，需手工恢复展示）' });
     } else if (/403/.test(String(r.reason || '') + String(r.error || '')) && !/已停用/.test(String(r.reason || ''))) {
       // 边缘 403 不算死，也不再要求条目带 direct_cn 标记（2026-10-05 定的政策）：
       // CF 出口被国内云的防火墙/安全组挡掉是常态，同一条地址十几分钟后又常常能通，
