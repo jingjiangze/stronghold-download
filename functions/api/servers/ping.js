@@ -61,10 +61,11 @@ export async function onRequestPost(context) {
     ms,
     country,
     cn: country === 'CN',
-    // 当天计数：给闸门当「有多少玩家实测」的证据强度
+    // 当天计数：给闸门当「有多少玩家实测」的证据强度。只在跨天时归零 —— 之前连着 prev.ok 一起判，
+    // 于是第一条反向回执会把整天的 okHits 抹成 0，5 次实测证据瞬间没了。
     day,
-    okHits: (prev.day === day && prev.ok ? prev.okHits : 0) + (alive ? 1 : 0),
-    deadHits: (prev.day === day && !prev.ok ? prev.deadHits : 0) + (alive ? 0 : 1),
+    okHits: (prev.day === day ? (Number(prev.okHits) || 0) : 0) + (alive ? 1 : 0),
+    deadHits: (prev.day === day ? (Number(prev.deadHits) || 0) : 0) + (alive ? 0 : 1),
     rooms: keep(clampNum(body.rooms), prev.rooms),
     humans: keep(clampNum(body.humans), prev.humans),
     app: keep(short(body.app, 24), prev.app),

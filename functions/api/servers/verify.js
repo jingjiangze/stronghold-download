@@ -58,19 +58,20 @@ export async function onRequestGet(context) {
     return { rooms: p.rooms ?? null, humans: p.humans ?? null, variant: p.variant || 'browser',
              app: p.app || null, build: p.build || null };
   };
+  const DAY_MS = 24 * 3600e3;
   const browserOk = (id, maxAgeMs) => {
     const p = pings[id];
     if (!p || p.ok !== true) return null;
     // 玩家自己连清单里那条地址都连不上（回执 entry_ok:false）时，这条证据不再免死
     if (p.entry_ok === false) return null;
     const age = Date.now() - Date.parse(p.at || '');
-    return Number.isFinite(age) && age < (maxAgeMs || 24 * 3600e3) ? p : null;
+    return Number.isFinite(age) && age < (maxAgeMs || DAY_MS) ? p : null;
   };
   // 边缘这轮明确拿到 5xx 时，旧回执只能撑 2 小时（选项 4）：否则一个已经全挂的服
   // 会靠 24 小时前的回执一直显示"在线"（10-05 的 anciusland 就是这样，健康端点和入口都 502）。
   const FRESH_RECEIPT_MS = 2 * 3600e3;
   const receiptWindow = (r) => (/5\d\d/.test(String((r && r.reason) || '') + String((r && r.error) || ''))
-    ? FRESH_RECEIPT_MS : 24 * 3600e3);
+    ? FRESH_RECEIPT_MS : DAY_MS);
   const evidence = {};
   const prevValid = new Set(Array.isArray(previous.valid) ? previous.valid : []);
   const prevOccupancy = (previous.occupancy && typeof previous.occupancy === 'object') ? previous.occupancy : {};
@@ -122,8 +123,10 @@ export async function onRequestGet(context) {
       const cool = cooled(entry.id);
       if (cool) {
         skipped++;
-        // 冷却只是省掉一次探测，不该顺手把「维护者留证 / 玩家实测可达 / 仅边缘 403」的条目判死
-        if (entry.direct_cn === true || browserOk(entry.id) || /403/.test(String(cool.reason || ''))) return { entry, ok: false, cooled: true, spared: true, reason: cool.reason };
+        // 冷却只是省掉一次探测，不该顺手把「维护者留证 / 玩家实测可达 / 仅边缘 403」的条目判死。
+        // 但退避原因里写着 5xx 时，玩家回执同样只认 2 小时内的（和真探那一轮同一个口径）。
+        const coolWindow = /5\d\d/.test(String(cool.reason || '')) ? FRESH_RECEIPT_MS : DAY_MS;
+        if (entry.direct_cn === true || browserOk(entry.id, coolWindow) || /403/.test(String(cool.reason || ''))) return { entry, ok: false, cooled: true, spared: true, reason: cool.reason };
         return { entry, ok: false, cooled: true, reason: cool.reason };
       }
       // 单个服务器抛异常（解压失败、非法 probe 路径等）不能把整轮 verify 打成 1101，
@@ -254,16 +257,6 @@ export async function onRequestGet(context) {
   const liveIds = new Set(servers.map((s) => s.id));
   for (const k of Object.keys(backoff)) {
     if (!liveIds.has(k) || Number(backoff[k].until) <= nowMs) delete backoff[k];
-  }
-
-  // 边缘读不到的那几台（CF 出口被国内云挡、超时、或在冷却里），负载与版本只能来自国内视角：
-  // 玩家浏览器和盒子上的 CN 探测都会 POST /api/servers/ping 顺带把 rooms/humans/app/build 报上来。
-  // 以前 pingOccupancy() 定义了却没接上，于是这些条目虽然显示"在线"却永远没有版本和负载条。
-  for (const id of valid) {
-    const cur = occupancy[id];
-    if (hasSignal(cur)) continue;
-    const fromPing = pingOccupancy(browserOk(id));
-    if (fromPing) occupancy[id] = Object.assign({}, cur || {}, fromPing, { via: 'cn-report' });
   }
 
   const verifiedDoc = {
