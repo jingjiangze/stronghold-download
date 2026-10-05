@@ -563,7 +563,7 @@
     if (entryBad) {
       var warn = document.createElement('span');
       warn.className = 'sv-entrywarn';
-      warn.textContent = '入口 ' + (occ.entry_status.status || '打不开');
+      warn.textContent = occ.entry_status.status ? '入口 ' + occ.entry_status.status : '入口打不开';
       warn.title = (occ.entry_status.error || '入口地址打不开') + '（后端健康端点正常）'
         + (occ.entry_status.rounds > 1 ? ' · 已连续 ' + occ.entry_status.rounds + ' 轮' : '');
       main.appendChild(warn);

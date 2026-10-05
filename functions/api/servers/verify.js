@@ -215,15 +215,25 @@ export async function onRequestGet(context) {
         app: r.app || null, build: r.build || null,
       };
       const gate = r.entry_check;
-      if (gate && gate.ok === false) {
+      // 只有入口自己回了 **5xx** 才标注：那是确定的坏。超时/连不上不算 —— CF 出口被国内云
+      // 挡掉是常态（小鹿宝实测：边缘探测超时，玩家浏览器 344 ms 打得开、当天最大的一台服），
+      // 给它挂「入口打不开」是当着所有玩家的面说假话。
+      const entryBad = gate && gate.ok === false && Number(gate.status) >= 500;
+      if (entryBad) {
         // 后端健康端点 200、只有清单那条入口 5xx —— 按 2026-10-05 定的口径：**不隐藏，只标注**。
         // 入口挂掉通常是 nginx 路由/上游的临时问题（game.rainya.me 重启窗口就是这样，
         // 那一轮 /play 和 /healthz 从三个出口都是 502，而 /api/status 一直 200），
         // 后端在应答就说明服务器本身活着；把整条藏起来的代价（玩家找不到繁忙的服）大于留着。
-        // 连续轮数记进 entry_down_rounds，页面和管理页据此挂「入口异常」标记；不写退避。
+        // 连续轮数记进 entry_down_rounds，页面据此挂「入口 502」标记；不写退避。
         delete backoff[id];
         entryDown[id] = Number(entryDown[id] || 0) + 1;
-        fresh.entry_status = { ok: false, status: gate.status || null, error: gate.error || null, rounds: entryDown[id] };
+        fresh.entry_status = { ok: false, status: gate.status, error: gate.error || null, rounds: entryDown[id] };
+      } else if (gate && gate.ok === false) {
+        delete backoff[id];            // 边缘看不到入口而已，下一轮继续真探，别进退避
+        if (entryDown[id]) {
+          fresh.entry_status = { ok: true, recovered: true };
+          delete entryDown[id];
+        }
       } else if (entryDown[id]) {
         // 入口恢复了：留一次恢复标记，然后清零，别让"曾经坏过"长期挂在数据里
         fresh.entry_status = { ok: true, recovered: true };
