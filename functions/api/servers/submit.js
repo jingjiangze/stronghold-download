@@ -63,10 +63,13 @@ export async function onRequestPost(context) {
   // 服务端身份校验：不过 /healthz 指纹的一律拒收，省得污染队列。
   // 提交路径给 12s：国内主机从边缘 PoP 过去常常 5s 内握不上手，那不等于"不是卫戍服务器"。
   const verdict = await verifyServerHealth(entry.url, entry.probe, 12000);
-  // direct_cn 是维护者留证的「国内直连/其它出口可达、CF 边缘不通」条目，边缘探测失败只记录不拦提交。
-  if (!verdict.ok && entry.direct_cn !== true) {
+  // 出示管理口令的提交者（本机工具、带 PUBLISH_KEY 的 scout 投递链）本身就是验活通道之一：
+  // 它们只在别的出口跑过指纹之后才投，边缘 403/超时不算否决 —— 直接补上 direct_cn，
+  // 让后续 verify 也按"越过边缘探测"处理。匿名访客仍然必须过边缘校验。
+  if (!verdict.ok && !isAdmin) {
     return json({ ok: false, error: `校验失败：${verdict.error}` }, 400);
   }
+  if (!verdict.ok) { entry.direct_cn = true; entry.attested_by = 'maintainer'; }
 
   const index = await readIndex(env);
   if (index.length >= MAX_PENDING) return json({ ok: false, error: '待审核队列已满，请稍后再试' }, 429);

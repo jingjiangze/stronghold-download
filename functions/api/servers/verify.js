@@ -87,7 +87,8 @@ export async function onRequestGet(context) {
     const s = String(reason || '');
     if (/429|rate.?limit|限流/i.test(s)) return FLOOR_MS * 2;
     if (/超时|timeout|探测异常|502|503|520|522|526|connection|ECONN|网络/i.test(s)) return FLOOR_MS;
-    if (/403|404|不是 JSON|ok 字段|无合法|拒绝|dead/i.test(s)) return FLOOR_MS;
+    // 403 不进退避：边缘被国内云挡是常态且时常自己恢复，按政策直接当"活着"处理（见下面的分支）
+    if (/404|不是 JSON|ok 字段|无合法|拒绝|dead/i.test(s)) return FLOOR_MS;
     return 0;
   };
   let skipped = 0;
@@ -105,8 +106,8 @@ export async function onRequestGet(context) {
       const cool = cooled(entry.id);
       if (cool) {
         skipped++;
-        // 冷却只是省掉一次探测，不该顺手把「维护者留证 / 玩家实测可达」的条目判死
-        if (entry.direct_cn === true || browserOk(entry.id)) return { entry, ok: false, cooled: true, spared: true, reason: cool.reason };
+        // 冷却只是省掉一次探测，不该顺手把「维护者留证 / 玩家实测可达 / 仅边缘 403」的条目判死
+        if (entry.direct_cn === true || browserOk(entry.id) || /403/.test(String(cool.reason || ''))) return { entry, ok: false, cooled: true, spared: true, reason: cool.reason };
         return { entry, ok: false, cooled: true, reason: cool.reason };
       }
       // 单个服务器抛异常（解压失败、非法 probe 路径等）不能把整轮 verify 打成 1101，
@@ -166,8 +167,17 @@ export async function onRequestGet(context) {
       occupancy[r.entry.id] = !hasSignal(fresh) && hasSignal(prev)
         ? Object.assign({}, prev, { stale: true })
         : fresh;
+    } else if (/403/.test(String(r.reason || '') + String(r.error || '')) && !/已停用/.test(String(r.reason || ''))) {
+      // 边缘 403 不算死，也不再要求条目带 direct_cn 标记（2026-10-05 定的政策）：
+      // CF 出口被国内云的防火墙/安全组挡掉是常态，同一条地址十几分钟后又常常能通，
+      // 而玩家和收录时的验活都不走 CF 出口。仍照常展示，不写退避（下一轮继续真探）。
+      delete backoff[id];
+      valid.push(r.entry.id);
+      occupancy[r.entry.id] = prevOccupancy[r.entry.id]
+        || { rooms: null, humans: null,
+             variant: r.entry.direct_cn === true ? 'direct-cn' : 'edge-403', app: null, build: null };
     } else if (r.entry.direct_cn === true && !/已停用/.test(String(r.reason || ''))) {
-      // 国内直连正常、Cloudflare 出口 403/超时的服务器（收录时已用第三方公开探测留证）。
+      // 国内直连正常、Cloudflare 出口超时的服务器（收录时已用其它出口验过活）。
       // 真实玩家从国内浏览器/客户端连接，边缘探测失败不该把它判死；仍照常展示，来源写在 note。
       delete backoff[id];
       valid.push(r.entry.id);
