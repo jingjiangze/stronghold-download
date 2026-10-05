@@ -1,15 +1,37 @@
 // Pages Function: POST /api/servers/submit
-// 访客提交入口。**只入队，不发布** —— 服务端先做一次「是不是卫戍协议服务器」的健康校验，
-// 通过才写进 SERVER_REVIEW KV 队列；发布由维护者在 /api/servers/review 点「通过」完成，
-// 那次写入会带上 unsigned 标记，由本机签名脚本补上 Ed25519 签名（见 tools/sign-servers.mjs）。
+// 访客提交入口。**校验有效就当场上线，不再等维护者点「通过」**（2026-10-05 用户定的）：
+// 服务端要连过两道 —— 健康端点指纹（是不是卫戍协议服务器）与清单那条入口地址本身
+// （玩家真会点开的链接），两道都过才追加进签名清单并立刻发布；签名用 Pages secret
+// SP_SIGN_KEY 在这边算，且签完立刻用 SP_PUB_KEY 自校验，配错密钥宁可不发。
+// 以下三种情况仍退回队列，由维护者在 /api/servers/review 处置：
+//   ① 带 x-admin-key 的投递链（scout）—— 边缘失败靠维护者担保；
+//   ② 该 IP 一小时内自动上线已超 3 条（防刷屏）；
+//   ③ 没配签名密钥或写清单时撞上并发（不硬盖别人的发布）。
 //
 // 队列存储：KV namespace SERVER_REVIEW（wrangler.toml 里绑定）
 //   pending/<id>   → 提交记录
 //   pending_index  → 待审 id 数组（读-改-写）
 
-import { canonicalUrl, validateEntries, verifyServerHealth } from '../_verify.js';
+import { checkEntryUrl, validateEntries, verifyServerHealth } from '../_verify.js';
+import { canSign, publishServersDoc, recentPublishes, signServersDoc } from '../_publish.js';
 
 const MAX_PENDING = 100;
+// 匿名提交现在直接进签名清单，所以给每个 IP 一个刷屏上限：一小时内最多自动上线 3 条，
+// 超出就退回队列（维护者仍在，只是不再是必经步骤）。
+const AUTO_PER_IP = 3;
+const AUTO_WINDOW_MS = 60 * 60 * 1000;
+
+/** 与 scout 侧一致的判据：同 host 且有一方是根路径（深链 ?room= 归一后就是根）算同一台；
+ *  两边子路径不同则视为另一台实例，允许另报一条。 */
+function sameServer(a, b) {
+  const cut = (u) => {
+    try { const x = new URL(u); return { host: x.host, path: x.pathname.replace(/\/+$/, '') || '/' }; }
+    catch { return null; }
+  };
+  const x = cut(a); const y = cut(b);
+  if (!x || !y || x.host !== y.host) return false;
+  return x.path === y.path || x.path === '/' || y.path === '/';
+}
 
 function json(data, status) {
   return new Response(JSON.stringify(data), {
@@ -60,7 +82,7 @@ export async function onRequestPost(context) {
   if (!isAdmin) delete checked.servers[0].direct_cn;
   const entry = { ...checked.servers[0], ...pickExtras(rawEntry, isAdmin) };
 
-  // 服务端身份校验：不过 /healthz 指纹的一律拒收，省得污染队列。
+  // 服务端身份校验：不过健康端点指纹的一律拒收，省得污染队列。
   // 提交路径给 12s：国内主机从边缘 PoP 过去常常 5s 内握不上手，那不等于"不是卫戍服务器"。
   const verdict = await verifyServerHealth(entry.url, entry.probe, 12000);
   // 出示管理口令的提交者（本机工具、带 PUBLISH_KEY 的 scout 投递链）本身就是验活通道之一：
@@ -71,30 +93,54 @@ export async function onRequestPost(context) {
   }
   if (!verdict.ok) { entry.direct_cn = true; entry.attested_by = 'maintainer'; }
 
+  // 第二道闸：清单里那条入口地址（玩家真正会点的）自己也得打得开。
+  // game.rainya.me 就是靠这个漏进来的：/api/status 一直 200 而 /play 是 502。
+  const gate = verdict.ok ? await checkEntryUrl(entry.url) : { ok: true };
+  if (verdict.ok && gate.ok === false && !isAdmin) {
+    return json({ ok: false, error: `校验失败：${gate.error}` }, 400);
+  }
+
+  // 条目 id 要稳（客户端拿它当 occupancy 键），又要防撞：访客没给就生成一个，
+  // 不能让 validateEntries 的 `srv-0` 兜底值进清单 —— 那会和下一条撞键。
+  if (!String(rawEntry.id || '').trim()) {
+    const rnd = new Uint8Array(4);
+    crypto.getRandomValues(rnd);
+    entry.id = Date.now().toString(36) + Array.from(rnd, (b) => b.toString(16).padStart(2, '0')).join('');
+  }
+
   const index = await readIndex(env);
   if (index.length >= MAX_PENDING) return json({ ok: false, error: '待审核队列已满，请稍后再试' }, 429);
 
   const liveRes = await env.R2BUCKET.get('site/servers.json');
-  const mine = canonicalUrl(entry.url);
-  if (liveRes) {
-    try {
-      const live = JSON.parse(await liveRes.text());
-      // 与 scout 侧一致的判据：同 host 且有一方是根路径（深链 ?room= 归一后就是根）算同一台；
-      // 两边子路径不同则视为另一台实例，允许另报一条。
-      const sameServer = (a, b) => {
-        const cut = (u) => { try { const x = new URL(u); const p = x.pathname.replace(/\/+$/, ''); return { host: x.host, path: p || '/' }; } catch { return null; } };
-        const x = cut(a); const y = cut(b);
-        if (!x || !y || x.host !== y.host) return false;
-        return x.path === y.path || x.path === '/' || y.path === '/';
-      };
-      const dup = (live.servers || []).some((x) => sameServer(x.url, entry.url));
-      if (dup) return json({ ok: false, error: '该服务器已在公共清单中（同一 host 的根地址视为同一台；不同子路径可另报一条）' }, 409);
-    } catch { /* 线上清单读不动时继续入队，approve 时还会再查一遍 */ }
+  let liveDoc = null;
+  if (liveRes) { try { liveDoc = JSON.parse(await liveRes.text()); } catch { /* 现网坏了就只入队 */ } }
+  const servers = liveDoc && Array.isArray(liveDoc.servers) ? liveDoc.servers : [];
+  if (servers.some((x) => sameServer(x.url, entry.url))) {
+    return json({ ok: false, error: '该服务器已在公共清单中（同一 host 的根地址视为同一台；不同子路径可另报一条）' }, 409);
   }
   const queued = await Promise.all(index.map((id) => env.SERVER_REVIEW.get(`pending/${id}`)));
   for (const record of queued) {
     if (record && sameServer(JSON.parse(record).url, entry.url)) {
       return json({ ok: false, error: '该服务器已在待审核队列中' }, 409);
+    }
+  }
+
+  const ip = clientIp(request);
+  // 匿名 + 两道都过 + 配了签名密钥 + 本 IP 额度没用完 → 当场上线（签好名再写，客户端不会看见未签名清单）
+  if (!isAdmin && verdict.ok && gate.ok === true && canSign(env)
+      && (await recentPublishes(env, ip, AUTO_WINDOW_MS)) < AUTO_PER_IP) {
+    const signed = await signServersDoc({ ...liveDoc, servers: servers.concat([entry]) }, env);
+    if (signed) {
+      const out = await publishServersDoc(env, signed, {
+        baseUpdated: liveDoc && liveDoc.updated, via: 'auto-submit',
+        entryId: entry.id, entryUrl: entry.url, ip,
+        ua: request.headers.get('user-agent'), country: (request.cf && request.cf.country) || null,
+      });
+      if (out.ok) {
+        return json({ ok: true, published: true, id: entry.id, count: out.count,
+                      hint: '校验通过，已当场上线；后台校验每 30 分钟复查一次，入口或后端坏了会自动隐藏' });
+      }
+      // out.conflict：期间有人改过清单。不硬盖，退回队列让维护者看见最新状态。
     }
   }
 
@@ -123,7 +169,7 @@ export async function onRequestPost(context) {
   await env.SERVER_REVIEW.put('pending_index', JSON.stringify(index));
 
   return json({ ok: true, queued: true, id: queueId, queuePosition: index.length,
-                hint: '已进入待审核队列，维护者点「通过」后仍需本机签名发布' });
+                hint: '已进入待审核队列（担保提交、本 IP 额度已满、或清单正在并发更新），维护者点「通过」即上线' });
 }
 
 export async function onRequestGet(context) {

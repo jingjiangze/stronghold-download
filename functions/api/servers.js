@@ -14,6 +14,8 @@
 //
 // R2 access uses the Pages R2 binding declared in wrangler.toml (binding name R2BUCKET).
 
+import { signServersDoc } from './_publish.js';
+
 const BUCKET = 'R2BUCKET';
 const LIST_KEY = 'site/servers.json';
 const MAX_ENTRIES = 64;
@@ -148,10 +150,22 @@ export async function onRequestPut(context) {
   // A signed list is stored byte-for-byte: re-serializing would invalidate the Ed25519 signature
   // (it covers the canonical form). The entry validation above still runs, so a hostile payload
   // cannot smuggle a private/loopback url past the gate — it merely keeps its own extra fields.
-  const signed = typeof doc.sig === 'string' && doc.sig.length > 0;
-  const body = signed
-    ? raw
-    : JSON.stringify({ updated: new Date().toISOString(), servers: cleaned }, null, 2) + '\n';
+  let signed = typeof doc.sig === 'string' && doc.sig.length > 0;
+  let body;
+  if (signed) {
+    body = raw;
+  } else {
+    // 管理页的每次编辑（删除 / 停用 / 改标记）到这里都是未签名的，以前必须回本机
+    // `tools/sign-servers.mjs --sign --publish` 补签，忘了就让游戏客户端整表拒收 —— 而页面
+    // 上一切正常，谁也看不出出事。这条路由只有 PUBLISH_KEY 进得来，所以当场签掉是安全的；
+    // 没配 SP_SIGN_KEY 时才退回原来的 unsigned 行为。
+    const envelope = { ...doc, updated: new Date().toISOString(), servers: cleaned };
+    delete envelope.sig;
+    delete envelope.unsigned;
+    const signedDoc = await signServersDoc(envelope, env);
+    if (signedDoc) { body = JSON.stringify(signedDoc, null, 2) + '\n'; signed = true; }
+    else { envelope.unsigned = true; body = JSON.stringify(envelope, null, 2) + '\n'; }
+  }
   await bucket.put(LIST_KEY, body, {
     httpMetadata: { contentType: 'application/json', cacheControl: 'public, max-age=60' }
   });
@@ -178,7 +192,7 @@ export async function onRequestPut(context) {
     await bucket.put(auditKey, JSON.stringify(log, null, 1) + '\n', {
       httpMetadata: { contentType: 'application/json', cacheControl: 'private, no-store' } });
   } catch { /* 审计失败不影响发布 */ }
-  return json({ ok: true, count: cleaned.length, updated: new Date().toISOString() });
+  return json({ ok: true, count: cleaned.length, signed, updated: new Date().toISOString() });
 }
 
 export async function onRequestGet() {

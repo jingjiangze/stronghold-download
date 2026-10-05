@@ -1,11 +1,14 @@
 // Pages Function: POST /api/servers/review
 // 维护者审核队列。
-//   action: "approve" → 重新做一次健康校验 → 追加进线上清单 → **作废签名并标 unsigned**
+//   action: "approve" → 重做健康校验 + 入口校验 → 追加进线上清单 → 当场签名（配了 SP_SIGN_KEY 时）
 //           "reject"  → 丢弃该条
 // Body: { id, action }   Auth: header x-admin-key == PUBLISH_KEY secret
-// approve 的返回里带 canonicalSha256，便于确认「本机签的就是这份」。
+// approve 的返回里带 canonicalSha256，便于确认「签的就是这份」。
+// 匿名提交的正常路径已经不走这里了：/api/servers/submit 校验有效就当场上线，队列只留给
+// 需要维护者处置的三种情况（担保提交 / 本 IP 额度用完 / 清单并发更新）。
 
-import { canonicalUrl, payloadSha256, verifyServerHealth } from '../_verify.js';
+import { canonicalUrl, checkEntryUrl, payloadSha256, verifyServerHealth } from '../_verify.js';
+import { publishServersDoc, signServersDoc } from '../_publish.js';
 
 function json(data, status) {
   return new Response(JSON.stringify(data), {
@@ -56,6 +59,12 @@ export async function onRequestPost(context) {
   if (!verdict.ok && record.direct_cn !== true) {
     return json({ ok: false, error: `复核失败：${verdict.error}（已从队列移除）` }, 400);
   }
+  // 第二道闸（与 submit 同口径）：清单那条入口地址本身也得打得开，
+  // 否则一上线就是"绿灯行 + 玩家点开 502"（game.rainya.me 那种半挂）。
+  if (verdict.ok) {
+    const gate = await checkEntryUrl(record.url);
+    if (!gate.ok) return json({ ok: false, error: `复核失败：${gate.error}（已从队列移除）` }, 400);
+  }
 
   const liveRes = await env.R2BUCKET.get('site/servers.json');
   let live = { updated: new Date().toISOString(), servers: [] };
@@ -73,21 +82,26 @@ export async function onRequestPost(context) {
   for (const k of ['note', 'region', 'tier', 'weight', 'protocol', 'app', 'direct_cn']) if (record[k] != null) entry[k] = record[k];
   servers.push(entry);
 
-  // 保留信封字段（v / keyId / note 等），换上新清单与时间戳，并把签名作废：
-  // 签名覆盖的是旧载荷，加了一条就必须重签，否则客户端验签会静默拒绝整份清单。
+  // 保留信封字段（v / keyId / note 等），换上新清单与时间戳。配了 SP_SIGN_KEY 就当场签好；
+  // 没配（或密钥自校验没过）才标 unsigned 让本机 tools/sign-servers.mjs 补签 —— 签名覆盖的
+  // 是旧载荷，加了一条就必须重签，否则客户端验签会静默拒绝整份清单。
   const next = { ...live };
   delete next.sig;
+  delete next.unsigned;
   next.servers = servers;
-  next.updated = new Date().toISOString();
-  next.unsigned = true;
-
-  const body = JSON.stringify(next, null, 2) + '\n';
-  await env.R2BUCKET.put('site/servers.json', body, {
-    httpMetadata: { contentType: 'application/json', cacheControl: 'public, max-age=60' },
+  const signedDoc = await signServersDoc(next, env);
+  const toWrite = signedDoc || Object.assign(next, { updated: new Date().toISOString(), unsigned: true });
+  const out = await publishServersDoc(env, toWrite, {
+    baseUpdated: live.updated, via: 'review-approve', entryId: record.id, entryUrl: record.url,
+    ip: (request.headers.get('cf-connecting-ip') || '').slice(0, 60),
+    ua: request.headers.get('user-agent'), country: (request.cf && request.cf.country) || null,
   });
+  if (out.conflict) {
+    return json({ ok: false, error: `清单在这期间又被改过（现网 ${out.liveUpdated}），没有覆盖；请重新审核这条` }, 409);
+  }
   return json({
-    ok: true, action, id, count: servers.length, needsSignature: true,
-    canonicalSha256: await payloadSha256(next),
-    hint: '清单已更新但签名作废；本机执行 node tools/sign-servers.mjs --sign --publish 补签',
+    ok: true, action, id, count: out.count, signed: !!out.signed, needsSignature: !out.signed,
+    canonicalSha256: await payloadSha256(toWrite),
+    hint: out.signed ? '已上线并完成签名' : '清单已更新但签名作废；本机执行 node tools/sign-servers.mjs --sign --publish 补签',
   });
 }

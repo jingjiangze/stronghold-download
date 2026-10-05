@@ -137,7 +137,9 @@ export async function verifyServerHealth(origin, probe, timeoutMs) {
     if (typeof body.build === 'string' && /^[0-9a-f]{6,40}$/i.test(body.build)) {
       build = body.build;
     }
-    app = app || body.build || null;
+    // app 只放真正的版本号（workers 版把它写在 version 里）。以前这里回落到 build 哈希，
+    // 于是哈希会被拼成「v5d1154951c87」这种版本号显示出去 —— 版本号与构建哈希是两回事。
+    if (typeof app !== 'string' || !/^\d+(\.\d+){1,3}/.test(app)) app = null;
   } else {
     for (const field of HEALTH_FIELDS) {
       const value = body[field];

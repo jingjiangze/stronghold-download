@@ -509,12 +509,12 @@
       : '该服务器类型不提供房间统计';
     div.appendChild(meter);
     // version label sits right after the host line (append inside `main`)
-    var versionText = occ ? (occ.build ? 'build ' + String(occ.build).slice(0, 7)
-      : (occ.app ? 'v' + occ.app : '')) : '';
+    // 只显版本号 v0.1.3 这种形态；构建哈希不进标题，收在悬浮提示里
+    var versionText = occ && occ.app && /^\d+(\.\d+){1,3}/.test(String(occ.app)) ? 'v' + String(occ.app).replace(/^v/, '') : '';
     if (versionText && host) {
       var hostVer = document.createElement('span');
       hostVer.className = 'sv-hostver';
-      hostVer.title = '服务器当前版本（不强制，仅标注）';
+      hostVer.title = '服务器当前版本（不强制，仅标注）' + (occ.build ? '\n构建 ' + occ.build : '');
       hostVer.textContent = versionText;
       host.appendChild(hostVer);
     }
