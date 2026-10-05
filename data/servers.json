@@ -1,5 +1,5 @@
 {
-  "updated": "2026-10-05T03:40:03.937Z",
+  "updated": "2026-10-05T03:53:50.666Z",
   "servers": [
     {
       "id": "xiaolubao",
@@ -130,9 +130,18 @@
       "enabled": true,
       "note": "社区服 · B站「d星空之下」自建；国内直连正常，边缘出口 403",
       "direct_cn": true
+    },
+    {
+      "id": "muuptal9fd705847",
+      "name": "杭州云服",
+      "url": "http://115.29.215.81:3000",
+      "probe": "/healthz",
+      "enabled": true,
+      "note": "社区服 · 阿里云杭州。国内直连 /healthz 200（v1 app=0.1.3 房9 人1",
+      "direct_cn": true
     }
   ],
   "keyId": "sp-2026-10",
   "v": 1,
-  "sig": "iQzfDg1pGONg6U7uWRYbXxf0uOF5c6KdWk8EBIwimoRBLaDFAYOyerK5bKb5nK+DkS8Eq8EJHbObSQkQqhz/Cg=="
+  "sig": "1Ep6RgS4tsE4sw9TwvPuJ/Xz2Nu9gPtldI7qkX5BtLaSk86keWWz5NHo6Vrc/e4SdJPIgF1l1jNB1ySF+nWMBg=="
 }

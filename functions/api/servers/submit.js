@@ -29,14 +29,15 @@ async function readIndex(env) {
 }
 
 /** 排序/门禁用的可选字段，允许访客提交，非法值直接忽略。 */
-function pickExtras(raw) {
+function pickExtras(raw, isAdmin) {
   const out = {};
   if (Number.isInteger(raw.tier) && raw.tier >= 0 && raw.tier <= 100) out.tier = raw.tier;
   if (Number.isInteger(raw.weight) && raw.weight >= 0 && raw.weight <= 1000) out.weight = raw.weight;
   if (Number.isInteger(raw.protocol) && raw.protocol >= 0) out.protocol = raw.protocol;
   if (typeof raw.app === 'string' && raw.app.trim()) out.app = raw.app.trim().slice(0, 32);
-  // 维护者自己提交的国内直连服：边缘探测不通是预期内的，见下面的分支
-  if (raw.direct_cn === true) out.direct_cn = true;
+  // direct_cn 只认出示管理口令的提交者：它是「绕过边缘指纹」的通行证，
+  // 若匿名访客也能带，就等于任何人都能往签名清单里塞一台没被核实过的服务器。
+  if (isAdmin && raw.direct_cn === true) { out.direct_cn = true; out.attested_by = 'maintainer'; }
   return out;
 }
 
@@ -50,14 +51,19 @@ export async function onRequestPost(context) {
 
   const rawEntry = Array.isArray(doc && doc.servers) ? doc.servers[0] : null;
   if (!rawEntry) return json({ ok: false, error: 'servers[] 里需要恰好一条待提交记录' }, 400);
+  // 出示管理口令的提交者（本机工具、以及带 PUBLISH_KEY 的 scout 投递链）走的是维护者通道
+  const isAdmin = !!env.PUBLISH_KEY && (request.headers.get('x-admin-key') || '') === env.PUBLISH_KEY;
   const checked = validateEntries([{ ...rawEntry, enabled: true }]);
   if (checked.error) return json({ ok: false, error: checked.error }, 400);
-  const entry = { ...checked.servers[0], ...pickExtras(rawEntry) };
+  // validateEntries 会原样保留 direct_cn（清单 PUT 路径要靠它），所以这里必须按身份剥掉：
+  // 不剥的话匿名提交直接绕过 x-admin-key 闸门。
+  if (!isAdmin) delete checked.servers[0].direct_cn;
+  const entry = { ...checked.servers[0], ...pickExtras(rawEntry, isAdmin) };
 
   // 服务端身份校验：不过 /healthz 指纹的一律拒收，省得污染队列。
   // 提交路径给 12s：国内主机从边缘 PoP 过去常常 5s 内握不上手，那不等于"不是卫戍服务器"。
   const verdict = await verifyServerHealth(entry.url, entry.probe, 12000);
-  // direct_cn 是维护者留证的"国内直连可达、边缘出口不通"条目，边缘探测失败只记录不拦提交。
+  // direct_cn 是维护者留证的「国内直连/其它出口可达、CF 边缘不通」条目，边缘探测失败只记录不拦提交。
   if (!verdict.ok && entry.direct_cn !== true) {
     return json({ ok: false, error: `校验失败：${verdict.error}` }, 400);
   }
@@ -99,7 +105,15 @@ export async function onRequestPost(context) {
     id: queueId,
     submittedAt: new Date().toISOString(),
     submittedBy: clientIp(request),
-    verify: { ok: true, variant: verdict.variant || null, rooms: verdict.rooms ?? null, humans: verdict.humans ?? null, at: new Date().toISOString() },
+    // 边缘探测结果原样入档：direct_cn 条目这里可能是 ok:false，审核时得看得见"是维护者担保的"
+    verify: {
+      ok: !!verdict.ok,
+      variant: verdict.variant || null,
+      rooms: verdict.rooms ?? null,
+      humans: verdict.humans ?? null,
+      error: verdict.ok ? undefined : verdict.error,
+      at: new Date().toISOString(),
+    },
   };
   await env.SERVER_REVIEW.put(`pending/${queueId}`, JSON.stringify(record));
   index.push(queueId);
