@@ -3,3 +3,12 @@ README.md
 functions/
 wrangler.toml
 .assetsignore
+
+# 调试残留：wrangler pages deploy 直传把工作目录整个上传，.gitignore 挡不住它，
+# 这些名字都曾在 dl.jiangjiangze.icu 上公开可读（2026-10-05 清理）。
+*_out.txt
+*_test*.txt
+*_err.txt
+admin_harness.txt
+ls.json
+.mimosa/
