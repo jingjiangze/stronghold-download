@@ -70,6 +70,10 @@ export async function onRequestPost(context) {
     app: keep(short(body.app, 24), prev.app),
     build: keep(short(body.build, 40), prev.build),
     variant: keep(body.variant === 'workers' || body.variant === 'node' ? body.variant : null, prev.variant),
+    // 玩家自己打清单那条入口地址的结果（no-cors 只分得出「连上/连不上」，看不出 5xx）：
+    // 明确连不上时这条回执不能再给死服免死。没测就写 null —— 每次回执都刷新 at，
+    // 把上一次的 false 留下来会变成一条永久否决。
+    entry_ok: typeof body.entry_ok === 'boolean' ? body.entry_ok : null,
   };
   doc.pings[id] = rec;
   const keys = Object.keys(doc.pings);

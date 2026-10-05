@@ -146,6 +146,11 @@
   function applyOccupancy(doc) {
     if (doc && doc.occupancy && typeof doc.occupancy === 'object') {
       state.occupancy = doc.occupancy;
+      // 闸门标出的「入口挂了、后端还活着」：行保留展示但要显式提示，并让玩家回执来佐证
+      state.servers.forEach(function (s) {
+        var o = state.occupancy[s.id];
+        s.degraded = !!(o && o.entry_status && o.entry_status.ok === false);
+      });
       return true;
     }
     return false;
@@ -314,18 +319,26 @@
    */
   var PING_GAP_MS = 10 * 60 * 1000;
   function reportPing(server) {
-    if (!server || !server.id || !(server.quarantined || server.viaBrowser)) return;
+    if (!server || !server.id || !(server.quarantined || server.viaBrowser || server.degraded)) return;
     var now = Date.now();
     var k = 'sp_ping_' + server.id;
     try { if (now - (Number(localStorage.getItem(k)) || 0) < PING_GAP_MS) return; localStorage.setItem(k, String(now)); } catch (err) { /* 隐私模式照发 */ }
     var payload = { id: server.id, ok: !server.offline, ms: server.ms == null ? null : Math.round(server.ms) };
     // 房间数与版本只能从响应体里读，而探针是 no-cors（响应不透明）。所以再试一次 CORS 读：
     // 服务器发了 Access-Control-Allow-Origin 才拿得到，拿不到就照旧只报连通性。
-    readHealth(server).then(function (h) {
+    // 同时按原样地址（含 path）探一次入口：no-cors 看不出状态码，但分得出连上与连不上，
+    // 于是「闸门说入口 502」能拿到国内视角的佐证。http 地址在 https 页面里浏览器根本不让发，
+    // 那种情况不报这个字段，免得把浏览器限制算成服务器挂了。
+    var entryProbe = server.url && location.protocol === server.url.protocol
+      ? timed(server.url, PROBE_TIMEOUT_MS).then(function () { return true; }, function () { return false; })
+      : Promise.resolve(null);
+    Promise.all([readHealth(server), entryProbe]).then(function (out) {
+      var h = out[0];
       if (h) {
         payload.rooms = h.rooms; payload.humans = h.humans;
         payload.app = h.app; payload.build = h.build; payload.variant = h.variant;
       }
+      if (out[1] !== null) payload.entry_ok = out[1];
       return fetch('/api/servers/ping', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -509,6 +522,15 @@
       hostVer.title = '服务器当前版本（不强制，仅标注）';
       hostVer.textContent = versionText;
       host.appendChild(hostVer);
+    }
+    // 入口坏了但后端健康端点正常：地址仍留在清单里，明确标出是入口/路由的问题，不是服务器没了
+    if (server.degraded) {
+      var warn = document.createElement('span');
+      warn.className = 'sv-entrywarn';
+      warn.textContent = '入口 ' + (occ.entry_status.status || '打不开');
+      warn.title = (occ.entry_status.error || '入口地址打不开') + '（后端健康端点正常）';
+      main.appendChild(warn);
+      div.className += ' is-degraded';
     }
 
     var ms = document.createElement('span');

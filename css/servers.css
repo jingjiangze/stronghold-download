@@ -145,6 +145,20 @@
   color: var(--text-dim);
   letter-spacing: .04em;
 }
+/* ---- 入口坏了、后端健康端点还正常（闸门第一轮只标注，连续两轮才隐藏） ---------------- */
+.sv-row.is-degraded .sv-dot { background: var(--amber); color: var(--amber); }
+.sv-row.is-degraded .sv-ms { color: var(--gold-2); }
+.sv-entrywarn {
+  flex: 0 0 auto;
+  margin-left: .06rem;
+  padding: 0 .05rem;
+  border: 1px solid rgba(240, 178, 74, .55);
+  border-radius: .04rem;
+  color: var(--amber);
+  font-size: .11rem;
+  letter-spacing: .02em;
+  white-space: nowrap;
+}
 /* load colors: mint = light load, gold = near capacity, red = full */
 .sv-bar { background: linear-gradient(90deg, var(--mint-600), var(--mint-glow)); }
 .sv-row.is-hot .sv-bar { background: linear-gradient(90deg, var(--amber), var(--gold)); }

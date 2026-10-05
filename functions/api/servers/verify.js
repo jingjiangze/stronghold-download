@@ -14,7 +14,7 @@
 // Publishing a failing entry stays possible (transient downtime must not delete data),
 // but the download page hides invalid entries until they pass again.
 
-import { verifyServerHealth } from '../_verify.js';
+import { verifyServerHealth, checkEntryUrl } from '../_verify.js';
 
 const LIST_KEY = 'site/servers.json';
 const VERIFIED_KEY = 'site/verified.json';
@@ -58,15 +58,25 @@ export async function onRequestGet(context) {
     return { rooms: p.rooms ?? null, humans: p.humans ?? null, variant: p.variant || 'browser',
              app: p.app || null, build: p.build || null };
   };
-  const browserOk = (id) => {
+  const browserOk = (id, maxAgeMs) => {
     const p = pings[id];
     if (!p || p.ok !== true) return null;
+    // 玩家自己连清单里那条地址都连不上（回执 entry_ok:false）时，这条证据不再免死
+    if (p.entry_ok === false) return null;
     const age = Date.now() - Date.parse(p.at || '');
-    return Number.isFinite(age) && age < 24 * 3600e3 ? p : null;
+    return Number.isFinite(age) && age < (maxAgeMs || 24 * 3600e3) ? p : null;
   };
+  // 边缘这轮明确拿到 5xx 时，旧回执只能撑 2 小时（选项 4）：否则一个已经全挂的服
+  // 会靠 24 小时前的回执一直显示"在线"（10-05 的 anciusland 就是这样，健康端点和入口都 502）。
+  const FRESH_RECEIPT_MS = 2 * 3600e3;
+  const receiptWindow = (r) => (/5\d\d/.test(String((r && r.reason) || '') + String((r && r.error) || ''))
+    ? FRESH_RECEIPT_MS : 24 * 3600e3);
   const evidence = {};
   const prevValid = new Set(Array.isArray(previous.valid) ? previous.valid : []);
   const prevOccupancy = (previous.occupancy && typeof previous.occupancy === 'object') ? previous.occupancy : {};
+  // 入口连续坏了几轮（1 = 只坏了一轮，先标注不判死；>=2 才隐藏），避免网关重启十几分钟就整条消失
+  const prevEntryStreak = (previous.entry_streak && typeof previous.entry_streak === 'object') ? previous.entry_streak : {};
+  const entryStreak = {};
   // 整体节奏：默认 30 分钟才真打一轮（VERIFY_FLOOR_MIN 可覆盖）。页面开着也只是读这份结论，
   // 不再每 5 分钟去敲每一台服务器 —— rincynar 就是被这样打到 429 的。
   // 清单本身变过（新服上线）则立刻重探，否则新条目会被隐藏半个钟头。
@@ -119,8 +129,14 @@ export async function onRequestGet(context) {
       // 单个服务器抛异常（解压失败、非法 probe 路径等）不能把整轮 verify 打成 1101，
       // 否则所有人看到的都是上一次的成功结果。
       try {
-        const verdict = await verifyServerHealth(entry.url, entry.probe || '/healthz');
-        return { entry, ...verdict };
+        // 健康端点与清单地址**并发**打：前者证明后端在应答，后者证明玩家点的那条链接真打得开。
+        // 只看前者会漏掉「nginx 在、上游死了」的半挂服 —— game.rainya.me 就是 /api/status 200 而 /play 502。
+        // 并发而不是串行，是为了不给整轮加时长（Functions 有 wall-clock 预算）。
+        const [verdict, gate] = await Promise.all([
+          verifyServerHealth(entry.url, entry.probe || '/healthz'),
+          checkEntryUrl(entry.url).catch(() => ({ ok: true, status: null, error: null, unknown: true })),
+        ]);
+        return { entry, ...verdict, entry_check: gate };
       } catch (e) {
         return { entry, ok: false, error: '探测异常 ' + String((e && e.name) || e).slice(0, 40) };
       }
@@ -152,6 +168,7 @@ export async function onRequestGet(context) {
 
   for (const r of results) {
     const id = r.entry.id;
+    if (prevEntryStreak[id] && !r.entry_check) entryStreak[id] = Number(prevEntryStreak[id]) || 1;
     if (r.cooled) {
       // 冷却期内不打扰它，也不改判：上次活的继续算活，上次死的继续挂原因。
       if (r.spared) {
@@ -175,13 +192,31 @@ export async function onRequestGet(context) {
     }
     if (r.ok) {
       delete backoff[id];
-      valid.push(r.entry.id);
       const fresh = {
         rooms: r.rooms, humans: r.humans, variant: r.variant || 'node',
         // 标注服务器当前版本（node 版=协议协议号+app；workers 版=app/build 哈希）。
         // 不做版本准入——只展示，旧版/新版服务器都会列出。
         app: r.app || null, build: r.build || null,
       };
+      const gate = r.entry_check;
+      if (gate && gate.ok === false) {
+        const seen = Number(prevEntryStreak[id]) || 0;
+        if (seen >= 1) {
+          // 连着两轮（≥30 分钟）都打不开：判死。理由必须和后端分开写，否则看起来像"服务器没了"，
+          // 而实际上后端健康端点一直 200 —— 是清单那条入口地址的路由/上游挂了。
+          invalid.push({ id, name: r.entry.name, url: r.entry.url, reason: `${gate.error}（后端健康端点正常）` });
+          entryStreak[id] = seen + 1;
+          if (prevOccupancy[id]) occupancy[id] = prevOccupancy[id];
+          continue;
+        }
+        // 第一轮只标注：行留在清单里并带上 entry_status，由页面显示「入口 502」灰标
+        entryStreak[id] = 1;
+        valid.push(id);
+        occupancy[id] = Object.assign(pickOccupancy(id, fresh, 'node'),
+          { entry_status: { ok: false, status: gate.status || null, error: gate.error } });
+        continue;
+      }
+      valid.push(r.entry.id);
       occupancy[r.entry.id] = pickOccupancy(r.entry.id, fresh, 'node');
     } else if (/403/.test(String(r.reason || '') + String(r.error || '')) && !/已停用/.test(String(r.reason || ''))) {
       // 边缘 403 不算死，也不再要求条目带 direct_cn 标记（2026-10-05 定的政策）：
@@ -197,9 +232,10 @@ export async function onRequestGet(context) {
       delete backoff[id];
       valid.push(r.entry.id);
       occupancy[r.entry.id] = pickOccupancy(r.entry.id, null, 'direct-cn');
-    } else if (browserOk(r.entry.id)) {
-      // 边缘探不到、玩家却连得上：以玩家为准（回执超过 24 小时没续上就退回原判）
-      const p = browserOk(r.entry.id);
+    } else if (browserOk(r.entry.id, receiptWindow(r))) {
+      // 边缘探不到、玩家却连得上：以玩家为准（回执超过 24 小时没续上就退回原判；
+      // 本轮边缘明确拿到 5xx 时只认 2 小时内的回执 —— 旧证据不该把已经死了的服留着）
+      const p = browserOk(r.entry.id, receiptWindow(r));
       evidence[r.entry.id] = { at: p.at, country: p.country, ms: p.ms, okHits: p.okHits, via: 'browser' };
       valid.push(r.entry.id);
       occupancy[r.entry.id] = pickOccupancy(r.entry.id, null, 'browser');
@@ -220,6 +256,16 @@ export async function onRequestGet(context) {
     if (!liveIds.has(k) || Number(backoff[k].until) <= nowMs) delete backoff[k];
   }
 
+  // 边缘读不到的那几台（CF 出口被国内云挡、超时、或在冷却里），负载与版本只能来自国内视角：
+  // 玩家浏览器和盒子上的 CN 探测都会 POST /api/servers/ping 顺带把 rooms/humans/app/build 报上来。
+  // 以前 pingOccupancy() 定义了却没接上，于是这些条目虽然显示"在线"却永远没有版本和负载条。
+  for (const id of valid) {
+    const cur = occupancy[id];
+    if (hasSignal(cur)) continue;
+    const fromPing = pingOccupancy(browserOk(id));
+    if (fromPing) occupancy[id] = Object.assign({}, cur || {}, fromPing, { via: 'cn-report' });
+  }
+
   const verifiedDoc = {
     updated: new Date().toISOString(),
     listUpdated: doc.updated, // 清单一变就立刻重探，否则新上的服务器会被缓存挡到下个档位
@@ -228,6 +274,7 @@ export async function onRequestGet(context) {
     occupancy,
     backoff,
     evidence,
+    entry_streak: entryStreak,
   };
   await env.R2BUCKET.put(VERIFIED_KEY, JSON.stringify(verifiedDoc, null, 2) + '\n', {
     httpMetadata: { contentType: 'application/json', cacheControl: 'public, max-age=120' },
@@ -236,5 +283,6 @@ export async function onRequestGet(context) {
   return json({ ok: true, updated: verifiedDoc.updated, valid: valid.length,
                 invalid: invalid.map((i) => ({ id: i.id, name: i.name, reason: i.reason })),
                 skipped: skipped, cooling: Object.keys(backoff).length,
+                entry_degraded: Object.keys(entryStreak).length,
                 nextRetryAt: new Date(Date.now() + FLOOR_MS).toISOString() });
 }

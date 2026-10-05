@@ -161,6 +161,46 @@ function fail(cacheKey, error) {
   return { ok: false, error };
 }
 
+const ENTRY_TIMEOUT_MS = 4000;
+
+/**
+ * 清单里那条**玩家真正会点开的地址**本身打得开吗？
+ * 健康端点只证明「后端在应答」：game.rainya.me 的 `/api/status` 一直 200，而 `/play` 是
+ * nginx 502 —— 绿灯行 + 打不开的页面。所以闸门必须单独打一次原样地址（path 与 query 都保留，
+ * `?room=CODE` 深链也是玩家会用的形态）。
+ * 判据刻意收紧：只有 5xx 或连不上算坏；4xx 说明网关和路由都活着，是应用层在回应。
+ */
+export async function checkEntryUrl(rawUrl, timeoutMs) {
+  let url;
+  try { url = new URL(String(rawUrl)); } catch { return { ok: false, status: null, error: '入口地址无法解析' }; }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') return { ok: false, status: null, error: '入口仅允许 http/https' };
+  if (url.username || url.password) return { ok: false, status: null, error: '入口地址含账号密码' };
+  if (isUnsafeHostname(url.hostname)) return { ok: false, status: null, error: '入口拒绝内网地址' };
+
+  const cacheKey = 'entry:' + url.href;
+  const hit = cache.get(cacheKey);
+  if (hit && hit.verdict && Date.now() - hit.at < CACHE_TTL_MS) return hit.verdict;
+
+  const outcome = await safeFetch(url.href, {
+    method: 'GET',
+    headers: { accept: 'text/html,application/json;q=0.9,*/*;q=0.8', 'user-agent': 'stronghold-list-verify/1' },
+    signal: AbortSignal.timeout(Math.min(timeoutMs || ENTRY_TIMEOUT_MS, 8000)),
+  }, 0);
+  let verdict;
+  if (outcome.error) {
+    // 超时/连接失败/重定向异常都归入「入口不可达」，与健康端点的结果分开表述
+    verdict = { ok: false, status: null, error: '入口不可达（' + outcome.error + '）' };
+  } else {
+    const status = outcome.res.status;
+    try { if (outcome.res.body) await outcome.res.body.cancel(); } catch { /* 体不读，省流量 */ }
+    verdict = status >= 500
+      ? { ok: false, status, error: `入口返回 ${status}` }
+      : { ok: true, status, error: null };
+  }
+  cache.set(cacheKey, { verdict, at: Date.now() });
+  return verdict;
+}
+
 /** Validate a submitted entry list (shared by submit & publish endpoints). */
 export function validateEntries(servers) {
   if (!Array.isArray(servers) || !servers.length) return { error: 'servers[] 不能为空' };
