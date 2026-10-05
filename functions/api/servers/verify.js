@@ -52,6 +52,12 @@ export async function onRequestGet(context) {
   let pings = {};
   const pingRes = await env.R2BUCKET.get(PINGS_KEY);
   if (pingRes) { try { pings = (JSON.parse(await pingRes.text()) || {}).pings || {}; } catch { /* 无回执 */ } }
+  // 回执里带房间/版本时（玩家浏览器 CORS 读到了 /healthz），直接拿它当 occupancy
+  const pingOccupancy = (p) => {
+    if (!p || (p.rooms == null && p.humans == null && !p.app && !p.build)) return null;
+    return { rooms: p.rooms ?? null, humans: p.humans ?? null, variant: p.variant || 'browser',
+             app: p.app || null, build: p.build || null };
+  };
   const browserOk = (id) => {
     const p = pings[id];
     if (!p || p.ok !== true) return null;
@@ -128,6 +134,21 @@ export async function onRequestGet(context) {
   const hasSignal = function (o) {
     return !!(o && (o.rooms != null || o.humans != null || o.app || o.build));
   };
+  const blank = (variant) => ({ rooms: null, humans: null, variant: variant, app: null, build: null });
+  /**
+   * occupancy 的取数优先级：本轮真探 > 玩家回执 > 上一次「有信号」的结论 > 空白。
+   * 曾经踩过坑：上一轮写进 verified.json 的是全 null 的空白行，后续分支用
+   * `prevOccupancy[id] || ...` 会永远沿用这个空白（它是个 truthy 对象），
+   * 于是新收到的 rooms/app 回执被挡在门外，版本号和负载条一直显示不出来。
+   */
+  const pickOccupancy = function (id, fresh, variant) {
+    if (hasSignal(fresh)) return fresh;
+    const fromPing = pingOccupancy(pings[id]);
+    if (fromPing) return fromPing;
+    const prev = prevOccupancy[id];
+    if (hasSignal(prev)) return Object.assign({}, prev, { stale: true });
+    return fresh && fresh.variant ? fresh : blank(variant);
+  };
 
   for (const r of results) {
     const id = r.entry.id;
@@ -137,18 +158,16 @@ export async function onRequestGet(context) {
         const p = browserOk(id);
         if (p) evidence[id] = { at: p.at, country: p.country, ms: p.ms, okHits: p.okHits, via: 'browser' };
         valid.push(id);
-        occupancy[id] = prevOccupancy[id]
-          || { rooms: null, humans: null, variant: p ? 'browser' : 'direct-cn', app: null, build: null };
+        occupancy[id] = pickOccupancy(id, null, p ? 'browser' : 'direct-cn');
       } else if (prevValid.has(id)) {
         valid.push(id);
-        occupancy[id] = prevOccupancy[id] || { rooms: null, humans: null, variant: 'cooled', app: null, build: null };
+        occupancy[id] = pickOccupancy(id, null, 'cooled');
       } else if (r.entry.direct_cn === true || browserOk(id)) {
         // 但正向证据不吃冷却：新收录的国内服第一次探测必然超时，若按"上次结论"继续判死，
         // 它会永远锁在 invalid 里（direct_cn / 玩家回执本来就该越过边缘探测）。
         delete backoff[id];
         valid.push(id);
-        occupancy[id] = prevOccupancy[id] || { rooms: null, humans: null,
-          variant: r.entry.direct_cn === true ? 'direct-cn' : 'browser', app: null, build: null };
+        occupancy[id] = pickOccupancy(id, null, r.entry.direct_cn === true ? 'direct-cn' : 'browser');
       } else {
         invalid.push({ id, name: r.entry.name, url: r.entry.url, reason: (backoff[id] && backoff[id].reason) || '冷却中' });
       }
@@ -163,33 +182,27 @@ export async function onRequestGet(context) {
         // 不做版本准入——只展示，旧版/新版服务器都会列出。
         app: r.app || null, build: r.build || null,
       };
-      const prev = prevOccupancy[r.entry.id];
-      occupancy[r.entry.id] = !hasSignal(fresh) && hasSignal(prev)
-        ? Object.assign({}, prev, { stale: true })
-        : fresh;
+      occupancy[r.entry.id] = pickOccupancy(r.entry.id, fresh, 'node');
     } else if (/403/.test(String(r.reason || '') + String(r.error || '')) && !/已停用/.test(String(r.reason || ''))) {
       // 边缘 403 不算死，也不再要求条目带 direct_cn 标记（2026-10-05 定的政策）：
       // CF 出口被国内云的防火墙/安全组挡掉是常态，同一条地址十几分钟后又常常能通，
       // 而玩家和收录时的验活都不走 CF 出口。仍照常展示，不写退避（下一轮继续真探）。
       delete backoff[id];
       valid.push(r.entry.id);
-      occupancy[r.entry.id] = prevOccupancy[r.entry.id]
-        || { rooms: null, humans: null,
-             variant: r.entry.direct_cn === true ? 'direct-cn' : 'edge-403', app: null, build: null };
+      occupancy[r.entry.id] = pickOccupancy(r.entry.id, null,
+        r.entry.direct_cn === true ? 'direct-cn' : 'edge-403');
     } else if (r.entry.direct_cn === true && !/已停用/.test(String(r.reason || ''))) {
       // 国内直连正常、Cloudflare 出口超时的服务器（收录时已用其它出口验过活）。
       // 真实玩家从国内浏览器/客户端连接，边缘探测失败不该把它判死；仍照常展示，来源写在 note。
       delete backoff[id];
       valid.push(r.entry.id);
-      occupancy[r.entry.id] = prevOccupancy[r.entry.id]
-        || { rooms: null, humans: null, variant: 'direct-cn', app: null, build: null };
+      occupancy[r.entry.id] = pickOccupancy(r.entry.id, null, 'direct-cn');
     } else if (browserOk(r.entry.id)) {
       // 边缘探不到、玩家却连得上：以玩家为准（回执超过 24 小时没续上就退回原判）
       const p = browserOk(r.entry.id);
       evidence[r.entry.id] = { at: p.at, country: p.country, ms: p.ms, okHits: p.okHits, via: 'browser' };
       valid.push(r.entry.id);
-      occupancy[r.entry.id] = prevOccupancy[r.entry.id]
-        || { rooms: null, humans: null, variant: 'browser', app: null, build: null };
+      occupancy[r.entry.id] = pickOccupancy(r.entry.id, null, 'browser');
     } else {
       const reason = r.reason || r.error || '校验未通过';
       invalid.push({ id: r.entry.id, name: r.entry.name, url: r.entry.url, reason });

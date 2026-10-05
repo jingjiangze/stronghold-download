@@ -318,10 +318,43 @@
     var now = Date.now();
     var k = 'sp_ping_' + server.id;
     try { if (now - (Number(localStorage.getItem(k)) || 0) < PING_GAP_MS) return; localStorage.setItem(k, String(now)); } catch (err) { /* 隐私模式照发 */ }
-    var body = JSON.stringify({ id: server.id, ok: !server.offline, ms: server.ms == null ? null : Math.round(server.ms) });
-    try {
-      fetch('/api/servers/ping', { method: 'POST', headers: { 'content-type': 'application/json' }, body: body, keepalive: true }).catch(function () {});
-    } catch (err) { /* 回执只是加分项，不打扰用户 */ }
+    var payload = { id: server.id, ok: !server.offline, ms: server.ms == null ? null : Math.round(server.ms) };
+    // 房间数与版本只能从响应体里读，而探针是 no-cors（响应不透明）。所以再试一次 CORS 读：
+    // 服务器发了 Access-Control-Allow-Origin 才拿得到，拿不到就照旧只报连通性。
+    readHealth(server).then(function (h) {
+      if (h) {
+        payload.rooms = h.rooms; payload.humans = h.humans;
+        payload.app = h.app; payload.build = h.build; payload.variant = h.variant;
+      }
+      return fetch('/api/servers/ping', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload),
+        keepalive: true,
+      });
+    }).catch(function () { /* 回执只是加分项，不打扰用户 */ });
+  }
+
+  /** One CORS read of the entry's health endpoint; null when the server sends no ACAO header. */
+  function readHealth(server) {
+    var url = server.candidates && server.candidates[0];
+    if (!url) return Promise.resolve(null);
+    var ctrl = new AbortController();
+    var timer = setTimeout(function () { ctrl.abort(); }, 6000);
+    return fetch(url.href, { mode: 'cors', cache: 'no-store', signal: ctrl.signal })
+      .then(function (res) { return res.json(); })
+      .then(function (b) {
+        clearTimeout(timer);
+        if (!b || b.ok !== true) return null;
+        var workers = b.runtime === 'cloudflare' || typeof b.version === 'string';
+        return {
+          rooms: Number.isFinite(b.rooms) ? Math.max(0, Math.min(1e6, Math.round(b.rooms))) : null,
+          humans: Number.isFinite(b.humans) ? Math.max(0, Math.min(1e6, Math.round(b.humans))) : null,
+          app: String(b.app || (workers ? b.version : '') || '').slice(0, 24) || null,
+          build: typeof b.build === 'string' ? b.build.slice(0, 40) : null,
+          variant: workers ? 'workers' : 'node',
+        };
+      }, function () { clearTimeout(timer); return null; });
   }
 
   function sample(server, url) {

@@ -49,6 +49,12 @@ export async function onRequestPost(context) {
   const day = now.toISOString().slice(0, 10);
   const country = (context.request.cf && context.request.cf.country) || 'XX';
   const prev = doc.pings[id] || {};
+  // 玩家浏览器若能把 /healthz 读成 CORS（服务器发了 ACAO 头），就连房间数和版本一起回报，
+  // 于是海外出口探不到的国内服也能显示负载与版本。读不到就留 null —— 绝不抹掉上一次的真数据。
+  const clampNum = (v) => (Number.isFinite(Number(v)) && Number(v) >= 0
+    ? Math.min(Math.round(Number(v)), 1e6) : null);
+  const short = (v, max) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : null);
+  const keep = (fresh, old) => (fresh == null ? (old === undefined ? null : old) : fresh);
   const rec = {
     at: now.toISOString(),
     ok: alive,
@@ -59,6 +65,11 @@ export async function onRequestPost(context) {
     day,
     okHits: (prev.day === day && prev.ok ? prev.okHits : 0) + (alive ? 1 : 0),
     deadHits: (prev.day === day && !prev.ok ? prev.deadHits : 0) + (alive ? 0 : 1),
+    rooms: keep(clampNum(body.rooms), prev.rooms),
+    humans: keep(clampNum(body.humans), prev.humans),
+    app: keep(short(body.app, 24), prev.app),
+    build: keep(short(body.build, 40), prev.build),
+    variant: keep(body.variant === 'workers' || body.variant === 'node' ? body.variant : null, prev.variant),
   };
   doc.pings[id] = rec;
   const keys = Object.keys(doc.pings);
