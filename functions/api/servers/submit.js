@@ -12,7 +12,7 @@
 //   pending/<id>   → 提交记录
 //   pending_index  → 待审 id 数组（读-改-写）
 
-import { checkEntryUrl, validateEntries, verifyServerHealth } from '../_verify.js';
+import { checkEntryUrl, looksLikeClientPage, rootUpgradeIndex, validateEntries, verifyServerHealth } from '../_verify.js';
 import { canSign, publishServersDoc, readPublishLog, recentPublishes, signServersDoc } from '../_publish.js';
 
 const MAX_PENDING = 100;
@@ -115,6 +115,37 @@ export async function onRequestPost(context) {
   let liveDoc = null;
   if (liveRes) { try { liveDoc = JSON.parse(await liveRes.text()); } catch { /* 现网坏了就只入队 */ } }
   const servers = liveDoc && Array.isArray(liveDoc.servers) ? liveDoc.servers : [];
+  // 「同一台已经在清单里，但清单存的是裸根地址」不当成重复，而是一次**入口升级**：
+  // 挖掘侧的挂载点表覆盖不了玩家自定的文件名（/play.html 就是），直接 409 会把纠正永久堵死
+  // —— 名单里那条链接点不开客户端，而报上来的人只会被告知"已存在"。
+  // 门槛比新增条目更严：健康端点指纹 + 新地址真打得开 + 那页**看着像客户端本体**
+  // （不然后续任何人都能把某台服的条目改成同 host 下任意能打开的路径，比如 /healthz）
+  // + 当场签名自校验通过才改。匿名还额外吃每 IP 额度。
+  const dupIdx = rootUpgradeIndex(servers, entry.url);
+  if (dupIdx >= 0) {
+    const existing = servers[dupIdx];
+    const upgradeIp = clientIp(request);
+    const clientPage = await looksLikeClientPage(entry.url);
+    const why = !verdict.ok ? '新地址没通过健康校验'
+      : gate.ok !== true ? '新地址打不开'
+      : !clientPage && !isAdmin ? '新地址不像游戏客户端页面（不拿状态页/接口路径换掉入口）'
+      : !canSign(env) ? '服务端签名未配置'
+      : (await recentPublishes(env, upgradeIp, AUTO_WINDOW_MS)) >= AUTO_PER_IP ? '本机自动上线额度已用完' : '';
+    if (why) {
+      return json({ ok: false, error: `该服务器已在公共清单中（存的是 ${existing.url}；这次没能改成你给的地址：${why}）` }, 409);
+    }
+    const signed = await signServersDoc({ ...liveDoc,
+      servers: servers.map((s, i) => (i === dupIdx ? { ...s, url: entry.url } : s)) }, env);
+    const out = signed && await publishServersDoc(env, signed, {
+      baseUpdated: liveDoc && liveDoc.updated, via: 'auto-submit', entryId: existing.id, entryUrl: entry.url,
+      ip: upgradeIp, ua: request.headers.get('user-agent'), country: (request.cf && request.cf.country) || null,
+    });
+    if (out && out.ok) {
+      return json({ ok: true, published: true, upgraded: true, id: existing.id, from: existing.url, to: entry.url,
+        count: out.count, hint: '同一台服务器，清单里那条裸根地址已升级成你给的完整地址（没有新增条目）' });
+    }
+    return json({ ok: false, error: '该服务器已在公共清单中，且清单刚刚被别人改过（乐观并发挡住，没硬盖）' }, 409);
+  }
   if (servers.some((x) => sameServer(x.url, entry.url))) {
     return json({ ok: false, error: '该服务器已在公共清单中（同一 host 的根地址视为同一台；不同子路径可另报一条）' }, 409);
   }

@@ -262,3 +262,40 @@ export async function payloadSha256(doc) {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonicalPayload(doc)));
   return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
+
+/** 拆出 host 与去掉尾斜杠的路径（根路径记成 '/'）。解析不了返回 null。 */
+export function splitUrlPath(u) {
+  try { const x = new URL(u); return { host: x.host, path: x.pathname.replace(/\/+$/, '') || '/' }; }
+  catch { return null; }
+}
+
+/**
+ * 清单里有没有一条「同 host 但只存了裸根地址」的条目，可以用带路径的新地址就地升级？
+ * 返回那条的下标，没有就 -1。只在候选路径更深时才成立：
+ *   - 路径完全相同 → 是重复，不该走这里；
+ *   - 两边都是不同子路径 → 按"同一台机的另一个实例"处理，也不该改。
+ */
+export function rootUpgradeIndex(servers, incomingUrl) {
+  const x = splitUrlPath(incomingUrl);
+  if (!x || x.path === '/') return -1;
+  const list = Array.isArray(servers) ? servers : [];
+  return list.findIndex((s) => {
+    const y = splitUrlPath(s && s.url);
+    return !!y && y.host === x.host && y.path === '/';
+  });
+}
+
+const CLIENT_MARKERS = [/viewport-fit=cover/i, /\/vendor\//i, /STRONGHOLD PROTOCOL/i];
+
+/** 这个地址像不像游戏客户端本体（而不是状态页/落地页/任意能打开的路径）。 */
+export async function looksLikeClientPage(rawUrl, timeoutMs) {
+  try {
+    const res = await fetch(String(rawUrl), {
+      headers: { 'user-agent': 'stronghold-dl-gate/1', accept: 'text/html' },
+      signal: AbortSignal.timeout(timeoutMs || 8000),
+    });
+    if (!res.ok) return false;
+    const html = (await res.text()).slice(0, 20000);
+    return CLIENT_MARKERS.filter((re) => re.test(html)).length >= 2;
+  } catch { return false; }
+}
