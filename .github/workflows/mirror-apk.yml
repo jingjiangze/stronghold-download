@@ -71,18 +71,26 @@ jobs:
         id: probe
         run: |
           set -euo pipefail
-          url="https://$CDN_HOST/apk/stronghold-${{ steps.rel.outputs.version }}.apk"
-          # A cache-buster is mandatory: the edge caches a 404 at that key for hours, and a
-          # stale MISS would make this job skip an upload that is actually needed.
-          hdr=$(curl -sI --max-time 30 "$url?cb=$(date +%s%N)" || true)
-          code=$(printf '%s' "$hdr" | awk 'NR==1{print $2}')
-          len=$(printf '%s' "$hdr" | awk 'tolower($1)=="content-length:"{gsub(/\r/,"");print $2}')
-          echo "cdn says: HTTP $code, $len bytes (release asset: ${{ steps.rel.outputs.size }})"
-          if [ "$code" = "200" ] && [ "$len" = "${{ steps.rel.outputs.size }}" ]; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-          fi
+          ver="${{ steps.rel.outputs.version }}"
+          want="${{ steps.rel.outputs.size }}"
+          # 两个键名都要查：主仓库 promote 链按 tag 传（apk/shell-vX.Y.Z.apk，release 正文里
+          # 广告的就是它），本任务按 versionName 传（apk/stronghold-vX.Y.Z.apk）。
+          # 只看后者会重复上传一整包（518 MB）—— 10-05 的 shell-v2.9.18 就是这样多占了一份。
+          # 带 cache-buster 是必须的：边缘会把某个键的 404 缓存几小时，陈旧 MISS 会让人重复上传。
+          for key in "apk/stronghold-$ver.apk" "apk/shell-$ver.apk"; do
+            url="https://$CDN_HOST/$key"
+            hdr=$(curl -sI --max-time 30 "$url?cb=$(date +%s%N)" || true)
+            code=$(printf '%s' "$hdr" | awk 'NR==1{print $2}')
+            len=$(printf '%s' "$hdr" | awk 'tolower($1)=="content-length:"{gsub(/\r/,"");print $2}')
+            echo "cdn $key: HTTP $code, ${len:-0} bytes (release asset: $want)"
+            if [ "$code" = "200" ] && [ "$len" = "$want" ]; then
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              echo "already=$key" >> "$GITHUB_OUTPUT"
+              echo "already-cdn-copy present at $key — nothing to mirror"
+              exit 0
+            fi
+          done
+          echo "skip=false" >> "$GITHUB_OUTPUT"
 
       - name: Install rclone
         if: steps.probe.outputs.skip == 'false'

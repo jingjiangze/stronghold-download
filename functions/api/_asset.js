@@ -20,7 +20,22 @@ export const ACCELERATORS = [
 
 export function r2Asset(tag) {
   // Object keys keep the leading "v" of the shell tag: apk/stronghold-v2.8.0.apk.
-  return 'https://' + R2_HOST + '/apk/stronghold-' + tag.replace(/^shell-/, '') + '.apk';
+  return r2Candidates(tag)[0];
+}
+
+/**
+ * 桶里同一份构建可能有两个键：
+ *   apk/stronghold-v<X.Y.Z>.apk  —— 主仓库 apk.yml 按 versionName 上传，也是本仓库 mirror 写的键
+ *   apk/<tag>.apk               —— 按 tag 直接命名（release 正文里广告的就是这条，如 shell-v2.9.18.apk）
+ * 只认前一条会造成假"CDN 没有构建"：10-05 的 shell-v2.9.18 就是 `apk/shell-v2.9.18.apk` 已经
+ * 200/逐字节正确，而站点探的那条 404 —— 直链明明在，页面却退回第三方加速器。
+ */
+export function r2Candidates(tag) {
+  const bare = tag.replace(/^shell-/, '');
+  return [
+    'https://' + R2_HOST + '/apk/stronghold-' + bare + '.apk',
+    'https://' + R2_HOST + '/apk/' + tag + '.apk',
+  ];
 }
 
 export function githubAsset(tag, file) {
@@ -48,26 +63,40 @@ function busted(url) {
  * different build and is still refused.
  */
 export async function cdnHasBuild(tag, expectedSize) {
-  const url = r2Asset(tag);
-  if (!expectedSize) return { ok: false, url: url, reason: 'size-unknown', expected: 0, size: 0 };
-  try {
-    const res = await fetch(busted(url), {
-      method: 'HEAD',
-      cf: { cacheTtl: 0, cacheEverything: false },
-      signal: AbortSignal.timeout(4000),
-    });
+  const candidates = r2Candidates(tag);
+  if (!expectedSize) return { ok: false, url: candidates[0], reason: 'size-unknown', expected: 0, size: 0 };
+  let firstBad = null;
+  for (let i = 0; i < candidates.length; i += 1) {
+    const url = candidates[i];
+    let res;
+    try {
+      res = await fetch(busted(url), {
+        method: 'HEAD',
+        cf: { cacheTtl: 0, cacheEverything: false },
+        signal: AbortSignal.timeout(4000),
+      });
+    } catch (err) {
+      if (!firstBad) firstBad = { ok: false, url, reason: 'probe-failed', expected: expectedSize, size: 0 };
+      continue;
+    }
     const size = Number(res.headers.get('content-length') || 0);
-    if (!res.ok) return { ok: false, url: url, reason: 'missing', expected: expectedSize, size: 0 };
+    if (!res.ok) {
+      if (!firstBad) firstBad = { ok: false, url, reason: 'missing', expected: expectedSize, size: 0 };
+      continue;
+    }
     if (size && Math.abs(size - expectedSize) > SIZE_TOLERANCE) {
-      return { ok: false, url: url, reason: 'size-mismatch', expected: expectedSize, size: size };
+      // 这条键在、但不是这份构建（2.8.0 那种差 22 MB 的旧包）：继续试下一个键名，
+      // 两个都不符才回 size-mismatch
+      if (!firstBad) firstBad = { ok: false, url, reason: 'size-mismatch', expected: expectedSize, size };
+      continue;
     }
     return {
-      ok: true, url: url, expected: expectedSize, size: size,
+      ok: true, url, expected: expectedSize, size,
+      key: url.split('/').pop(),
       reason: size === expectedSize ? 'ok' : 'size-close',
     };
-  } catch (err) {
-    return { ok: false, url: url, reason: 'probe-failed', expected: expectedSize, size: 0 };
   }
+  return firstBad || { ok: false, url: candidates[0], reason: 'probe-failed', expected: expectedSize, size: 0 };
 }
 
 /** First accelerator that actually streams bytes. A dead proxy must never become a

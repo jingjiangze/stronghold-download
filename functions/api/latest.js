@@ -97,6 +97,19 @@ export async function onRequestGet(context) {
   const cache = caches.default;
   const host = new URL(context.request.url).host;
   const key = new Request('https://' + host + '/api/latest');
+  const q = new URL(context.request.url).searchParams;
+
+  // 维护者的催抓口必须走在边缘缓存命中之前：否则 5 分钟内被缓存的那份会把 ?kick/?kicklog
+  // 一起吞成普通 release 载荷，口令门看着像没生效。
+  if (q.get('kick') || q.get('kicklog')) {
+    if (!env.PUBLISH_KEY || (context.request.headers.get('x-admin-key') || '') !== env.PUBLISH_KEY) {
+      return respond({ error: 'unauthorized' }, 0, 401);
+    }
+    if (q.get('kicklog')) return respond(await kickLog(env), 0, 200);
+    const forTag = q.get('tag') || (await fetchLatest(env).then((r) => (r && r.release ? r.release.tag_name : '')));
+    if (!forTag) return respond({ ok: false, skipped: '拿不到可比对的最新 tag' }, 0, 502);
+    return respond(await kickMirror(env, forTag, { force: q.get('force') === '1' }), 0, 200);
+  }
 
   const hit = await cache.match(key).catch(function () { return undefined; });
   const cached = hit ? await hit.json().catch(function () { return null; }) : null;
@@ -110,15 +123,6 @@ export async function onRequestGet(context) {
     // honest about the download source instead of silently falling back to GitHub.
     const apk = apkAssetOf(fetched.release);
     const cdn = await cdnHasBuild(fetched.release.tag_name, apk && apk.size);
-    const q = new URL(context.request.url).searchParams;
-    // 维护者手工催抓（也是这条链路的可测口）：出示 PUBLISH_KEY 才认，force 才跳限流
-    if (q.get('kick') && env.PUBLISH_KEY && (context.request.headers.get('x-admin-key') || '') === env.PUBLISH_KEY) {
-      return respond(await kickMirror(env, q.get('tag') || fetched.release.tag_name,
-        { force: q.get('force') === '1' }), 0, 200);
-    }
-    if (q.get('kicklog')) {
-      return respond(await kickLog(env), 0, 200);
-    }
     // CDN 缺这份构建 → 去催 mirror-apk。GitHub 的 cron 在这是饥饿的（实测 `*/10` 五个小时
     // 只命中一次，shell-v2.9.18 发布后挂了整整 2 小时），所以不能只等定时。
     waitUntil(kickIfCdnStale(env, fetched.release.tag_name, cdn));
