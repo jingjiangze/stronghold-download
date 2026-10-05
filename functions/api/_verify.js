@@ -218,6 +218,11 @@ export function validateEntries(servers) {
 
     const id = String(entry.id || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 48) || `srv-${cleaned.length}`;
     const name = String(entry.name || check.host).trim().slice(0, 48) || check.host;
+    // 匿名提交当场上签名清单，名字就是玩家在列表里看到的标题：带 U+FFFD（提交方编码错，
+    // 中文经 curl/非 UTF-8 通道常见）或控制字符的一律退回，别等维护者发现。
+    if (/[\uFFFD\u0000-\u001f\u007f]/.test(name)) {
+      return { error: `${check.host}：服务器名称含无法识别的字符（多为提交端编码不对），请用 UTF-8 重新提交` };
+    }
     const clean = { id, name, url: check.href, probe: '/healthz', enabled: entry.enabled !== false };
     if (typeof entry.probe === 'string' && entry.probe.length) {
       if (!entry.probe.startsWith('/') || /[\r\n]/.test(entry.probe)) return { error: '探针路径必须是相对路径' };
