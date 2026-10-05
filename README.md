@@ -20,16 +20,23 @@ _headers              CF Pages 缓存策略
 
 ```bash
 node tools/gen-snapshot.mjs          # 刷新离线快照（只写最新一个 release 的 APK）
-wrangler pages deploy . --project-name=stronghold-download --branch=main
+node tools/deploy.mjs                # 构建 staging 并上线（等价于加 --dry 只看清单）
 ```
+
+**别再用 `wrangler pages deploy .` 直传本目录**：那条通道会把工作目录里的每个文件都烤进
+deployment，而实测 `.assetsignore` 对它无效（连自己都在文件里却仍返回 200）—— 于是
+README、`wrangler.toml`、`.github/workflows/*`、`tools/*`、`.mimosa/**` 和任何调试输出都会
+变成线上可下载的文件。`tools/deploy.mjs` 只上传这 35 个真正对外的文件。
 
 **版本策略：页面只提供最新版 APK 的下载链接，不保留、不展示任何旧版本**
 （快照里只有一个 release，且只有 `.apk` 资产；R2 模板镜像的 `tags` 只放当前 tag）。
 
 ## 服务器清单：提交 → 审核 → 本机重签
 
-清单是 Ed25519 签名文档（`v` / `keyId` / `updated` / `note` / `servers` / `sig`），私钥只在本机 `~/.sp-sign/`，
-**任何服务端都不持有**。三步：
+清单是 Ed25519 签名文档（`v` / `keyId` / `updated` / `note` / `servers` / `sig`）。私钥有两份：
+本机 `~/.sp-sign/`，以及自动上线用的 Cloudflare Worker secret（`stronghold-scout` 的
+`SP_SIGN_KEY`，`keyId=sp-2026-10`）—— 能控制那个 CF 账号或那个 Worker 的人都能签出客户端
+接受的清单；回收办法是换新密钥对 + APK 内置多公钥并把旧 keyId 标废弃。三步：
 
 ```bash
 # 0) 访客/自动脚本提交（只进 KV 队列，不发布；服务端会先做一次 /healthz 指纹校验）

@@ -12,3 +12,4 @@ wrangler.toml
 admin_harness.txt
 ls.json
 .mimosa/
+.github/
