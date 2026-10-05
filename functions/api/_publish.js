@@ -125,6 +125,19 @@ async function appendPublishLog(env, doc, meta) {
   } catch { /* 审计写失败不挡发布 */ }
 }
 
+/** 发布审计的最近若干条（可按 via 过滤），给维护者查"谁匿名上线了什么"。 */
+export async function readPublishLog(env, limit, via) {
+  try {
+    const prev = await env.R2BUCKET.get(LOG_KEY);
+    if (!prev) return [];
+    const log = JSON.parse(await prev.text());
+    const entries = Array.isArray(log.entries) ? log.entries : [];
+    return (via ? entries.filter((e) => e && e.via === via) : entries).slice(-Math.min(limit || 20, 100));
+  } catch {
+    return [];
+  }
+}
+
 /** 某 IP 在 windowMs 内**自动上线**了几条 —— 匿名直接进签名清单，得有个刷屏上限。
  *  维护者自己的 PUT/审核发布不算在内，否则管理动作会吃掉访客额度。 */
 export async function recentPublishes(env, ip, windowMs) {

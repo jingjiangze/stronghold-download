@@ -13,7 +13,7 @@
 //   pending_index  → 待审 id 数组（读-改-写）
 
 import { checkEntryUrl, validateEntries, verifyServerHealth } from '../_verify.js';
-import { canSign, publishServersDoc, recentPublishes, signServersDoc } from '../_publish.js';
+import { canSign, publishServersDoc, readPublishLog, recentPublishes, signServersDoc } from '../_publish.js';
 
 const MAX_PENDING = 100;
 // 匿名提交现在直接进签名清单，所以给每个 IP 一个刷屏上限：一小时内最多自动上线 3 条，
@@ -182,5 +182,8 @@ export async function onRequestGet(context) {
   const index = await readIndex(env);
   const records = (await Promise.all(index.map((id) => env.SERVER_REVIEW.get(`pending/${id}`))))
     .filter(Boolean).map((raw) => JSON.parse(raw));
-  return json({ ok: true, pending: records });
+  // 匿名上线已不再经过队列，所以顺手给出发布审计里最近 20 条 auto-submit：
+  // 维护者要查"今天都有谁往清单里塞了什么"只需要这一个接口
+  const autoPublished = await readPublishLog(env, 20, 'auto-submit');
+  return json({ ok: true, pending: records, autoPublished, quotaPerIpPerHour: AUTO_PER_IP });
 }
