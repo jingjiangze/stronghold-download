@@ -151,6 +151,37 @@
     return false;
   }
 
+  /** 只认点分版本号（v0.1.3 这种形态）；build 哈希不算，它证明不了服务器报过版本。 */
+  function hasVersion(server) {
+    var occ = state.occupancy[server.id];
+    return !!(occ && /^\d+(\.\d+){1,3}/.test(String(occ.app || '')));
+  }
+
+  /**
+   * 测速结束后统一收口：**探不出版本号的行直接隐藏**。
+   * 版本号只能来自两处 —— 共享校验的 occupancy，或本机对 /healthz 的一次 CORS 读（服务器
+   * 发了 Access-Control-Allow-Origin 才读得到）。两处都空说明这个访客对这台一无所知，
+   * 留在清单里只会让人点开一个不知道活不活的服务。
+   * 本机补读到了就把版本写进本地并回执给其他访客，下一轮别人就不用各猜一次。
+   */
+  function hideVersionless() {
+    var targets = state.servers.filter(function (s) { return !s.quarantined && !hasVersion(s); });
+    return Promise.all(targets.map(function (server) {
+      return readHealth(server).then(function (h) {
+        if (h && h.app && /^\d+(\.\d+){1,3}/.test(String(h.app))) {
+          state.occupancy[server.id] = Object.assign({}, state.occupancy[server.id] || {}, h);
+          server.noVersion = false;
+          try { saveOccupancy(state.occupancy, state.updated); } catch (err) { /* 存不下不影响本页 */ }
+          reportPing(server, true);
+          return;
+        }
+        server.noVersion = true;
+      }, function () { server.noVersion = true; });
+    })).then(function () {
+      state.noVersionCount = state.servers.filter(function (s) { return s.noVersion && !s.quarantined; }).length;
+    });
+  }
+
   function applyVerified(doc) {
     if (!doc) return 0;
     applyOccupancy(doc);
@@ -313,8 +344,8 @@
    * 落 R2 的 site/pings.json，作为 /api/servers/verify 的正向证据）。
    */
   var PING_GAP_MS = 10 * 60 * 1000;
-  function reportPing(server) {
-    if (!server || !server.id || !(server.quarantined || server.viaBrowser)) return;
+  function reportPing(server, force) {
+    if (!server || !server.id || !(force || server.quarantined || server.viaBrowser)) return;
     var now = Date.now();
     var k = 'sp_ping_' + server.id;
     try { if (now - (Number(localStorage.getItem(k)) || 0) < PING_GAP_MS) return; localStorage.setItem(k, String(now)); } catch (err) { /* 隐私模式照发 */ }
@@ -400,8 +431,9 @@
     if (!force && !missing.length) {
       state.lastRun = Date.now();
       if (document.body) document.body.setAttribute('data-probe', 'done');
-      schedule();
-      return Promise.resolve();
+      // 这一轮没有要补测的服务器，但"版本号拿不拿得到"仍要复核：清单可能刚被刷新过，
+      // 而这条判定只发生在测速收尾，不在这里补一次就会把上一轮的隐藏决定丢掉。
+      return hideVersionless().then(function () { render(); schedule(); });
     }
     state.running = true;
     if (document.body) document.body.setAttribute('data-probe', 'running');
@@ -416,13 +448,14 @@
         return sample(server, url).then(function () { render(); });
       });
     }));
-    return done.then(function () {
+    return done.then(hideVersionless).then(function () {
       state.running = false;
       state.lastRun = Date.now();
       state.fromCache = false;
       if (document.body) document.body.setAttribute('data-probe', 'done');
       saveCache(snapshotCache());
-      setText(el.note, '延迟为当前浏览器实测往返时间（每台先预热再取 3 次采样中位数），仅供参考。');
+      setText(el.note, '延迟为当前浏览器实测往返时间（每台先预热再取 3 次采样中位数），仅供参考。'
+        + (state.noVersionCount ? '另有 ' + state.noVersionCount + ' 台探不到版本号（连不上或不回报版本），已隐藏。' : ''));
       render();
       schedule();
     });
@@ -548,6 +581,7 @@
     var shown = 0;
     state.servers.forEach(function (server) {
       if (server.quarantined) return; // failed server-side verification: hidden from the page
+      if (server.noVersion) return; // 测过速但拿不到版本号：不给玩家点一个状态未知的服务
       el.list.appendChild(row(server));
       shown += 1;
     });
