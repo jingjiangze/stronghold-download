@@ -54,6 +54,27 @@ node tools/sign-servers.mjs --sign --publish     # 重签并发布，发布后�
 对象键递归按字典序、数组顺序不变、无多余空白；**`updated` 参与签名**，所以手改时间戳必然验不过。
 `review` 的响应里带 `canonicalSha256`，和本机签名器打印的 sha 一致就说明签的是同一份。
 
+## 公开房间中转 `GET /api/rooms`
+
+各家门户的房间接口**都不给 CORS**，浏览器跨源读不到，所以由边缘代取后归一：
+
+| 上游 | 形状 | 预检 |
+| --- | --- | --- |
+| `game.rainya.me/api/rooms` | 新契约 `{demo, rooms:[siteId/server/code/url/status/free/ageSec/leftSec/mode/difficulty/difficultyName/capacity/occupied/humans/round]}`（旧的 `{ok,now,ttlSec,rooms}` 已换掉） | OPTIONS **403**，无 ACAO |
+| `stronghold.lunar.ag`、`xn--rlr.rinko.ai` 的 `/api/rooms?cursor=` | `{items, nextCursor}`，字段另有 `roomId/hostName/connectedHumans/spectatorCount/inMatch`；入房是**房主审批制** | OPTIONS 405，无 ACAO |
+| `sp-lobby.jiangjiangze.icu/api/rooms` | 旧契约 `{ok,now,ttlSec,rooms}` | ACAO `*`（本仓自建，不需要中转） |
+
+`functions/api/rooms.js` 按**签名清单**里的条目逐个试 `<origin>/api/rooms`（注意 raiya 的 `url` 带 `/play`，
+直接拼会打到 `/play/api/rooms` → nginx 502，所以这里按 origin 重拼），三种形状都吃，
+`code`/`roomId`、`humans`/`connectedHumans` 归一到同一个字段名，输出
+`{ok, now, ttlSec, listUpdated, rooms[], sources[], scannedThisRound, fullScan}`，带 `Access-Control-Allow-Origin: *`。
+
+节奏：结果写 R2 快照 `site/rooms.json`，**20 秒内直接回快照**，过期则先回旧快照再用 `waitUntil` 后台补一轮
+（`x-rooms-cache: hit|stale|miss` 看得出走了哪条）；快档只扫上次应答过的源，**每 30 分钟或清单变更才全量重扫**。
+这么做的理由：Functions 的响应不走边缘缓存（实测两次都 `cf-cache-status: DYNAMIC`），全量扫 17 台冷启动 ≈6.7 s，
+而大厅是 15 s 轮询 —— 每个访客触发一轮等于替所有访客去轰玩家的服务器（≈13 万次/天）。
+`?id=<清单条目>` 只看一台（不写快照），`?fresh=1` 手动强制全量重扫。只取第一页，不跟随 `nextCursor`。
+
 ## R2 首方镜像
 
 `data/mirrors.json` 里 `r2` 条目使用模板
