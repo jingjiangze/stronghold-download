@@ -11,5 +11,6 @@ wrangler.toml
 *_err.txt
 admin_harness.txt
 ls.json
+.gitignore
 .mimosa/
 .github/
