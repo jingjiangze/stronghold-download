@@ -69,6 +69,16 @@ export async function onRequestGet(context) {
     const age = Date.now() - Date.parse(p.at || '');
     return Number.isFinite(age) && age < DAY_MS ? p : null;
   };
+  // 看得见状态码的国内服务器端探测（盒子每小时那轮），2 小时内算有效证据。
+  // 与 browserOk 的区别很关键：浏览器是 no-cors，502 的页面也算"连上了"，翻不了 5xx 的案；
+  // 而 cn-probe 的 ok 意味着它真的读到了 HTTP 200 + PROTOCOL_VERSION=1。
+  const cnProbeOk = (id) => {
+    const p = pings[id];
+    if (!p || p.ok !== true || p.src !== 'cn-probe') return null;
+    if (p.entry_ok === false && Number(p.entryBadStreak || 0) >= 2) return null;
+    const age = Date.now() - Date.parse(p.at || '');
+    return Number.isFinite(age) && age < 2 * 3600e3 ? p : null;
+  };
   // 5xx 是「看见了它坏了」，不是「看不见」：这类失败**不认玩家回执免死**。
   // 浏览器探针是 no-cors（响应不透明），502 的页面照样算"连上了"，回执的 ok:true 根本
   // 表达不了健康与否 —— 10-05 的 anciusland 就是靠一条 6 分钟前的 ok:true 回执被捞回清单，
@@ -206,14 +216,18 @@ export async function onRequestGet(context) {
       };
       const gate = r.entry_check;
       if (gate && gate.ok === false) {
-        // 玩家点的那条地址打不开就是打不开，当场从前面去掉、进 admin 的「未通过校验（暂存区）」，
-        // 由维护者 恢复展示 / 删除。理由必须和后端分开写，否则看起来像"服务器没了"，
-        // 而实际上后端健康端点一直 200 —— 是清单这条入口的路由/上游挂了。
-        // 不写退避：下一轮继续真探，网关一恢复就在下个档位自动回到前台。
+        // 后端健康端点 200、只有清单那条入口 5xx —— 按 2026-10-05 定的口径：**不隐藏，只标注**。
+        // 入口挂掉通常是 nginx 路由/上游的临时问题（game.rainya.me 重启窗口就是这样，
+        // 那一轮 /play 和 /healthz 从三个出口都是 502，而 /api/status 一直 200），
+        // 后端在应答就说明服务器本身活着；把整条藏起来的代价（玩家找不到繁忙的服）大于留着。
+        // 连续轮数记进 entry_down_rounds，页面和管理页据此挂「入口异常」标记；不写退避。
         delete backoff[id];
-        invalid.push({ id, name: r.entry.name, url: r.entry.url, reason: `${gate.error}（后端健康端点正常）` });
-        if (prevOccupancy[id]) occupancy[id] = prevOccupancy[id];
-        continue;
+        entryDown[id] = Number(entryDown[id] || 0) + 1;
+        fresh.entry_status = { ok: false, status: gate.status || null, error: gate.error || null, rounds: entryDown[id] };
+      } else if (entryDown[id]) {
+        // 入口恢复了：留一次恢复标记，然后清零，别让"曾经坏过"长期挂在数据里
+        fresh.entry_status = { ok: true, recovered: true };
+        delete entryDown[id];
       }
       valid.push(r.entry.id);
       occupancy[r.entry.id] = pickOccupancy(r.entry.id, fresh, 'node');
@@ -238,6 +252,14 @@ export async function onRequestGet(context) {
       evidence[r.entry.id] = { at: p.at, country: p.country, ms: p.ms, okHits: p.okHits, via: 'browser' };
       valid.push(r.entry.id);
       occupancy[r.entry.id] = pickOccupancy(r.entry.id, null, 'browser');
+    } else if (cnProbeOk(r.entry.id)) {
+      // 边缘看见 5xx 本来是终审，但盒子那路是**看得见状态码**的国内服务器端探测：
+      // 它 2 小时内读到过 HTTP 200 + version=1，说明服务器本身活着，5xx 出在 CF 出口/路由上
+      // —— 按 2026-10-05 的政策（边缘不通不算死、可信出口验活即入清单）这里放行并留证据。
+      const p = cnProbeOk(r.entry.id);
+      evidence[id] = { at: p.at, country: p.country, ms: p.ms, okHits: p.okHits, via: 'cn-probe' };
+      valid.push(id);
+      occupancy[id] = pickOccupancy(id, null, 'direct-cn');
     } else {
       const reason = r.reason || r.error || '校验未通过';
       invalid.push({ id: r.entry.id, name: r.entry.name, url: r.entry.url, reason });
@@ -254,6 +276,9 @@ export async function onRequestGet(context) {
   for (const k of Object.keys(backoff)) {
     if (!liveIds.has(k) || Number(backoff[k].until) <= nowMs) delete backoff[k];
   }
+  for (const k of Object.keys(entryDown)) {
+    if (!liveIds.has(k)) delete entryDown[k];
+  }
 
   const verifiedDoc = {
     updated: new Date().toISOString(),
@@ -263,6 +288,7 @@ export async function onRequestGet(context) {
     occupancy,
     backoff,
     evidence,
+    entry_down_rounds: entryDown,
   };
   await env.R2BUCKET.put(VERIFIED_KEY, JSON.stringify(verifiedDoc, null, 2) + '\n', {
     httpMetadata: { contentType: 'application/json', cacheControl: 'public, max-age=120' },

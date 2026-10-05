@@ -78,6 +78,10 @@ export async function onRequestPost(context) {
     // 入口失败的**连续**次数：一次浏览器报告不足以定罪（adblock、网络切换、页面还没加载完
     // 都会报 entry 打不开），盒子那种只探健康端点的回执则不带这个字段、也不清零。
     // 站点判据读它：连着两条才作废「玩家实测可达」的免死证据。
+    // 回执来源：'cn-probe' = 服务器端探测（看得见 HTTP 状态码，ok 意味着真读到 version=1），
+    // null/其它 = 玩家浏览器 no-cors（只看得到「连上/连不上」，502 的页面也算连上）。
+    // 这个区分决定了能不能翻「边缘看见 5xx」的案：见 verify.js 的 hardDown 分支。
+    src: keep(body.src === 'cn-probe' || body.src === 'browser' ? body.src : null, prev.src),
     entryBadStreak: typeof body.entry_ok === 'boolean'
       ? (body.entry_ok === false ? Number(prev.entryBadStreak || 0) + 1 : 0)
       : Number(prev.entryBadStreak || 0),
