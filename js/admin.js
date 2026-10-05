@@ -43,6 +43,7 @@
   };
 
   var base = [];
+  var baseUpdated = null;   // 现网清单的版本号，写回时做乐观并发检查
 
   function setText(node, text) { if (node) node.textContent = text; }
 
@@ -77,6 +78,7 @@
       });
     }, chain).then(function (data) {
       base = (data && Array.isArray(data.servers)) ? data.servers.slice() : [];
+      baseUpdated = (data && data.updated) || null;
     });
   }
 
@@ -84,6 +86,43 @@
     return fetchJson(VERIFIED_URL).then(function (out) {
       return (out.data && out.data.invalid) || [];
     }).catch(function () { return []; });
+  }
+
+
+  // 所有写操作都先重新读一次现网清单、再按 id 施加改动。之前是直接拿内存里那份
+  // （打开页面时的快照）整份回写：只要期间有人新增/删除过服务器，就会被旧标签页静默
+  // 回滚（今天发生过两次），而且按 index 定位还会错位。「该条目已不在清单中」的误报
+  // 也是同一成因——它比的是内存里的旧版本。
+  function mutateById(id, transform, okMsg) {
+    return loadPublished().then(function () {
+      if (!base.some(function (x) { return x.id === id; })) {
+        showError('该条目不在线上清单里（清单已更新，界面已重新加载），请重试');
+        render();
+        return null;
+      }
+      base = base.map(function (x) { return x.id === id ? transform(x) : x; });
+      return publishList().then(function () {
+        if (okMsg) setText(el.status, okMsg);
+        render();
+        return true;
+      });
+    });
+  }
+
+  function removeById(id, okMsg) {
+    return loadPublished().then(function () {
+      if (!base.some(function (x) { return x.id === id; })) {
+        showError('该条目已不在线上清单里，界面已重新加载');
+        render();
+        return null;
+      }
+      base = base.filter(function (x) { return x.id !== id; });
+      return publishList().then(function () {
+        if (okMsg) setText(el.status, okMsg);
+        render();
+        return true;
+      });
+    });
   }
 
   function publishList() {
@@ -102,7 +141,8 @@
         return clean;
       })
     };
-    return fetch('/api/servers', {
+    var url = '/api/servers' + (baseUpdated ? '?ifUpdated=' + encodeURIComponent(baseUpdated) : '');
+    return fetch(url, {
       method: 'PUT',
       headers: { 'content-type': 'application/json', 'x-admin-key': key() },
       body: JSON.stringify(payload)
@@ -112,6 +152,7 @@
       });
     }).then(function (out) {
       if (out.status === 401) throw new Error('密钥无效');
+      if (out.status === 409) { loadPublished().catch(function () {}); throw new Error((out.data && out.data.error) || '清单已被他人改动，界面已重新加载，请重试'); }
       if (!out.data.ok) throw new Error(out.data.error || ('HTTP ' + out.status));
       return out.data;
     });
@@ -220,14 +261,16 @@
           note: nextNote || undefined
         });
         if (!nextNote) delete updated.note;
-        base[index] = updated;
         save.disabled = true;
         setText(saveLabel, '保存中…');
-        publishList().then(function () {
+        mutateById(entry.id, function (cur) {
+          var merged = Object.assign({}, cur, { name: updated.name, url: updated.url });
+          if (updated.note) merged.note = updated.note; else delete merged.note;
+          merged.direct_cn = cur.direct_cn;
+          return merged;
+        }, '已保存（地址变更将在下轮校验中重新确认）').then(function () {
           showError('');
           leaveEditMode();
-          render();
-          setText(el.status, '已保存（地址变更将在下轮校验中重新确认）');
         }).catch(function (err) {
           showError(err.message);
           save.disabled = false;
@@ -250,8 +293,7 @@
     toggle.className = 'sv-toggle';
     toggle.textContent = disabled ? '已停用' : '启用中';
     toggle.addEventListener('click', function () {
-      base[index] = Object.assign({}, entry, { enabled: disabled });
-      publishList().then(function () { render(); })
+      mutateById(entry.id, function (cur) { return Object.assign({}, cur, { enabled: disabled }); })
         .catch(function (err) { showError(err.message); render(); });
     });
     div.appendChild(toggle);
@@ -261,9 +303,7 @@
     del.className = 'sv-del';
     del.textContent = '删除';
     del.addEventListener('click', function () {
-      base.splice(index, 1);
-      publishList().then(function () { render(); })
-        .catch(function (err) { showError(err.message); render(); });
+      removeById(entry.id).catch(function (err) { showError(err.message); render(); });
     });
     div.appendChild(del);
     return div;
@@ -296,16 +336,9 @@
     restore.addEventListener('click', function () {
       // Quarantine hides the entry in the UI but never deletes it from the published
       // list; re-publishing unchanged data is enough, the next verify round re-checks it.
-      var entry = base.filter(function (s) { return s.id === item.id; })[0];
-      if (!entry) { showError('该条目已不在清单中，请用下方表单重新添加'); return; }
-      base = base.map(function (s) {
-        return s.id === item.id ? Object.assign({}, s, { enabled: true }) : s;
-      });
-      publishList().then(function () {
-        setText(el.status, '已恢复（下轮校验通过后自动回到前台）');
-        render();
-        loadReview();
-      }).catch(function (err) { showError(err.message); });
+      mutateById(item.id, function (cur) { return Object.assign({}, cur, { enabled: true }); },
+        '已恢复（下轮校验通过后自动回到前台）').then(function (ok) { if (ok) loadReview(); })
+        .catch(function (err) { showError(err.message); });
     });
     div.appendChild(restore);
 
@@ -314,10 +347,7 @@
     del.className = 'sv-del';
     del.textContent = '删除';
     del.addEventListener('click', function () {
-      var index = base.findIndex(function (s) { return s.id === item.id; });
-      if (index < 0) { showError('该条目已不在清单中'); return; }
-      base.splice(index, 1);
-      publishList().then(function () { render(); loadReview(); })
+      removeById(item.id).then(function (ok) { if (ok) loadReview(); })
         .catch(function (err) { showError(err.message); });
     });
     div.appendChild(del);

@@ -100,6 +100,21 @@ export async function onRequestPut(context) {
     }
   }
 
+  // 乐观并发：管理页把它读到的清单版本号带回来，对不上就说明期间有人改过，拒绝整份覆盖。
+  // （没有这一条时，一个开着的旧标签页点一下按钮就能把新上线的服务器抹掉。）
+  const ifUpdated = new URL(request.url).searchParams.get('ifUpdated');
+  if (ifUpdated && !force) {
+    const cur = await bucket.get(LIST_KEY);
+    if (cur) {
+      let curDoc = null;
+      try { curDoc = JSON.parse(await cur.text()); } catch { /* 现网坏了就允许覆盖修复 */ }
+      if (curDoc && String(curDoc.updated) !== String(ifUpdated)) {
+        return json({ ok: false, conflict: true, liveUpdated: curDoc.updated, sentUpdated: ifUpdated,
+          error: '清单在读到之后又被改过了（现网 ' + curDoc.updated + ' ≠ 你这份 ' + ifUpdated + '）。已拒绝覆盖，请重新加载后再改；确需强制用 ?force=1' }, 409);
+      }
+    }
+  }
+
   const seen = new Set();
   const cleaned = [];
   for (const entry of doc.servers) {
