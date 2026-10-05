@@ -75,9 +75,6 @@ export async function onRequestGet(context) {
   const evidence = {};
   const prevValid = new Set(Array.isArray(previous.valid) ? previous.valid : []);
   const prevOccupancy = (previous.occupancy && typeof previous.occupancy === 'object') ? previous.occupancy : {};
-  // 入口连续坏了几轮（1 = 只坏了一轮，先标注不判死；>=2 才隐藏），避免网关重启十几分钟就整条消失
-  const prevEntryStreak = (previous.entry_streak && typeof previous.entry_streak === 'object') ? previous.entry_streak : {};
-  const entryStreak = {};
   // 整体节奏：默认 30 分钟才真打一轮（VERIFY_FLOOR_MIN 可覆盖）。页面开着也只是读这份结论，
   // 不再每 5 分钟去敲每一台服务器 —— rincynar 就是被这样打到 429 的。
   // 清单本身变过（新服上线）则立刻重探，否则新条目会被隐藏半个钟头。
@@ -171,7 +168,6 @@ export async function onRequestGet(context) {
 
   for (const r of results) {
     const id = r.entry.id;
-    if (prevEntryStreak[id] && !r.entry_check) entryStreak[id] = Number(prevEntryStreak[id]) || 1;
     if (r.cooled) {
       // 冷却期内不打扰它，也不改判：上次活的继续算活，上次死的继续挂原因。
       if (r.spared) {
@@ -203,20 +199,13 @@ export async function onRequestGet(context) {
       };
       const gate = r.entry_check;
       if (gate && gate.ok === false) {
-        const seen = Number(prevEntryStreak[id]) || 0;
-        if (seen >= 1) {
-          // 连着两轮（≥30 分钟）都打不开：判死。理由必须和后端分开写，否则看起来像"服务器没了"，
-          // 而实际上后端健康端点一直 200 —— 是清单那条入口地址的路由/上游挂了。
-          invalid.push({ id, name: r.entry.name, url: r.entry.url, reason: `${gate.error}（后端健康端点正常）` });
-          entryStreak[id] = seen + 1;
-          if (prevOccupancy[id]) occupancy[id] = prevOccupancy[id];
-          continue;
-        }
-        // 第一轮只标注：行留在清单里并带上 entry_status，由页面显示「入口 502」灰标
-        entryStreak[id] = 1;
-        valid.push(id);
-        occupancy[id] = Object.assign(pickOccupancy(id, fresh, 'node'),
-          { entry_status: { ok: false, status: gate.status || null, error: gate.error } });
+        // 玩家点的那条地址打不开就是打不开，当场从前面去掉、进 admin 的「未通过校验（暂存区）」，
+        // 由维护者 恢复展示 / 删除。理由必须和后端分开写，否则看起来像"服务器没了"，
+        // 而实际上后端健康端点一直 200 —— 是清单这条入口的路由/上游挂了。
+        // 不写退避：下一轮继续真探，网关一恢复就在下个档位自动回到前台。
+        delete backoff[id];
+        invalid.push({ id, name: r.entry.name, url: r.entry.url, reason: `${gate.error}（后端健康端点正常）` });
+        if (prevOccupancy[id]) occupancy[id] = prevOccupancy[id];
         continue;
       }
       valid.push(r.entry.id);
@@ -267,15 +256,15 @@ export async function onRequestGet(context) {
     occupancy,
     backoff,
     evidence,
-    entry_streak: entryStreak,
   };
   await env.R2BUCKET.put(VERIFIED_KEY, JSON.stringify(verifiedDoc, null, 2) + '\n', {
     httpMetadata: { contentType: 'application/json', cacheControl: 'public, max-age=120' },
   });
 
+  const entryDead = invalid.filter((i) => /后端健康端点正常/.test(String(i.reason || ''))).length;
   return json({ ok: true, updated: verifiedDoc.updated, valid: valid.length,
                 invalid: invalid.map((i) => ({ id: i.id, name: i.name, reason: i.reason })),
                 skipped: skipped, cooling: Object.keys(backoff).length,
-                entry_degraded: Object.keys(entryStreak).length,
+                entry_dead: entryDead,
                 nextRetryAt: new Date(Date.now() + FLOOR_MS).toISOString() });
 }

@@ -146,11 +146,6 @@
   function applyOccupancy(doc) {
     if (doc && doc.occupancy && typeof doc.occupancy === 'object') {
       state.occupancy = doc.occupancy;
-      // 闸门标出的「入口挂了、后端还活着」：行保留展示但要显式提示，并让玩家回执来佐证
-      state.servers.forEach(function (s) {
-        var o = state.occupancy[s.id];
-        s.degraded = !!(o && o.entry_status && o.entry_status.ok === false);
-      });
       return true;
     }
     return false;
@@ -319,7 +314,7 @@
    */
   var PING_GAP_MS = 10 * 60 * 1000;
   function reportPing(server) {
-    if (!server || !server.id || !(server.quarantined || server.viaBrowser || server.degraded)) return;
+    if (!server || !server.id || !(server.quarantined || server.viaBrowser)) return;
     var now = Date.now();
     var k = 'sp_ping_' + server.id;
     try { if (now - (Number(localStorage.getItem(k)) || 0) < PING_GAP_MS) return; localStorage.setItem(k, String(now)); } catch (err) { /* 隐私模式照发 */ }
@@ -522,15 +517,6 @@
       hostVer.title = '服务器当前版本（不强制，仅标注）';
       hostVer.textContent = versionText;
       host.appendChild(hostVer);
-    }
-    // 入口坏了但后端健康端点正常：地址仍留在清单里，明确标出是入口/路由的问题，不是服务器没了
-    if (server.degraded) {
-      var warn = document.createElement('span');
-      warn.className = 'sv-entrywarn';
-      warn.textContent = '入口 ' + (occ.entry_status.status || '打不开');
-      warn.title = (occ.entry_status.error || '入口地址打不开') + '（后端健康端点正常）';
-      main.appendChild(warn);
-      div.className += ' is-degraded';
     }
 
     var ms = document.createElement('span');
