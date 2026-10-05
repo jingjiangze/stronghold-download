@@ -648,7 +648,7 @@
       if (hits) {
         state.fromCache = true;
         state.lastRun = Date.now();
-        setText(el.note, '显示上次测速结果（缓存）；点「立即测速」重新实测，或等 5 分钟自动刷新。');
+        setText(el.note, '显示上次测速结果（缓存）；点「立即测速」重新实测，或等 30 分钟自动刷新。');
         schedule();
         return undefined;
       }
