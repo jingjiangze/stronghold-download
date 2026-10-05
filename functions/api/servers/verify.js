@@ -59,19 +59,20 @@ export async function onRequestGet(context) {
              app: p.app || null, build: p.build || null };
   };
   const DAY_MS = 24 * 3600e3;
-  const browserOk = (id, maxAgeMs) => {
+  const browserOk = (id) => {
     const p = pings[id];
     if (!p || p.ok !== true) return null;
     // 玩家自己连清单里那条地址都连不上（回执 entry_ok:false）时，这条证据不再免死
     if (p.entry_ok === false) return null;
     const age = Date.now() - Date.parse(p.at || '');
-    return Number.isFinite(age) && age < (maxAgeMs || DAY_MS) ? p : null;
+    return Number.isFinite(age) && age < DAY_MS ? p : null;
   };
-  // 边缘这轮明确拿到 5xx 时，旧回执只能撑 2 小时（选项 4）：否则一个已经全挂的服
-  // 会靠 24 小时前的回执一直显示"在线"（10-05 的 anciusland 就是这样，健康端点和入口都 502）。
-  const FRESH_RECEIPT_MS = 2 * 3600e3;
-  const receiptWindow = (r) => (/5\d\d/.test(String((r && r.reason) || '') + String((r && r.error) || ''))
-    ? FRESH_RECEIPT_MS : DAY_MS);
+  // 5xx 是「看见了它坏了」，不是「看不见」：这类失败**不认玩家回执免死**。
+  // 浏览器探针是 no-cors（响应不透明），502 的页面照样算"连上了"，回执的 ok:true 根本
+  // 表达不了健康与否 —— 10-05 的 anciusland 就是靠一条 6 分钟前的 ok:true 回执被捞回清单，
+  // 而它的 /healthz 当时就是 502。只有超时/连接失败/403 那种"我们看不到"才让回执说话。
+  // 只认「服务端自己回了 5xx」这种确切失败；429 是我们敲得太勤，不算服务器坏了。
+  const hardDown = (s) => /返回\s*5\d\d/.test(String(s || ''));
   const evidence = {};
   const prevValid = new Set(Array.isArray(previous.valid) ? previous.valid : []);
   const prevOccupancy = (previous.occupancy && typeof previous.occupancy === 'object') ? previous.occupancy : {};
@@ -121,9 +122,8 @@ export async function onRequestGet(context) {
       if (cool) {
         skipped++;
         // 冷却只是省掉一次探测，不该顺手把「维护者留证 / 玩家实测可达 / 仅边缘 403」的条目判死。
-        // 但退避原因里写着 5xx 时，玩家回执同样只认 2 小时内的（和真探那一轮同一个口径）。
-        const coolWindow = /5\d\d/.test(String(cool.reason || '')) ? FRESH_RECEIPT_MS : DAY_MS;
-        if (entry.direct_cn === true || browserOk(entry.id, coolWindow) || /403/.test(String(cool.reason || ''))) return { entry, ok: false, cooled: true, spared: true, reason: cool.reason };
+        // 但退避原因是 5xx 时属于"上次亲眼看见它坏了"，玩家回执（看不见状态码）不能翻案。
+        if (entry.direct_cn === true || (!hardDown(cool.reason) && browserOk(entry.id)) || /403/.test(String(cool.reason || ''))) return { entry, ok: false, cooled: true, spared: true, reason: cool.reason };
         return { entry, ok: false, cooled: true, reason: cool.reason };
       }
       // 单个服务器抛异常（解压失败、非法 probe 路径等）不能把整轮 verify 打成 1101，
@@ -178,7 +178,7 @@ export async function onRequestGet(context) {
       } else if (prevValid.has(id)) {
         valid.push(id);
         occupancy[id] = pickOccupancy(id, null, 'cooled');
-      } else if (r.entry.direct_cn === true || browserOk(id)) {
+      } else if (r.entry.direct_cn === true || (!hardDown(r.reason) && browserOk(id))) {
         // 但正向证据不吃冷却：新收录的国内服第一次探测必然超时，若按"上次结论"继续判死，
         // 它会永远锁在 invalid 里（direct_cn / 玩家回执本来就该越过边缘探测）。
         delete backoff[id];
@@ -224,10 +224,10 @@ export async function onRequestGet(context) {
       delete backoff[id];
       valid.push(r.entry.id);
       occupancy[r.entry.id] = pickOccupancy(r.entry.id, null, 'direct-cn');
-    } else if (browserOk(r.entry.id, receiptWindow(r))) {
-      // 边缘探不到、玩家却连得上：以玩家为准（回执超过 24 小时没续上就退回原判；
-      // 本轮边缘明确拿到 5xx 时只认 2 小时内的回执 —— 旧证据不该把已经死了的服留着）
-      const p = browserOk(r.entry.id, receiptWindow(r));
+    } else if (!hardDown(r.reason || r.error) && browserOk(r.entry.id)) {
+      // 边缘探不到、玩家却连得上：以玩家为准（回执超过 24 小时没续上就退回原判）。
+      // 5xx 走不到这里 —— 那是"看见了它坏了"，回执（看不见状态码）不能翻案。
+      const p = browserOk(r.entry.id);
       evidence[r.entry.id] = { at: p.at, country: p.country, ms: p.ms, okHits: p.okHits, via: 'browser' };
       valid.push(r.entry.id);
       occupancy[r.entry.id] = pickOccupancy(r.entry.id, null, 'browser');
