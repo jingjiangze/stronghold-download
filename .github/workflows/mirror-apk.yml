@@ -42,6 +42,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
+      - name: Check out this repo (for tools/changelog.mjs)
+        uses: actions/checkout@v4
+
       - name: Resolve the release to mirror
         id: rel
         env:
@@ -93,12 +96,40 @@ jobs:
           echo "skip=false" >> "$GITHUB_OUTPUT"
 
       - name: Install rclone
-        if: steps.probe.outputs.skip == 'false'
         run: |
           set -euo pipefail
           curl -fsSL https://downloads.rclone.org/rclone-current-linux-amd64.zip -o rclone.zip
           unzip -q rclone.zip
           sudo install -m 0755 rclone-*/rclone /usr/local/bin/rclone
+
+      - name: Publish the player-facing changelog
+        # 每次发布都要跑（哪怕 APK 已在 CDN 上被 skip 掉）：日志和字节上传是两件事
+        env:
+          GH_TOKEN: ${{ github.token }}
+          R2_ACCESS_KEY: ${{ secrets.R2_ACCESS_KEY }}
+          R2_SECRET_KEY: ${{ secrets.R2_SECRET_KEY }}
+          TAG: ${{ steps.rel.outputs.tag }}
+        run: |
+          set -euo pipefail
+          node tools/changelog.mjs --tag "$TAG" --out changelog.json
+          if [ -z "${R2_ACCESS_KEY:-}" ] || [ -z "${R2_SECRET_KEY:-}" ]; then
+            echo "::warning::R2 secrets absent — 只打印日志，不发布 site/changelog.json"
+            cat changelog.json
+            exit 0
+          fi
+          rclone config create r2 s3 provider=Cloudflare access_key_id="$R2_ACCESS_KEY" \
+            secret_access_key="$R2_SECRET_KEY" endpoint="$R2_ENDPOINT" acl=private \
+            --non-interactive > /dev/null
+          rclone copyto changelog.json "r2:$BUCKET/site/changelog.json" \
+            --header-upload "Content-Type: application/json" \
+            --header-upload "Cache-Control: public, max-age=300" \
+            --s3-no-check-bucket --stats-one-line -v
+          curl -s --max-time 30 "https://$CDN_HOST/site/changelog.json?cb=$(date +%s%N)" \
+            | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const j=JSON.parse(s);console.log("cdn changelog:",j.version,"·",j.items.length,"条");})'
+          {
+            echo "## changelog: $(node -e 'const j=require("./changelog.json");console.log(j.version+" · "+j.items.length+" 条")')"
+            node -e 'require("./changelog.json").items.forEach(i=>console.log("- "+(i.pr?"PR#"+i.pr+" ":"")+i.text))'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Download, verify and publish to R2
         if: steps.probe.outputs.skip == 'false'

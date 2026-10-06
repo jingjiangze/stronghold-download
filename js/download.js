@@ -35,7 +35,7 @@
 
   var state = {
     release: null, asset: null, mirrors: [], measured: {}, primaryMirrorId: null,
-    versionSuffix: '', ghDownloads: null, cdn: null, history: null
+    versionSuffix: '', ghDownloads: null, cdn: null, history: null, changelog: null
   };
 
   var CDN_REASON = {
@@ -61,7 +61,7 @@
      提炼逻辑只有这一份：线上走 /api/latest 的 _history，离线走打包的 data/releases.json，
      两边喂的是同一批 {tag,name,published_at,body}，不会出现两种日志口径。 */
 
-  var LOG_MAX_ENTRIES = 3;
+  var LOG_MAX_ITEMS = 6;          // 只列最新版本，最多 6 条
   var LOG_MAX_BULLETS = 2;
   var LOG_CLIP = 110;
   // promote/apk-test 自动追加的溯源行，对玩家没有信息量
@@ -118,40 +118,93 @@
     return (d.getMonth() + 1) + '月' + d.getDate() + '日 ' + two(d.getHours()) + ':' + two(d.getMinutes());
   }
 
+  function safeLink(url) {
+    return /^https:\/\/[^\s"'<>]+$/.test(String(url || '')) ? url : '';
+  }
+
+  /**
+   * 只显示最新一个版本（用户要求：三条历史太啰嗦，内容也要像样）。
+   * 首选 state.changelog —— mirror-apk 生成的玩家日志（compare + 关联 PR 的中文标题）；
+   * 它缺席（老版本、或那次发布还没生成）才退回 release 正文提炼。
+   */
   function renderLog() {
     if (!el.log) return;
-    var list = (state.history || []).filter(function (e) { return e && e.tag; }).slice(0, LOG_MAX_ENTRIES);
+    var release = state.release;
     el.log.textContent = '';
-    if (!list.length) { el.log.hidden = true; return; }
-    el.log.hidden = false;
-    list.forEach(function (entry, i) {
-      var row = document.createElement('div');
-      row.className = 'dl-log__row' + (i === 0 ? ' is-latest' : '');
-      var head = document.createElement('div');
-      head.className = 'dl-log__head';
-      var ver = document.createElement('span');
-      ver.className = 'dl-log__ver';
-      ver.textContent = String(entry.tag).replace(/^shell-/, '');
-      var when = document.createElement('span');
-      when.className = 'dl-log__time';
-      when.textContent = logStamp(entry.published_at);
-      head.appendChild(ver);
-      head.appendChild(when);
-      row.appendChild(head);
+    if (!release) { el.log.hidden = true; return; }
 
-      var sum = summarize(entry);
-      var line = document.createElement('div');
-      line.className = 'dl-log__text';
-      line.textContent = sum.head || '构建更新（内容走热更新，明细见发布页）';
-      row.appendChild(line);
-      sum.bullets.forEach(function (b) {
-        var li = document.createElement('div');
-        li.className = 'dl-log__bullet';
-        li.textContent = '· ' + b;
-        row.appendChild(li);
+    var cl = (state.changelog && state.changelog.tag === release.tag) ? state.changelog : null;
+    var entry = null;
+    if (!cl) {
+      var list = (state.history || []).filter(function (e) { return e && e.tag; });
+      entry = list.filter(function (e) { return e.tag === release.tag; })[0] || list[0] || null;
+      if (!entry) { el.log.hidden = true; return; }
+    }
+
+    var row = document.createElement('div');
+    row.className = 'dl-log__row is-latest';
+    var head = document.createElement('div');
+    head.className = 'dl-log__head';
+    var ver = document.createElement('span');
+    ver.className = 'dl-log__ver';
+    ver.textContent = String(release.tag).replace(/^shell-/, '');
+    var when = document.createElement('span');
+    when.className = 'dl-log__time';
+    when.textContent = logStamp((cl && cl.published_at) || entry && entry.published_at || release.published_at);
+    head.appendChild(ver);
+    head.appendChild(when);
+    row.appendChild(head);
+
+    var lines = [];
+    if (cl) {
+      (cl.items || []).slice(0, LOG_MAX_ITEMS).forEach(function (i) {
+        if (i && i.text) lines.push({ text: clip(i.text, LOG_CLIP), pr: i.pr, html: i.html });
       });
-      el.log.appendChild(row);
+      if (!lines.length) lines.push({ text: '构建更新（内容走热更新，明细见发布页）' });
+    } else {
+      var sum = summarize(entry);
+      if (sum.head) lines.push({ text: sum.head });
+      sum.bullets.forEach(function (b) { lines.push({ text: b }); });
+      if (!lines.length) lines.push({ text: '构建更新（内容走热更新，明细见发布页）' });
+    }
+    lines.forEach(function (l) {
+      var line = document.createElement('div');
+      line.className = 'dl-log__bullet';
+      line.textContent = '· ';
+      var href = safeLink(l.html);
+      if (href) {
+        var a = document.createElement('a');
+        a.className = 'dl-log__link';
+        a.href = href;
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        a.textContent = l.text;
+        if (l.pr) a.title = 'PR #' + l.pr;
+        line.appendChild(a);
+      } else {
+        line.appendChild(document.createTextNode(l.text));
+      }
+      row.appendChild(line);
     });
+
+    var foot = document.createElement('div');
+    foot.className = 'dl-log__foot';
+    var more = document.createElement('a');
+    var moreHref = safeLink((cl && cl.url) || release.html_url);
+    if (moreHref) {
+      more.className = 'dl-log__link';
+      more.href = moreHref;
+      more.target = '_blank';
+      more.rel = 'noopener noreferrer';
+      more.textContent = '完整说明与校验值';
+      foot.appendChild(more);
+    }
+    if (cl && cl.internal_count) {
+      foot.appendChild(document.createTextNode(' · 另有 ' + cl.internal_count + ' 条流水线/构建改动未列出'));
+    }
+    if (foot.childNodes.length) row.appendChild(foot);
+    el.log.appendChild(row);
+    el.log.hidden = false;
   }
 
   /* ---- helpers --------------------------------------------------------------------- */
@@ -225,6 +278,7 @@
       state.history = (Array.isArray(rel._history) && rel._history.length)
         ? rel._history : [logEntryOf(rel)].filter(Boolean);
       state.cdn = rel._cdn || null;
+      if (rel._changelog && rel._changelog.tag) state.changelog = rel._changelog;
       state.versionSuffix = rel._stale ? '（缓存版本）' : '';
       return latest;
     }).catch(function () { return null; }).then(function (fromEdge) {

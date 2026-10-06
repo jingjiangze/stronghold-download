@@ -107,7 +107,6 @@
   border-left: .02rem solid rgba(140, 226, 205, .35);
   background: rgba(8, 20, 18, .32);
 }
-.dl-log__row + .dl-log__row { border-top: 1px solid rgba(255, 255, 255, .06); padding-top: .07rem; }
 .dl-log__head { display: flex; align-items: baseline; gap: .08rem; }
 .dl-log__ver {
   font-family: var(--font-display);
@@ -118,8 +117,15 @@
 }
 .dl-log__row.is-latest .dl-log__ver { color: var(--mint-glow); }
 .dl-log__time { font-size: .11rem; letter-spacing: .04em; color: var(--text-dim); white-space: nowrap; }
-.dl-log__text { font-size: .12rem; line-height: 1.55; color: var(--text-md); }
-.dl-log__bullet { font-size: .11rem; line-height: 1.55; color: var(--text-lo); }
+.dl-log__bullet { font-size: .12rem; line-height: 1.55; color: var(--text-md); }
+.dl-log__foot { font-size: .11rem; line-height: 1.5; color: var(--text-dim); letter-spacing: .04em; }
+.dl-log__link {
+  color: var(--gold);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  word-break: break-word;
+}
+.dl-log__link:hover { color: var(--gold-2); border-bottom-color: var(--gold-a20); }
 
 /* fine print links: upstream repository + APK release page + QQ group */
 .dl-links {
@@ -165,8 +171,8 @@
   .dl-log { max-width: 92vw; margin: .12rem auto 0; padding: .06rem .08rem; gap: .04rem; }
   .dl-log__ver { font-size: .16rem; }
   .dl-log__time { font-size: .13rem; }
-  .dl-log__text { font-size: .15rem; }
   .dl-log__bullet { font-size: .14rem; }
+  .dl-log__foot { font-size: .12rem; }
   .title-bg__radar { left: 50%; top: 30%; width: 7.2rem; height: 7.2rem; opacity: .35; }
   .title-bg__target { display: none; }
 }

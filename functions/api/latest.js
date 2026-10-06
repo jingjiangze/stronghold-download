@@ -80,6 +80,25 @@ async function fetchLatest(env) {
   }
 }
 
+const CHANGELOG_KEY = 'site/changelog.json';
+
+/**
+ * 玩家看得懂的更新日志：由 mirror-apk 在每次发布时生成（compare + 关联 PR 的中文标题），
+ * 落在 R2。放在访客路径上算是要吃 GitHub 匿名限额（60 次/小时/IP，而且本机出口本来就 403），
+ * 所以这里只读一个对象。tag 对不上就当没有 —— 版本错位的日志比没有日志更糟。
+ */
+async function readChangelog(env, tag) {
+  if (!env || !env.R2BUCKET || !tag) return null;
+  try {
+    const res = await env.R2BUCKET.get(CHANGELOG_KEY);
+    if (!res) return null;
+    const doc = JSON.parse(await res.text());
+    return doc && doc.tag === tag && Array.isArray(doc.items) ? doc : null;
+  } catch (err) {
+    return null;
+  }
+}
+
 /** Durable copy of the last good answer. The edge cache is per-colo and gets evicted; KV
  *  is what lets the page stay on the newest version across a GitHub outage or a rate-limit
  *  window, instead of dropping back to the bundled file (which is only a cold-start floor). */
@@ -136,6 +155,7 @@ export async function onRequestGet(context) {
     // honest about the download source instead of silently falling back to GitHub.
     const apk = apkAssetOf(fetched.release);
     const cdn = await cdnHasBuild(fetched.release.tag_name, apk && apk.size);
+    const changelog = await readChangelog(env, fetched.release.tag_name);
     // CDN 缺这份构建 → 去催 mirror-apk。GitHub 的 cron 在这是饥饿的（实测 `*/10` 五个小时
     // 只命中一次，shell-v2.9.18 发布后挂了整整 2 小时），所以不能只等定时。
     waitUntil(kickIfCdnStale(env, fetched.release.tag_name, cdn));
@@ -145,6 +165,7 @@ export async function onRequestGet(context) {
       _ghDownloads: fetched.ghDownloads,
       _history: fetched.history || [],
       _cdn: cdn,
+      _changelog: changelog,
     });
     waitUntil(cache.put(key, respond(payload, STALE_KEEP_MS / 1000)));
     waitUntil(writeSnapshot(env, payload));
