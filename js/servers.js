@@ -41,6 +41,9 @@
   var VOUCH_LOCAL_TTL_MS = 24 * 60 * 60 * 1000;
   var VOUCH_URL = '/api/servers/vouch';
   var OPEN_URL = '/api/servers/open';
+  var LAT_URL = '/api/servers/latency';
+  var LAT_REPORT_GAP_MS = 10 * 60 * 1000;   // 每个客户端每 10 分钟最多交一批
+  var LAT_REPORT_MAX = 64;
   var OPEN_LOCAL_KEY = 'sp.openLocal.v1';
   var PROBE_CONCURRENCY = 4; // 一次打满 29 台会把本机代理隧道挤死（页面自己的资源也走那条路）
 
@@ -228,7 +231,8 @@
     Object.keys(src).forEach(function (k) {
       var v = src[k] || {};
       var ms = Number(v.ms);
-      if (ms >= 0) out[k] = { ms: ms, src: v.src || 'shared', ageMin: Number(v.ageMin) || null };
+      if (ms >= 0) out[k] = { ms: ms, src: v.src || 'shared', n: Number(v.n) || 1,
+                              ageMin: Number(v.ageMin) || null };
     });
     state.latency = out;
   }
@@ -587,10 +591,33 @@
       state.fromCache = false;
       if (document.body) document.body.setAttribute('data-probe', 'done');
       saveCache(snapshotCache());
+      reportLatency();   // 把这轮的实测值交给服务端，当"共同延迟"的样本
       setText(el.note, '延迟为当前浏览器实测往返时间（每台先预热再取 3 次采样中位数），仅供参考。');
       render();
       schedule();
     });
+  }
+
+  /**
+   * 一轮测速跑完后批量上报本机实测延迟。服务端按 (来源, 条目, 当天) 去重后取中位数，
+   * 作为清单排序的"共同延迟"第一来源 —— 也就是"用用户反馈的延迟做共同权重"。
+   * 一次 POST 交一批：每台一次会把 R2 的写额度打爆（29 台 × 每访客每 10 分钟）。
+   */
+  function reportLatency() {
+    var last = 0;
+    try { last = Number(localStorage.getItem('sp.latReported.v1') || 0); } catch (err) { /* 隐私模式照发 */ }
+    if (Date.now() - last < LAT_REPORT_GAP_MS) return;
+    var samples = state.servers.filter(function (s) {
+      return s.id && !s.offline && typeof s.ms === 'number' && s.ms >= 0;
+    }).slice(0, LAT_REPORT_MAX).map(function (s) { return { id: s.id, ms: Math.round(s.ms) }; });
+    if (!samples.length) return;
+    try { localStorage.setItem('sp.latReported.v1', String(Date.now())); } catch (err) { /* ignore */ }
+    fetch(LAT_URL, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ samples: samples }),
+      keepalive: true,
+    }).catch(function () { /* 交不上就算了，下一轮再试 */ });
   }
 
   /* ---- scheduling ------------------------------------------------------------------- */
@@ -949,15 +976,17 @@
     return visible;
   }
 
-  var LAT_SRC = { 'cn-probe': '国内探测共享值（盒子出口）', browser: '上一位玩家的实测回执', local: '本机实测' };
+  var LAT_SRC = { 'players-cn': '玩家反馈中位数（国内出口）', players: '玩家反馈中位数',
+                  'cn-probe': '国内探测共享值（盒子出口）', browser: '上一位玩家的实测回执', local: '本机实测' };
 
   function weightText(server, scale, lscale) {
     var v = versionRank(server);
     var l = latencyOf(server);
     var latLine = l.ms == null
       ? (server.offline ? '本机测到离线，且没有共享值（按负面证据罚分）' : '没测到（共享值也没有）→ 按中位算，不罚')
-      : Math.round(l.ms) + ' ms → 同批第 ' + Math.round((latencyScore(server, lscale)) * 100) + ' 百分位（'
-        + (LAT_SRC[l.src] || l.src) + '；这一列里显示的是你本机实测的数）';
+      : Math.round(l.ms) + ' ms → 同批第 ' + Math.round(latencyScore(server, lscale) * 100) + ' 百分位（'
+        + (LAT_SRC[l.src] || l.src) + (l.n > 1 ? '，' + l.n + ' 个来源' : '')
+        + '；这一列里显示的是你本机实测的数）';
     return '权重 = 延迟 ' + Math.round(W_LATENCY * 100) + '% + 版本 ' + Math.round(W_VERSION * 100)
       + '% + 评价 ' + Math.round(W_CUP * 100) + '%\n'
       + '  延迟：' + latLine + '\n'

@@ -27,6 +27,7 @@ const LIST_KEY = 'site/servers.json';
 const VERIFIED_KEY = 'site/verified.json';
 const PINGS_KEY = 'site/pings.json';
 const VOUCH_KEY = 'site/vouches.json';
+const LAT_KEY = 'site/latency.json';
 const OPEN_KEY = 'site/opens.json';
 
 function json(data, status) {
@@ -117,16 +118,45 @@ export async function onRequestGet(context) {
     }
     return out;
   };
+  const median = (arr) => {
+    const a = arr.filter((x) => Number.isFinite(x)).sort((x, y) => x - y);
+    return a.length ? a[Math.floor((a.length - 1) / 2)] : null;
+  };
   /**
-   * 共享延迟：**排序用它，而不是每个访客自己浏览器测的那次** —— 这样所有人看到的顺序一致（公平），
-   * 也不会因为某台不让跨域探测、或谁的网差，就把它系统性压到底部。
-   * 优先盒子那路国内服务器端探测（每小时一轮、看得见状态码），其次最近一位玩家浏览器的实测回执。
-   * 时效：盒子 6 小时、玩家回执 24 小时（与存活证据同口径）；过期的宁可不给，页面按"未测到"处理。
+   * 排序用的"共同延迟"，三个来源按优先级：
+   *   ① **玩家反馈的中位数**（`site/latency.json`，由 /api/servers/latency 批量收集）——
+   *      很多个真实出口共同给出的数，比任何单点都公平；国内样本够 3 个就只用国内的
+   *      （这站主要给国内玩家用，一个海外浏览器 300 ms 的样本会把国内好服冤枉成慢），
+   *      不够就退回用全部样本，反正中位数对离群值本来就钝。
+   *   ② 盒子那路国内服务器端探测（每小时一轮、看得见状态码）——没人反馈时它保证有覆盖率。
+   *   ③ 最近一位玩家的单条回执（老路径，覆盖①还没攒够样本的新条目）。
+   * 时效：玩家样本 24 小时、盒子 6 小时、单条回执 24 小时；过期的宁可不给（页面按"未测到"
+   * 处理，给中位分而不是罚分 —— 见 js/servers.js 的 latencyScore）。
    */
-  const sharedLatency = function () {
+  const sharedLatency = async () => {
     const out = {};
     const stamp = Date.now();
+    const res = await env.R2BUCKET.get(LAT_KEY);
+    if (res) {
+      try {
+        const ld = JSON.parse(await res.text());
+        for (const id of Object.keys(ld.lat || {})) {
+          const all = ((ld.lat[id] || {}).samples || [])
+            .map((s) => ({ ms: Number(s && s.ms), cn: !!(s && s.cn), at: Date.parse((s && s.at) || '') }))
+            .filter((s) => s.ms >= 0 && Number.isFinite(s.at) && stamp - s.at < 24 * 3600e3);
+          if (!all.length) continue;
+          const cn = all.filter((s) => s.cn);
+          const use = cn.length >= 3 ? cn : all;
+          const ms = median(use.map((s) => s.ms));
+          if (ms == null) continue;
+          const newest = Math.max(...all.map((s) => s.at));
+          out[id] = { ms: Math.round(ms), src: cn.length >= 3 ? 'players-cn' : 'players',
+                      n: use.length, cnN: cn.length, ageMin: Math.round((stamp - newest) / 60000) };
+        }
+      } catch { /* 没有玩家样本就走下面的兜底 */ }
+    }
     for (const id of Object.keys(pings)) {
+      if (out[id]) continue;
       const p = pings[id] || {};
       const ms = Number(p.ms);
       if (!(ms >= 0) || p.ok !== true) continue;
@@ -134,7 +164,7 @@ export async function onRequestGet(context) {
       if (!Number.isFinite(age) || age < 0) continue;
       const cn = p.src === 'cn-probe';
       if (age > (cn ? 6 : 24) * 3600e3) continue;
-      out[id] = { ms: Math.round(ms), src: cn ? 'cn-probe' : 'browser',
+      out[id] = { ms: Math.round(ms), src: cn ? 'cn-probe' : 'browser', n: 1,
                   ageMin: Math.round(age / 60000), at: p.at || null };
     }
     return out;
@@ -181,7 +211,7 @@ export async function onRequestGet(context) {
     const validArr = Array.isArray(previous.valid) ? previous.valid : [];
     const invalidArr = Array.isArray(previous.invalid) ? previous.invalid : [];
     const vshot = vouchSnapshot();
-    const latNow = sharedLatency();
+    const latNow = await sharedLatency();
     // 票数/点击数/共享延迟变了就回写：玩家刚投的大杯小杯、刚点的一次「打开」、盒子刚跑完的
     // 一轮国内探测，都不该等下一轮真探才在别人屏幕上出现。比较用 JSON 串，一次写就收敛。
     const staleShot = JSON.stringify(previous.vouches || {}) !== JSON.stringify(vshot);
@@ -427,7 +457,7 @@ export async function onRequestGet(context) {
     backoff,
     evidence,
     vouches: vouchSnapshot(),   // 大杯/小杯票数：页面只拿它调权重，不参与隐藏判断
-    latency: sharedLatency(),   // 共享延迟（盒子国内探测优先）：排序用它，保证所有人顺序一致
+    latency: await sharedLatency(), // 共享延迟（玩家反馈中位数 → 盒子探测 → 单条回执）：排序用它
     opens,                      // 「目前已点击 N 次」
     entry_down_rounds: entryDown,
   };
