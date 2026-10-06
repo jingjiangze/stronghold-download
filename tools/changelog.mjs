@@ -10,8 +10,9 @@
    数据源与取舍：
      compare(prevStableTag...tag).commits  →  每个提交查 /commits/{sha}/pulls
      优先用 PR 标题（人写的中文介绍，比 commit 主题行适合给玩家看），没有 PR 才用主题行首行。
-     bot 与流水线提交（promote:/sync: upstream/chore(deps)/github-actions[bot]）不计入正文，
-     只记进 internal_count —— 玩家不需要知道发布闸门改了什么。
+     bot 与流水线提交（promote:/sync: upstream/chore(deps)/audit mirror:/[bot] 账号）不计入正文，
+     只记进 internal_count —— 玩家不需要知道发布闸门改了什么。没有 PR 的提交额外要求**主题是中文**
+     （英文主题行基本是会话移植与审计内容），并剥掉 `feat:`/`fix:` 这类约定前缀。
 
      node tools/changelog.mjs --tag shell-v2.9.27 [--prev shell-v2.9.26] [--out f.json]
      环境变量：GH_TOKEN（必需）、SRC_REPO（默认 jingjiangze/Stronghold-Protocol）
@@ -28,8 +29,19 @@ const argv = process.argv.slice(2);
 const opt = (name, dflt) => { const i = argv.indexOf('--' + name); return i >= 0 && argv[i + 1] ? argv[i + 1] : dflt; };
 
 // 流水线/机器人提交：对玩家没有信息量，还会把日志挤满
-const INTERNAL = /^(promote:|apk-release\/|sync: upstream|chore\(deps\)|ci\(|\.github\/|build\(deps\))/i;
-const INTERNAL_USER = /github-actions\[bot\]|dependabot/i;
+const INTERNAL = /^(promote:|apk-release\/|sync: upstream|chore\(deps\)|ci\(|\.github\/|build\(deps\)|audit(?: mirror)?:|port the main session)/i;
+const INTERNAL_USER = /\[bot\]|dependabot|sourcery/i;
+// 没有关联 PR 的提交只剩主题行，而主题行是写给维护者看的：英文的基本是流水线、
+// 会话移植、审计这类内容（"audit mirror: apk@…"、"port the main session's PR#28 …"），
+// 放进玩家日志就没人知道那条在说什么。所以无 PR 的提交要中文主题才进正文，其余只计数。
+const CJK = /[㐀-鿿぀-ヿ가-힯]/;
+const CONVENTIONAL = /^((feat|fix|perf|refactor|style|docs?|chore|revert)(\([^)]*\))?!?):\s*/i;
+
+function cleanTitle(text) {
+  const raw = String(text || '');
+  const out = raw.replace(CONVENTIONAL, '');
+  return out.trim() ? out : raw;   // 整条就是个 `feat:` 前缀时别把内容清空
+}
 
 function clip(text, max) {
   const t = String(text || '').replace(/\s+/g, ' ').trim();
@@ -102,14 +114,15 @@ async function main() {
     const real = prs.filter((p) => !INTERNAL_USER.test((p.user && p.user.login) || '') &&
       !INTERNAL.test(String(p.title || '')));
     if (!real.length) {
-      if (INTERNAL.test(subject) || /→ apk$/i.test(subject)) { internal += 1; continue; }
-      if (subject) items.push({ text: clip(subject), pr: null, author: clip(author, 30), html: null });
+      if (INTERNAL.test(subject) || /→ apk$/i.test(subject) || INTERNAL_USER.test(author) ||
+          !CJK.test(subject)) { internal += 1; continue; }
+      if (subject) items.push({ text: clip(cleanTitle(subject)), pr: null, author: clip(author, 30), html: null });
       continue;
     }
     for (const p of real) {
       if (seenPr.has(p.number)) continue;
       seenPr.add(p.number);
-      items.push({ text: clip(p.title), pr: p.number,
+      items.push({ text: clip(cleanTitle(p.title)), pr: p.number,
                    author: (p.user && p.user.login) || '', html: p.html_url || null });
     }
   }
