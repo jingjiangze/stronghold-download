@@ -669,9 +669,15 @@
     name.textContent = server.name;
     var host = document.createElement('span');
     host.className = 'sv-host';
-    host.textContent = server.url
+    // 版本号以前和域名挤在同一条 nowrap+ellipsis 里，域名一长就被省略号吃掉（实测 24/24 行
+    // 的 .sv-hostver 宽度为 0）。现在域名单独一层，版本号是它的 flex 兄弟、永不收缩。
+    var hostUrl = document.createElement('span');
+    hostUrl.className = 'sv-host__url';
+    hostUrl.textContent = server.url
       ? server.url.host
       : '无效地址' + (server.reason ? ' · ' + server.reason : '');
+    host.appendChild(hostUrl);
+    name.title = server.name;
     main.appendChild(name);
     main.appendChild(host);
     div.appendChild(main);
@@ -824,6 +830,19 @@
     return Number(m[1]) * 1e12 + Number(m[2]) * 1e8 + Number(m[3] || 0) * 1e4 + Number(m[4] || 0);
   }
 
+  /** 溢出才给"可横向滚动"的样子：没溢出的行保持原样，不引入无意义的滚动区。
+   *  读 scrollWidth 会强制一次布局，但只在 render 后跑一次，量级是几十行。 */
+  function markClipped() {
+    if (!el.list || !el.list.querySelector) return;
+    var nodes = el.list.querySelectorAll('.sv-name, .sv-host__url');
+    for (var i = 0; i < nodes.length; i += 1) {
+      var t = nodes[i];
+      var over = t.scrollWidth - t.clientWidth > 1;
+      t.classList[over ? 'add' : 'remove']('is-clipped');
+      if (over && !t.title) t.title = t.textContent;
+    }
+  }
+
   function render() {
     if (!el.list) return;
     el.list.textContent = '';
@@ -855,6 +874,7 @@
     if (state.fromCache && state.servers.some(function (s) { return s.cachedAt; })) {
       setText(el.timer, '缓存 ' + cacheAge());
     }
+    markClipped();
   }
 
   /* ---- visitor submit modal --------------------------------------------------------- */

@@ -81,11 +81,32 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* 名称/域名放不下时改成可横向滚动（用户要求：不要拿省略号盖掉内容）。
+   只有 .is-clipped（JS 量出真溢出）才开滚动，否则保持原样不出现"能拖但没得拖"。 */
+.sv-name.is-clipped,
+.sv-host__url.is-clipped {
+  overflow-x: auto;
+  overflow-y: hidden;
+  text-overflow: clip;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+}
+.sv-name.is-clipped::-webkit-scrollbar,
+.sv-host__url.is-clipped::-webkit-scrollbar { display: none; height: 0; }
 .sv-host {
+  display: flex;
+  align-items: baseline;
+  gap: .05rem;
+  min-width: 0;
   font-size: .12rem;
   letter-spacing: .04em;
   color: var(--text-dim);
   white-space: nowrap;
+}
+.sv-host__url {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -141,7 +162,7 @@
   white-space: nowrap;
 }
 .sv-hostver {
-  margin-left: .05rem;
+  flex: 0 0 auto;   /* 版本号是这条行的主角之一，永远不给它收缩或被裁的余地 */
   color: var(--text-dim);
   letter-spacing: .04em;
 }
@@ -237,7 +258,9 @@
   /* the load meter and the version label are the two things a phone user checks first, so
      they stay on narrow screens: the meter gets a shorter track, the version its own line */
   .sv-meter { flex: 0 0 .95rem; height: .12rem; }
-  .sv-hostver { display: block; margin-left: 0; font-size: .14rem; color: var(--text-md); }
+  /* .sv-host 现在是 flex 行（域名可滚 + 版本号不收缩），竖屏要换行才留得住"版本单独一行" */
+  .sv-host { flex-wrap: wrap; }
+  .sv-hostver { font-size: .14rem; color: var(--text-md); }
   .sv-ms { flex: 0 0 1.05rem; font-size: .15rem; }
   .sv-row { padding: .14rem .12rem; }
   .sv-modal__card .admin-grid { grid-template-columns: 1fr; }
