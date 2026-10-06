@@ -667,13 +667,17 @@
     var name = document.createElement('span');
     name.className = 'sv-name';
     name.textContent = server.name;
+    // 版本号是**域名的兄弟**，不是域名的孩子：`.sv-host` 带 ellipsis 裁剪，以前把版本 span
+    // 塞在它里面，域名一长（game.lingluotoki.dpdns.org）就把 `v0.1.4` 咬成 `v⋯`。
+    var hostline = document.createElement('span');
+    hostline.className = 'sv-hostline';
     var host = document.createElement('span');
     host.className = 'sv-host';
     host.textContent = server.url
       ? server.url.host
       : '无效地址' + (server.reason ? ' · ' + server.reason : '');
     main.appendChild(name);
-    main.appendChild(host);
+    hostline.appendChild(host);
     div.appendChild(main);
 
     // Meter = room load (rooms / 1000). Occupancy comes from the shared server-side
@@ -690,16 +694,17 @@
       ? '负载：' + occ.rooms + ' / ' + ROOM_CAPACITY + ' 房间'
       : '该服务器类型不提供房间统计';
     div.appendChild(meter);
-    // version label sits right after the host line (append inside `main`)
-    // 只显版本号 v0.1.3 这种形态；构建哈希不进标题，收在悬浮提示里
+    // 版本标签跟在域名后面（只显 v0.1.3 这种点分号，构建哈希收进悬浮提示）。
+    // 它是 `.sv-hostline` 的第二列且 `flex:0 0 auto` —— 挤不动的永远是域名，不是版本号。
     var versionText = occ && occ.app && /^\d+(\.\d+){1,3}/.test(String(occ.app)) ? 'v' + String(occ.app).replace(/^v/, '') : '';
-    if (versionText && host) {
+    if (versionText) {
       var hostVer = document.createElement('span');
       hostVer.className = 'sv-hostver';
       hostVer.title = '服务器当前版本（不强制，仅标注）' + (occ.build ? '\n构建 ' + occ.build : '');
       hostVer.textContent = versionText;
-      host.appendChild(hostVer);
+      hostline.appendChild(hostVer);
     }
+    main.appendChild(hostline);
     // 后端在应答、清单那条入口却 5xx（闸门只标注不隐藏，10-05 定的口径）：把这半坏说出来，
     // 否则玩家点开才知道是 502，还以为是我们给的错地址。
     var entryBad = occ && occ.entry_status && occ.entry_status.ok === false;

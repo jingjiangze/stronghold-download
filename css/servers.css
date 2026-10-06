@@ -81,32 +81,22 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* 名称/域名放不下时改成可横向滚动（用户要求：不要拿省略号盖掉内容）。
-   只有 .is-clipped（JS 量出真溢出）才开滚动，否则保持原样不出现"能拖但没得拖"。 */
-.sv-name.is-clipped,
-.sv-host__url.is-clipped {
-  overflow-x: auto;
-  overflow-y: hidden;
-  text-overflow: clip;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-  overscroll-behavior-x: contain;
-  -webkit-overflow-scrolling: touch;
-}
-.sv-name.is-clipped::-webkit-scrollbar,
-.sv-host__url.is-clipped::-webkit-scrollbar { display: none; height: 0; }
-.sv-host {
+/* 域名 + 版本号一行两列：可缩的是域名，版本号永远完整（以前版本 span 挂在 .sv-host 里面，
+   被它的 ellipsis 咬成 "v⋯" —— 长域名一多就等于没显示版本号） */
+.sv-hostline {
   display: flex;
   align-items: baseline;
   gap: .05rem;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.sv-host {
+  flex: 0 1 auto;
   min-width: 0;
   font-size: .12rem;
   letter-spacing: .04em;
   color: var(--text-dim);
   white-space: nowrap;
-}
-.sv-host__url {
-  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -162,8 +152,9 @@
   white-space: nowrap;
 }
 .sv-hostver {
-  flex: 0 0 auto;   /* 版本号是这条行的主角之一，永远不给它收缩或被裁的余地 */
-  color: var(--text-dim);
+  flex: 0 0 auto;
+  color: var(--text-md);
+  font-size: .12rem;
   letter-spacing: .04em;
 }
 /* ---- 后端在应答、清单那条入口 5xx：只标注不隐藏（数据在 occupancy[id].entry_status） ---- */
@@ -255,12 +246,9 @@
 @media (max-aspect-ratio: 12/10) {
   .servers-main { margin: .5rem 0 .9rem; }
   .servers-panel { width: min(94vw, 7.6rem); }
-  /* the load meter and the version label are the two things a phone user checks first, so
-     they stay on narrow screens: the meter gets a shorter track, the version its own line */
+  /* 负载条与版本号是手机用户最先看的两样，窄屏都要留着：条子缩短，版本号跟域名同行放不下就换行 */
   .sv-meter { flex: 0 0 .95rem; height: .12rem; }
-  /* .sv-host 现在是 flex 行（域名可滚 + 版本号不收缩），竖屏要换行才留得住"版本单独一行" */
-  .sv-host { flex-wrap: wrap; }
-  .sv-hostver { font-size: .14rem; color: var(--text-md); }
+  .sv-hostver { font-size: .14rem; }
   .sv-ms { flex: 0 0 1.05rem; font-size: .15rem; }
   .sv-row { padding: .14rem .12rem; }
   .sv-modal__card .admin-grid { grid-template-columns: 1fr; }
