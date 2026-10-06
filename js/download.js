@@ -806,7 +806,9 @@
     wireQqFooter();
     watchForNewRelease();
 
-    fetchJson('./data/mirrors.json', 8000).then(function (data) {
+    // 镜像清单只是按钮列表，它拿不到不该带走整页 —— 版本号和离线快照都跟它无关
+    // （实测部署传播的那十几秒里这里一失败，页面就变成"暂无法获取版本信息"）。
+    fetchJson('./data/mirrors.json', 8000).catch(function () { return null; }).then(function (data) {
       state.mirrors = (data && data.mirrors) || [];
       // First paint from the best offline source (bundled snapshot or this browser's own
       // cache of the last live answer), then refresh from the live API.
