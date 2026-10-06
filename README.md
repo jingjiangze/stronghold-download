@@ -54,6 +54,26 @@ node tools/sign-servers.mjs --sign --publish     # 重签并发布，发布后�
 对象键递归按字典序、数组顺序不变、无多余空白；**`updated` 参与签名**，所以手改时间戳必然验不过。
 `review` 的响应里带 `canonicalSha256`，和本机签名器打印的 sha 一致就说明签的是同一份。
 
+## 未核服务器的匿名核验（2026-10-06 加）
+
+`/api/servers/verify` 判死的条目以前在公开页是**整行隐藏**的，玩家连提供证词的入口都没有；
+而判死链里最严的一条「读不到点分版本号即判死」常常只是那台跑的构建不回报 `app/version`。
+现在这些条目落在 `servers.html` 的「待玩家核验」区，点一下 **我核验通过** 即代表过了核验：
+
+```bash
+curl -X POST https://dl.jiangjiangze.icu/api/servers/vouch -H 'content-type: application/json' -d '{"id":"rincynar"}'
+```
+
+口径与边界（都写在 `functions/api/servers/vouch.js` 与 `verify.js` 的注释里）：
+
+- 一票即通过，**7 天**内有效，过期自动退回原判据（要留前台就得有人续点）；
+- 只翻**显示**，不翻**准入**：只接受签名清单里已存在的 id，地址/探针不接受访客输入，
+  所以清单的签名与条数不会因为票发生任何变化（`node tools/sign-servers.mjs` 可复验）；
+- `enabled === false`（管理页停用）服务端硬拒 403 —— 停用是维护者终审，票翻不动；
+  当前正常显示的条目拒收 409；同一 IP 同一天重复投 429；
+- 按 `sha256(ip|id|当天)` 记名，**不存明文 IP**；票写 R2 `site/vouches.json`，不占 KV 写额度；
+- 管理页暂存区每行显示「玩家已核验 N 人（时间）」，觉得不对点停用即可压票。
+
 ## 公开房间中转 `GET /api/rooms`
 
 各家门户的房间接口**都不给 CORS**，浏览器跨源读不到，所以由边缘代取后归一：

@@ -82,6 +82,15 @@
     });
   }
 
+  // 票数文案单独成函数：与本机离线自测 (_tmp/vouch_test.mjs) 用的是同一段逻辑，
+  // 免得为了看这行字要在浏览器里敲管理口令。
+  function vouchTagText(v) {
+    if (!v || !v.count) return '';
+    var at = Date.parse(v.at || '');
+    return '玩家已核验 ' + v.count + ' 人'
+      + (isNaN(at) ? '' : '（' + new Date(at).toLocaleString('zh-CN', { hour12: false }) + '）');
+  }
+
   // 玩家匿名核验的票数（verified.json 的 vouches）：暂存区每行都要显示「谁把它放回前台的」，
   // 所以顺手存在模块变量里，而不是把 loadVerified 的返回值改成对象（调用点只认数组）。
   var lastVouches = {};
@@ -335,12 +344,11 @@
     // 票数挂在行上：匿名票能把「探不到版本号」的条目放回前台，维护者必须看得见是谁放的，
     // 觉得不对就点「停用」—— 停用是终审，玩家票翻不动（verify.js 里的 disabledIds）。
     var v = lastVouches[item.id];
-    if (v && v.count) {
+    var vtagText = vouchTagText(v);
+    if (vtagText) {
       var tag = document.createElement('span');
       tag.className = 'sv-vouchbadge';
-      var at = Date.parse(v.at || '');
-      tag.textContent = '玩家已核验 ' + v.count + ' 人'
-        + (isNaN(at) ? '' : '（' + new Date(at).toLocaleString('zh-CN', { hour12: false }) + '）');
+      tag.textContent = vtagText;
       tag.title = '由 /api/servers/vouch 收集，未做实名；7 天后自动失效';
       main.appendChild(tag);
     }
