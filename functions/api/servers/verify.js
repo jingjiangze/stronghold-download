@@ -130,6 +130,15 @@ export async function onRequestGet(context) {
     }
     return moved;
   };
+  /** 给页面与管理页看的票数快照（只含还没过期的票）。 */
+  const vouchSnapshot = function () {
+    const out = {};
+    for (const id of Object.keys(vouches)) {
+      const v = vouchOk(id);
+      if (v) out[id] = { count: Number(v.count) || 1, at: v.at || null };
+    }
+    return out;
+  };
   // 5xx 是「看见了它坏了」，不是「看不见」：这类失败**不认玩家回执免死**。
   // 浏览器探针是 no-cors（响应不透明），502 的页面照样算"连上了"，回执的 ok:true 根本
   // 表达不了健康与否 —— 10-05 的 anciusland 就是靠一条 6 分钟前的 ok:true 回执被捞回清单，
@@ -156,11 +165,13 @@ export async function onRequestGet(context) {
       Array.isArray(previous.invalid) ? previous.invalid : [],
       occ,
     );
+    const vshot = vouchSnapshot();
     if (promoted) {
       await env.R2BUCKET.put(VERIFIED_KEY, JSON.stringify({
         updated: previous.updated, listUpdated: previous.listUpdated,
         valid: previous.valid, invalid: previous.invalid, occupancy: occ,
         backoff: previous.backoff || {}, evidence: previous.evidence || {},
+        vouches: vshot,
         entry_down_rounds: previous.entry_down_rounds || {},
       }, null, 2) + '\n', {
         httpMetadata: { contentType: 'application/json', cacheControl: 'public, max-age=120' },
@@ -169,7 +180,7 @@ export async function onRequestGet(context) {
     return json({ ok: true, cached: true, updated: previous.updated, listUpdated: previous.listUpdated,
                   nextRetryAt: new Date(prevAt + FLOOR_MS).toISOString(),
                   valid: (previous.valid || []).length, invalid: previous.invalid || [],
-                  vouch_promoted: promoted,
+                  vouch_promoted: promoted, vouches: vshot,
                   backoff: previous.backoff || {} });
   }
 
@@ -398,11 +409,6 @@ export async function onRequestGet(context) {
     if (!liveIds.has(k)) delete entryDown[k];
   }
 
-  const freshVouches = {};
-  for (const id of Object.keys(vouches)) {
-    const v = vouchOk(id);
-    if (v) freshVouches[id] = { count: Number(v.count) || 1, at: v.at || null };
-  }
   const verifiedDoc = {
     updated: new Date().toISOString(),
     listUpdated: doc.updated, // 清单一变就立刻重探，否则新上的服务器会被缓存挡到下个档位
@@ -411,7 +417,7 @@ export async function onRequestGet(context) {
     occupancy,
     backoff,
     evidence,
-    vouches: freshVouches,   // 页面据此显示「已有 N 位玩家核验」，管理页据此复核是谁把它放回前台的
+    vouches: vouchSnapshot(),   // 页面据此显示「已有 N 位玩家核验」，管理页据此复核是谁放回前台的
     entry_down_rounds: entryDown,
   };
   await env.R2BUCKET.put(VERIFIED_KEY, JSON.stringify(verifiedDoc, null, 2) + '\n', {
