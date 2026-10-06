@@ -21,6 +21,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;          /* 头部现在有三个按钮 + 状态 + 计时，手机上放不下就该换行而不是压扁 */
   gap: .12rem;
   padding-bottom: .1rem;
   border-bottom: 1px solid var(--line);

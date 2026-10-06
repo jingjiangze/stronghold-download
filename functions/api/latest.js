@@ -7,8 +7,10 @@
 // kept showing the bundled offline snapshot — an older version — as if it were current.
 // Cloudflare fetches upstream once every few minutes from its own egress, serves the rest
 // from the edge cache, and keeps a durable copy in KV, so visitors never need to reach
-// GitHub at all and a GitHub outage or rate-limit window cannot push the page back onto the
-// bundled `data/releases.json` (which stays a cold-start floor, not the normal path).
+// GitHub at all. The bundled `data/releases.json` is gone (10-06): the GitHub Pages copy of
+// this site has no Functions, so that mirror could *only* ever show the packed snapshot, and
+// it showed shell-v2.9.2 for two days after the real version moved on. A page that cannot
+// answer says "暂无法获取版本信息" instead of naming an old build.
 //
 // No request input reaches the upstream URL: repo and endpoint are fixed constants.
 
@@ -62,7 +64,7 @@ async function fetchLatest(env) {
       });
     });
     // 更新日志的数据源：最近的稳定 release（含纯热更的"内容批次"，那几条才是人话）。
-    // 这里只做**筛选和截断**，提炼/清洗留给前端一处实现 —— 离线快照 data/releases.json
+    // 这里只做**筛选和截断**，提炼/清洗留给前端一处实现 —— 浏览器直连 GitHub 那条回退路径
     // 走的是同一套代码，两边不会出现两种日志口径。
     const history = releases.filter(function (r) {
       return r && !r.draft && !r.prerelease && r.tag_name;

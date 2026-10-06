@@ -20,7 +20,7 @@
   <link rel="stylesheet" href="./css/screens/title.css?v=4" />
   <link rel="stylesheet" href="./css/devices.css?v=4" />
   <link rel="stylesheet" href="./css/dl.css?v=7" />
-  <link rel="stylesheet" href="./css/servers.css?v=24" />
+  <link rel="stylesheet" href="./css/servers.css?v=25" />
   <link rel="stylesheet" href="./css/admin.css?v=7" />
 </head>
 <body>
@@ -79,6 +79,9 @@
           <span class="servers-timer" id="sv-timer"></span>
           <button type="button" class="btn btn--secondary btn--sm" id="sv-add"><span class="btn__label">提交服务器</span></button>
           <button type="button" class="btn btn--primary btn--sm" id="sv-refresh"><span class="btn__label">立即测速</span></button>
+          <a class="btn btn--secondary btn--sm" id="sv-lobby" rel="noopener noreferrer" referrerpolicy="no-referrer"
+             href="https://sp-lobby.jiangjiangze.icu/"
+             title="联机大厅：看各家服务器的房间列表，直接进别人的服"><span class="btn__label">线上大厅</span></a>
         </div>
         <div class="servers-list" id="sv-list" aria-live="polite"></div>
         <p class="dl-note" id="sv-note">延迟为当前浏览器实测往返时间（每台先预热再取 3 次采样中位数），仅供参考。</p>

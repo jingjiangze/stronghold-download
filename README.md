@@ -8,28 +8,33 @@
 ```
 index.html            页面（复用游戏客户端自身的 CSS 与字体）
 css/ js/ fonts/       从游戏客户端复制的样式、脚本与字体 + dl.css / download.js
-data/releases.json    离线快照（API 不可达时的兜底）
 data/mirrors.json     镜像清单（可热更新，无需改代码）
-tools/gen-snapshot.mjs 重新生成 releases.json
 _headers              CF Pages 缓存策略
 ```
 
 ## 更新流程
 
-版本发布后：
+版本发布后**不需要人工刷新任何东西**：页面自己会去 `/api/latest` 取真值，
+`mirror-apk` 会把 APK 补到 CDN 并把玩家向更新日志写到 R2。只有改了本站代码才上线：
 
 ```bash
-node tools/gen-snapshot.mjs          # 刷新离线快照（只写最新一个 release 的 APK）
 node tools/deploy.mjs                # 构建 staging 并上线（等价于加 --dry 只看清单）
 ```
+
+（先 `git push` 再直传 —— 见下面「直传与 git 构建会互相盖」。）
 
 **别再用 `wrangler pages deploy .` 直传本目录**：那条通道会把工作目录里的每个文件都烤进
 deployment，而实测 `.assetsignore` 对它无效（连自己都在文件里却仍返回 200）—— 于是
 README、`wrangler.toml`、`.github/workflows/*`、`tools/*`、`.mimosa/**` 和任何调试输出都会
 变成线上可下载的文件。`tools/deploy.mjs` 只上传这 35 个真正对外的文件。
 
-**版本策略：页面只提供最新版 APK 的下载链接，不保留、不展示任何旧版本**
-（快照里只有一个 release，且只有 `.apk` 资产；R2 模板镜像的 `tags` 只放当前 tag）。
+**版本策略：页面只提供最新版 APK 的下载链接，不保留、不展示任何旧版本。**
+版本号只有两个来源：线上真值（`/api/latest`，回退 `api.github.com`）和**这个浏览器自己 24 小时内**
+从线上拿到的答案（localStorage `sp-offline-release`；超过 24 小时直接不画）。拿不到就写
+「暂无法获取版本信息」并指向发布页 —— **绝不画一个没确认过的版本号**。仓库里以前那份打包快照
+`data/releases.json` 连同 `tools/gen-snapshot.mjs` 一起删了（10-06）：GitHub Pages 那份镜像没有
+Functions，`/api/latest` 永远 404，于是它只能显示打包的旧版本，实际连着两天把 `shell-v2.9.2`
+当最新版显示，而那时候真值已经是 `shell-v2.9.27`。
 
 ## 服务器清单：提交 → 审核 → 本机重签
 

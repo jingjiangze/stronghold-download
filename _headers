@@ -10,7 +10,7 @@
 /js/*
   Cache-Control: public, max-age=31536000, immutable
 
-# 打包快照只是首屏兜底（真值走 R2），5 分钟足够
+# 只剩镜像清单（data/mirrors.json）：改了它就热生效，不用发版
 /data/*
   Cache-Control: public, max-age=300, stale-while-revalidate=3600
 

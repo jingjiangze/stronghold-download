@@ -61,7 +61,7 @@
      没有人工维护的日志文件，所以这里从 release 正文自动提炼：稳定 release 里既有"壳版本"
      （正文只有转正溯源，没有人话），也有纯热更新的"内容批次"（带真正的 bullet）。规则：
      去噪 → 有 bullet 就取前两条，没 bullet 就用正文首行 → 两条都没有才写"构建更新"。
-     提炼逻辑只有这一份：线上走 /api/latest 的 _history，离线走打包的 data/releases.json，
+     提炼逻辑只有这一份：线上走 /api/latest 的 _history，浏览器直连 GitHub 时走 /releases 列表，
      两边喂的是同一批 {tag,name,published_at,body}，不会出现两种日志口径。 */
 
   var LOG_MAX_ITEMS = 6;          // 只列最新版本，最多 6 条
@@ -107,7 +107,7 @@
     return { head: head, bullets: bullets };
   }
 
-  /** 把 GitHub 原始 release（或打包快照 data/releases.json 里的同形对象）折成日志四字段。 */
+  /** 把 GitHub 原始 release（线上答案或本机缓存里的同形对象）折成日志四字段。 */
   function logEntryOf(raw) {
     if (!raw) return null;
     var tag = raw.tag_name || raw.tag;
@@ -352,24 +352,12 @@
     try {
       var doc = JSON.parse(localStorage.getItem(OFFLINE_CACHE_KEY) || 'null');
       if (!doc || !doc.rel || !doc.rel.tag_name || !Number.isFinite(doc.savedAt)) return null;
+      var ageMs = Date.now() - doc.savedAt;
+      // 超过一天就干脆不画：一份没人确认过的旧版本写进"最新版"三个字里，比空着更糟
+      if (!(ageMs >= 0) || ageMs > OFFLINE_TRUST_MS) return null;
       var release = normalizeRelease(doc.rel);
-      return hasApk(release) ? { release: release, ageMs: Date.now() - doc.savedAt } : null;
+      return hasApk(release) ? { release: release, ageMs: ageMs } : null;
     } catch (e) { return null; }
-  }
-
-  function stampAge(isoText) {
-    var t = Date.parse(isoText || '');
-    return Number.isFinite(t) ? Date.now() - t : Infinity;
-  }
-
-  /** 打包快照与本地缓存两份离线来源，取发布更新的那一份。 */
-  function newerOffline(a, b) {
-    if (!a || !a.release) return b;
-    if (!b || !b.release) return a;
-    var ta = Date.parse(a.release.publishedAt || '') || 0;
-    var tb = Date.parse(b.release.publishedAt || '') || 0;
-    if (tb !== ta) return tb > ta ? b : a;
-    return b.ageMs <= a.ageMs ? b : a;
   }
 
   function normalizeRelease(rel) {
@@ -810,46 +798,27 @@
     // （实测部署传播的那十几秒里这里一失败，页面就变成"暂无法获取版本信息"）。
     fetchJson('./data/mirrors.json', 8000).catch(function () { return null; }).then(function (data) {
       state.mirrors = (data && data.mirrors) || [];
-      // First paint from the best offline source (bundled snapshot or this browser's own
-      // cache of the last live answer), then refresh from the live API.
-      return fetchJson('./data/releases.json', 8000).catch(function () { return null; }).then(function (snap) {
-        var bundled = null;
-        if (snap && snap.releases) {
-          bundled = {
-            release: normalizeRelease(pickRelease(snap.releases.map(function (r) {
-              return { tag_name: r.tag, name: r.name, published_at: r.published_at, prerelease: r.prerelease,
-                draft: false, body: r.body || '', assets: r.assets.map(function (a) {
-                  return { name: a.name, size: a.size, browser_download_url: a.url, digest: a.digest,
-                           external: !!a.external };
-                }) };
-            }))),
-            ageMs: stampAge(snap.generated)
-          };
+      // 首屏只允许画"这个浏览器自己最近一次从线上拿到的答案"（≤24 小时）。
+      // 仓库里那份打包快照 data/releases.json 已删：GitHub Pages 那份镜像没有 Functions，
+      // /api/latest 永远 404，于是整站只能展示打包的旧版本 —— 10-06 就有访客在镜像上反复
+      // 看到 shell-v2.9.2，而那时候真值已经是 2.9.27。宁可显示"拿不到版本信息"。
+      var offline = readOfflineCache();
+      if (offline) {
+        state.release = offline.release;
+        state.asset = pickAsset(offline.release);
+        render();
+      }
+      return fetchLatestWithApk().then(function (live) {
+        if (live) {
+          if (state.release && live.tag !== state.release.tag) state.measured = {};
+          state.release = live;
+          state.asset = pickAsset(live);
+        } else if (state.release) {
+          // Nothing answered: what is on screen came from this browser's own earlier live
+          // answer and may be an older build — label it instead of presenting it as latest.
+          state.versionSuffix = '（离线快照，可能非最新）';
         }
-        var offline = newerOffline(bundled, readOfflineCache());
-        if (offline && offline.release) {
-          state.release = offline.release;
-          state.asset = pickAsset(offline.release);
-          // 冷启动先按离线快照画一版日志；线上答案回来后 render() 会覆盖
-          var snapEntries = (snap && snap.releases || []).filter(function (r) { return r && !r.prerelease; })
-            .map(logEntryOf).filter(Boolean);
-          if (snapEntries.length && !state.history) state.history = snapEntries;
-          // 这份离线来源本身已经不新鲜了，就直接在第一屏说明，别让它冒充最新版
-          if (offline.ageMs > OFFLINE_TRUST_MS) state.versionSuffix = '（离线快照，可能非最新）';
-          render();
-        }
-        return fetchLatestWithApk().then(function (live) {
-          if (live) {
-            if (state.release && live.tag !== state.release.tag) state.measured = {};
-            state.release = live;
-            state.asset = pickAsset(live);
-          } else if (state.release) {
-            // Nothing answered: what is on screen came from an offline snapshot and may be
-            // an older build — label it instead of presenting it as the latest.
-            state.versionSuffix = '（离线快照，可能非最新）';
-          }
-          render();
-        });
+        render();
       });
     }).then(function () {
       fetchDownloadTotal();
