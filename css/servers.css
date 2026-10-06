@@ -81,26 +81,28 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* 域名 + 版本号一行两列：可缩的是域名，版本号永远完整（以前版本 span 挂在 .sv-host 里面，
-   被它的 ellipsis 咬成 "v⋯" —— 长域名一多就等于没显示版本号） */
-.sv-hostline {
-  display: flex;
-  /* 不能用 baseline：.sv-host 带 overflow:hidden，它的基线会按外盒底边算，
-     结果版本号比域名低十几像素（实测 topDelta 12.3px） */
-  align-items: center;
-  gap: .05rem;
-  flex-wrap: wrap;
-  min-width: 0;
-}
+/* 域名 + 版本号同一行：可缩的是域名，版本号永远完整。
+   （以前版本 span 挂在 .sv-host 里面，被它的 ellipsis 咬成 "v⋯" —— 长域名一多就等于没显示版本号。
+   试过 flex 两列：overflow:hidden 让 .sv-host 的基线按外盒底边算，版本号会低十几像素，
+   而这里的视口量不到真实布局，所以退回最稳的行内盒模型 —— 两者都是 inline，基线天然对齐。） */
+.sv-hostline { min-width: 0; }
 .sv-host {
-  flex: 0 1 auto;
-  min-width: 0;
+  display: inline;
+  max-width: 100%;
   font-size: .12rem;
   letter-spacing: .04em;
   color: var(--text-dim);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.sv-hostver {
+  display: inline;
+  margin-left: .05rem;
+  color: var(--text-md);
+  font-size: .12rem;
+  letter-spacing: .04em;
+  white-space: nowrap;
 }
 
 .sv-meter {
@@ -152,12 +154,6 @@
   letter-spacing: .06em;
   color: var(--text-dim);
   white-space: nowrap;
-}
-.sv-hostver {
-  flex: 0 0 auto;
-  color: var(--text-md);
-  font-size: .12rem;
-  letter-spacing: .04em;
 }
 /* ---- 后端在应答、清单那条入口 5xx：只标注不隐藏（数据在 occupancy[id].entry_status） ---- */
 .sv-row.is-degraded .sv-dot { background: var(--amber); color: var(--amber); }
