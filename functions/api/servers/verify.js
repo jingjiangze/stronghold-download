@@ -106,6 +106,24 @@ export async function onRequestGet(context) {
   };
   const vouchBad = (id) => (badCount(id) >= VOUCH_BAD_MIN
     ? { bad: badCount(id), at: (vouches[id] || {}).at || null } : null);
+  /** 打开跳转计数：两个分支都要现读，否则缓存直返分支只透传旧值，
+   *  玩家点了「打开」要等下一轮真探（30 分钟）才在别人屏幕上显示出来。 */
+  const readOpens = async () => {
+    const out = {};
+    const res = await env.R2BUCKET.get(OPEN_KEY);
+    if (!res) return out;
+    try {
+      const od = JSON.parse(await res.text());
+      const today = new Date().toISOString().slice(0, 10);
+      for (const id of Object.keys(od.opens || {})) {
+        const r = od.opens[id] || {};
+        const total = Number(r.total) || 0;
+        if (!total) continue;
+        out[id] = { total, today: r.day === today ? (Number(r.today) || 0) : 0, at: r.at || null };
+      }
+    } catch { /* 没计数就空着 */ }
+    return out;
+  };
   const disabledIds = new Set(servers.filter((s) => s && s.enabled === false).map((s) => s.id));
   const entryOf = new Map(servers.map((s) => [s.id, s]));
   /**
@@ -183,13 +201,15 @@ export async function onRequestGet(context) {
     // 票数变了也要回写：管理页 purge 掉一张票之后，不该再挂着「1 人进不去」的徽章等下一轮真探。
     // 比较用 JSON 串，一次写就收敛，不会每次都写。
     const staleShot = JSON.stringify(previous.vouches || {}) !== JSON.stringify(vshot);
-    if (revoked || mv.demoted || staleShot) {
+    const opensNow = await readOpens();
+    const staleOpens = JSON.stringify(previous.opens || {}) !== JSON.stringify(opensNow);
+    if (revoked || mv.demoted || staleShot || staleOpens) {
       await env.R2BUCKET.put(VERIFIED_KEY, JSON.stringify({
         updated: previous.updated, listUpdated: previous.listUpdated,
         valid: validArr, invalid: invalidArr, occupancy: occ,
         backoff: previous.backoff || {}, evidence: previous.evidence || {},
         vouches: vshot, player_state: marks,
-        opens: previous.opens || {},
+        opens: opensNow,
         entry_down_rounds: previous.entry_down_rounds || {},
       }, null, 2) + '\n', {
         httpMetadata: { contentType: 'application/json', cacheControl: 'public, max-age=120' },
@@ -417,20 +437,7 @@ export async function onRequestGet(context) {
 
   // 打开跳转的点击数（写口 /api/servers/open）并进这份快照：页面本来就读 verified.json，
   // 再开一个请求就等于在又慢又抖的链路上多一次往返。
-  let opens = {};
-  const openRes = await env.R2BUCKET.get(OPEN_KEY);
-  if (openRes) {
-    try {
-      const od = JSON.parse(await openRes.text());
-      const today = new Date().toISOString().slice(0, 10);
-      for (const oid of Object.keys(od.opens || {})) {
-        const r = od.opens[oid] || {};
-        const total = Number(r.total) || 0;
-        if (!total) continue;
-        opens[oid] = { total, today: r.day === today ? (Number(r.today) || 0) : 0, at: r.at || null };
-      }
-    } catch { /* 没计数就空着 */ }
-  }
+  const opens = await readOpens();
 
   const verifiedDoc = {
     updated: new Date().toISOString(),
