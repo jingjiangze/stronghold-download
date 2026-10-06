@@ -669,15 +669,9 @@
     name.textContent = server.name;
     var host = document.createElement('span');
     host.className = 'sv-host';
-    // 版本号以前和域名挤在同一条 nowrap+ellipsis 里，域名一长就被省略号吃掉（实测 24/24 行
-    // 的 .sv-hostver 宽度为 0）。现在域名单独一层，版本号是它的 flex 兄弟、永不收缩。
-    var hostUrl = document.createElement('span');
-    hostUrl.className = 'sv-host__url';
-    hostUrl.textContent = server.url
+    host.textContent = server.url
       ? server.url.host
       : '无效地址' + (server.reason ? ' · ' + server.reason : '');
-    host.appendChild(hostUrl);
-    name.title = server.name;
     main.appendChild(name);
     main.appendChild(host);
     div.appendChild(main);
@@ -830,34 +824,102 @@
     return Number(m[1]) * 1e12 + Number(m[2]) * 1e8 + Number(m[3] || 0) * 1e4 + Number(m[4] || 0);
   }
 
-  /** 溢出才给"可横向滚动"的样子：没溢出的行保持原样，不引入无意义的滚动区。
-   *  读 scrollWidth 会强制一次布局，但只在 render 后跑一次，量级是几十行。 */
-  function markClipped() {
-    if (!el.list || !el.list.querySelector) return;
-    var nodes = el.list.querySelectorAll('.sv-name, .sv-host__url');
-    for (var i = 0; i < nodes.length; i += 1) {
-      var t = nodes[i];
-      var over = t.scrollWidth - t.clientWidth > 1;
-      t.classList[over ? 'add' : 'remove']('is-clipped');
-      if (over && !t.title) t.title = t.textContent;
-    }
+  /**
+   * 版本归一化表：把当前这批服务器里出现过的版本号排成 0..1（最高版本=1，最低=0）。
+   * 读不到版本的给 -0.2 —— 是**罚分**而不是"0 分"：这样它即使延迟再好也压在最底下，
+   * 保住"版本低的放到后面"那条硬要求，同时不干扰有版本的那批按综合分排。
+   */
+  function versionScale(list) {
+    var seen = {};
+    list.forEach(function (s) {
+      var r = versionRank(s);
+      if (r > 0) seen[r] = 1;
+    });
+    var ranks = Object.keys(seen).map(Number).sort(function (a, b) { return a - b; });
+    var map = {};
+    ranks.forEach(function (r, i) { map[r] = ranks.length > 1 ? i / (ranks.length - 1) : 1; });
+    map.unknown = -0.2;
+    map.hasUnknown = ranks.length < list.length;
+    return map;
+  }
+
+  function versionScore(server, scale) {
+    var r = versionRank(server);
+    return r > 0 ? (scale[r] != null ? scale[r] : 0) : scale.unknown;
+  }
+
+  /** 延迟归一化（**本机自己测的那次**，每个访客看到的顺序因此可以不同 —— 这是对的，
+   *  延迟本来就是"对你而言"的）。150 ms 以内满分，1500 ms 及以上 0 分；
+   *  还没测到给 0.5（中性，不让它靠"没数据"占便宜也不罚它）；测出离线罚到 -0.2。 */
+  function latencyScore(server) {
+    if (server.offline) return -0.2;
+    if (server.ms == null) return 0.5;
+    var ms = Number(server.ms);
+    if (!Number.isFinite(ms) || ms < 0) return 0.5;
+    if (ms <= GOOD_MS) return 1;
+    return Math.max(0, 1 - (ms - GOOD_MS) / (1500 - GOOD_MS));
+  }
+
+  /** 评价归一化：净分（大杯-小杯）过一道软饱和，±4 杯基本就到顶/到底，
+   *  免得某台被刷十几杯就把延迟和版本完全压过去。 */
+  function cupScore(id) {
+    var net = scoreOf(id);
+    return net / (Math.abs(net) + 4);
+  }
+
+  /**
+   * 综合权重 = 延迟 45% + 版本 30% + 评价 25%。
+   * 为什么延迟占最大头：这一页的标题就是"延迟实测清单"，对开黑来说"对你而言多少毫秒"
+   * 比别的都可感知；但它只占 45%，因为它是**每个访客自己测的**，不能替别人决定谁在前面。
+   * 三项都归一到 0..1（未知版本与离线是负分），所以任何一项都不会被静默忽略，
+   * 缺数据的那项退回中性值而不是满分。
+   */
+  var W_LATENCY = 0.45;
+  var W_VERSION = 0.30;
+  var W_CUP = 0.25;
+
+  function weightOf(server, scale) {
+    return W_LATENCY * latencyScore(server)
+      + W_VERSION * versionScore(server, scale)
+      + W_CUP * cupScore(server.id);
+  }
+
+  /**
+   * 排序结果在**测速进行中冻结**。不冻的话每台测完都会 render 一次，
+   * 行会一边出结果一边往前跳，玩家根本点不到自己想点的那一行。
+   * 一轮跑完（state.running=false）再按新的延迟重排。
+   */
+  var frozenOrder = null;
+
+  function sortedServers() {
+    if (state.running && frozenOrder) return frozenOrder;
+    var visible = state.servers.filter(function (s) { return !s.quarantined; });
+    var scale = versionScale(visible);
+    // Array.prototype.sort 稳定：权重相同的保持清单原顺序
+    visible.sort(function (a, b) { return weightOf(b, scale) - weightOf(a, scale); });
+    frozenOrder = visible;
+    return visible;
+  }
+
+  function weightText(server, scale) {
+    var v = versionRank(server);
+    return '权重 = 延迟 ' + Math.round(W_LATENCY * 100) + '% + 版本 ' + Math.round(W_VERSION * 100)
+      + '% + 评价 ' + Math.round(W_CUP * 100) + '%\n'
+      + '  延迟：' + (server.offline ? '测不到（离线）' : (server.ms == null ? '还没测到' : Math.round(server.ms) + ' ms（本机实测）')) + '\n'
+      + '  版本：' + ((state.occupancy[server.id] || {}).app || '读不到') + (v > 0 ? '' : '（无版本，垫底处理）') + '\n'
+      + '  评价：净分 ' + scoreOf(server.id) + '（大杯-小杯，含你自己这一票）';
   }
 
   function render() {
     if (!el.list) return;
     el.list.textContent = '';
     var shown = 0;
-    // Array.prototype.sort 稳定：同版本同净分的保持清单原顺序。
-    // 主键是版本号（新的在前、读不到版本的垫底），次键才是杯子净分 —— 现网绝大多数服都是
-    // 同一个版本号，所以实际起区分作用的就是玩家的大杯小杯。
-    state.servers.slice().sort(function (a, b) {
-      var va = versionRank(a);
-      var vb = versionRank(b);
-      if (va !== vb) return vb - va;
-      return scoreOf(b.id) - scoreOf(a.id);
-    }).forEach(function (server) {
-      if (server.quarantined) return; // failed server-side verification: hidden from the page
-      el.list.appendChild(row(server));
+    var order = sortedServers();
+    var scale = versionScale(order);
+    order.forEach(function (server) {
+      var node = row(server);
+      node.title = weightText(server, scale);
+      el.list.appendChild(node);
       shown += 1;
     });
     if (state.updated) {
@@ -874,7 +936,6 @@
     if (state.fromCache && state.servers.some(function (s) { return s.cachedAt; })) {
       setText(el.timer, '缓存 ' + cacheAge());
     }
-    markClipped();
   }
 
   /* ---- visitor submit modal --------------------------------------------------------- */
