@@ -58,7 +58,14 @@ const apks = (release.assets || []).filter((a) => /\.apk$/i.test(a.name));
 // would cost users resume support and make multi-connection downloaders refetch the file.
 // Only publish the CDN link when the object actually answers with the release asset size.
 const version = release.tag_name.replace(/^shell-v/, '');
-const r2Url = `https://weishucdn.jiangjiangze.icu/apk/stronghold-v${version}.apk`;
+// Two key names serve the same build (functions/api/_asset.js knows both): mirror-apk
+// uploads apk/stronghold-v<X>.apk, while promote.yml publishes apk/<tag>.apk and the
+// release notes advertise that one. A fresh release often only has the second, so probing
+// only the first used to push the snapshot back onto the slow GitHub asset.
+const candidates = [
+  `https://weishucdn.jiangjiangze.icu/apk/stronghold-v${version}.apk`,
+  `https://weishucdn.jiangjiangze.icu/apk/${release.tag_name}.apk`,
+];
 const buster = `?cb=` + Date.now().toString(36);
 const ghApk = apks[0] ? apks[0].browser_download_url : null;
 
@@ -77,7 +84,17 @@ const ghSize = (apks[0] && apks[0].size) || 0;
 // Same tolerance as functions/api/_asset.js: the CDN copy is a rebuild of the release, so a
 // few bytes of drift is normal; a large gap means a different build.
 const SIZE_TOLERANCE = 65536;
-const cdn = await probeCdn(r2Url + buster);
+let cdn = { ok: false, size: 0 };
+let r2Url = candidates[0];
+for (const url of candidates) {
+  const out = await probeCdn(url + buster);
+  if (out.ok && (!ghSize || Math.abs(out.size - ghSize) <= SIZE_TOLERANCE)) {
+    cdn = out;
+    r2Url = url;
+    break;
+  }
+  if (out.ok && !cdn.ok) { cdn = out; r2Url = url; } // nothing matched: keep the first live one
+}
 const useR2 = cdn.ok && (!ghSize || Math.abs(cdn.size - ghSize) <= SIZE_TOLERANCE);
 if (!useR2 && !ghApk) throw new Error(`neither the R2 mirror nor a GitHub apk asset is available for ${release.tag_name}`);
 console.log(`r2 probe: ${cdn.ok ? 'live' : 'missing'} | cdn ${cdn.size} B vs release asset ${ghSize} B (Δ ${cdn.size - ghSize}) | 采用 ${useR2 ? 'CDN' : 'GitHub 资产'}`);
@@ -105,11 +122,14 @@ const snapshot = {
 };
 
 if (useR2) {
+  // The release asset's digest only describes the served bytes when the CDN copy is
+  // byte-identical (mirror-apk verifies this); a rebuilt copy differs, and publishing a
+  // digest the player cannot reproduce is worse than publishing none.
   snapshot.releases[0].assets = [{
-    name: `stronghold-v${version}.apk`,
+    name: r2Url.split('/').pop(),
     size: cdn.size || null,
     url: r2Url,
-    digest: (apks[0] && apks[0].digest) || null,
+    digest: cdn.size === ghSize ? ((apks[0] && apks[0].digest) || null) : null,
     external: true
   }];
 } else {

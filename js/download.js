@@ -20,6 +20,9 @@
   var PROBE_BYTES = 3 * 1024 * 1024;
   var PROBE_TIMEOUT_MS = 12000;
   var API_TIMEOUT_MS = 9000;
+  var OFFLINE_CACHE_KEY = 'sp-offline-release';
+  /** 打包快照只在它发布那天算"最新"。超过一天还拿不到线上答案，就不要把它写成最新版。 */
+  var OFFLINE_TRUST_MS = 24 * 3600e3;
 
   var el = {
     primary: document.getElementById('dl-primary'),
@@ -280,6 +283,7 @@
       state.cdn = rel._cdn || null;
       if (rel._changelog && rel._changelog.tag) state.changelog = rel._changelog;
       state.versionSuffix = rel._stale ? '（缓存版本）' : '';
+      writeOfflineCache(rel);
       return latest;
     }).catch(function () { return null; }).then(function (fromEdge) {
       if (fromEdge) return fromEdge;
@@ -296,12 +300,15 @@
       if (hasApk(latest)) {
         // 只有单条可用时也比"没有日志"好；/api/latest 活着时不会走到这里
         if (!state.history) state.history = [logEntryOf(rel)];
+        writeOfflineCache(rel);
         return latest;
       }
       return fetchJson(API_LIST, API_TIMEOUT_MS).then(function (list) {
         var entries = (Array.isArray(list) ? list : []).map(logEntryOf).filter(Boolean);
         if (entries.length) state.history = entries;
-        return normalizeRelease(pickRelease(list));
+        var picked = pickRelease(list);
+        if (picked) writeOfflineCache(picked);
+        return normalizeRelease(picked);
       });
     });
   }
@@ -317,6 +324,52 @@
       if (!res.ok) throw new Error('HTTP ' + res.status);
       return res.json();
     });
+  }
+
+  /**
+   * 线上答案存一份到本地：打包快照会随仓库变旧，而回访的浏览器手上有一份真实的、
+   * 最近一次从线上拿到的 release。线上不可达时它比打包的那份更接近最新。
+   * 只存 release 本身（不带 _cdn / _history —— 那些是这一轮探测的结果，缓存起来就是撒谎）。
+   */
+  function writeOfflineCache(rel) {
+    if (!rel || !rel.tag_name || rel._stale) return;
+    try {
+      localStorage.setItem(OFFLINE_CACHE_KEY, JSON.stringify({
+        savedAt: Date.now(),
+        rel: {
+          tag_name: rel.tag_name, name: rel.name, published_at: rel.published_at,
+          prerelease: !!rel.prerelease, draft: false, body: String(rel.body || '').slice(0, 4000),
+          assets: (rel.assets || []).map(function (a) {
+            return { name: a.name, size: a.size, browser_download_url: a.browser_download_url,
+                     digest: a.digest || null, external: !!a.external };
+          })
+        }
+      }));
+    } catch (e) { /* 隐私模式或配额满：退回打包快照 */ }
+  }
+
+  function readOfflineCache() {
+    try {
+      var doc = JSON.parse(localStorage.getItem(OFFLINE_CACHE_KEY) || 'null');
+      if (!doc || !doc.rel || !doc.rel.tag_name || !Number.isFinite(doc.savedAt)) return null;
+      var release = normalizeRelease(doc.rel);
+      return hasApk(release) ? { release: release, ageMs: Date.now() - doc.savedAt } : null;
+    } catch (e) { return null; }
+  }
+
+  function stampAge(isoText) {
+    var t = Date.parse(isoText || '');
+    return Number.isFinite(t) ? Date.now() - t : Infinity;
+  }
+
+  /** 打包快照与本地缓存两份离线来源，取发布更新的那一份。 */
+  function newerOffline(a, b) {
+    if (!a || !a.release) return b;
+    if (!b || !b.release) return a;
+    var ta = Date.parse(a.release.publishedAt || '') || 0;
+    var tb = Date.parse(b.release.publishedAt || '') || 0;
+    if (tb !== ta) return tb > ta ? b : a;
+    return b.ageMs <= a.ageMs ? b : a;
   }
 
   function normalizeRelease(rel) {
@@ -338,15 +391,33 @@
     // public accelerators (which only proxy GitHub URLs) can still be offered as mirrors.
     var notesLink = apkLinkFromBody(rel.body);
     if (notesLink && allowedHostsExt(notesLink)) {
-      var sizeMatch = String(rel.body || '').match(/([\d.]+)\s*(MB|MiB|GB|GiB)/i);
-      var size = sizeMatch ? Math.round(parseFloat(sizeMatch[1]) *
-        (sizeMatch[2].toUpperCase().charAt(0) === 'G' ? 1073741824 : 1048576)) : null;
+      var ghApk = null;
+      release.assets.forEach(function (a) { if (!ghApk && /\.apk$/i.test(a.name)) ghApk = a; });
+      // The first-party object is a copy of *this* release asset (mirror-apk checks its
+      // sha256, promote.yml publishes a byte-for-byte copy), so the asset's size and digest
+      // describe exactly what the direct link serves. Replacing the whole asset with the
+      // link used to blank the size line and hide the SHA256 button.
+      var ours = new URL(notesLink).host === FIRST_PARTY_HOST;
+      var size = ours ? ghApk && ghApk.size : null;
+      var digest = ours ? ghApk && ghApk.digest : null;
+      if (!size) { // no release asset to quote (APK shipped out-of-band): trust the notes text
+        var sizeMatch = String(rel.body || '').match(/([\d.]+)\s*(MB|MiB|GB|GiB)/i);
+        size = sizeMatch ? Math.round(parseFloat(sizeMatch[1]) *
+          (sizeMatch[2].toUpperCase().charAt(0) === 'G' ? 1073741824 : 1048576)) : null;
+      }
+      // The edge measured this exact object on this request; its byte length beats the
+      // asset's, and once they differ the release digest is no longer the served file's.
+      var cdn = rel._cdn;
+      if (ours && cdn && cdn.ok && cdn.size) {
+        if (cdn.size !== size) digest = null;
+        size = cdn.size;
+      }
       release.assets = release.assets.filter(function (a) { return !/\.apk$/i.test(a.name); });
       release.assets.push({
         name: notesLink.split('/').pop().split(/[?#]/)[0] || 'app-release.apk',
         size: size,
         url: notesLink,
-        digest: null,
+        digest: digest || null,
         external: true
       });
     }
@@ -712,38 +783,66 @@
 
   /* ---- boot ------------------------------------------------------------------------ */
 
+  /**
+   * 这里一天发好几个版本，而标签页可以开着一整天不动 —— 那一屏没人刷新过，却是玩家眼里的
+   * "最新版"。可见时每 10 分钟重问一次线上，顺便重测 CDN 有没有这份构建；后台标签页不打扰。
+   */
+  function watchForNewRelease() {
+    setInterval(function () {
+      if (document.hidden) return;
+      fetchLatestWithApk().then(function (live) {
+        if (!live) return;
+        if (state.release && live.tag !== state.release.tag) state.measured = {};
+        state.release = live;
+        state.asset = pickAsset(live);
+        render();
+        probeMirrors().then(announceProbe).catch(function () { /* 测速尽力而为 */ });
+      }).catch(function () { /* 线上没答案就保留当前这一屏 */ });
+    }, 10 * 60 * 1000);
+  }
+
   function start() {
     wireHashButton();
     wireQqFooter();
+    watchForNewRelease();
 
     fetchJson('./data/mirrors.json', 8000).then(function (data) {
       state.mirrors = (data && data.mirrors) || [];
-      // First paint with the bundled snapshot, then refresh from the live API.
+      // First paint from the best offline source (bundled snapshot or this browser's own
+      // cache of the last live answer), then refresh from the live API.
       return fetchJson('./data/releases.json', 8000).catch(function () { return null; }).then(function (snap) {
+        var bundled = null;
         if (snap && snap.releases) {
-          state.release = normalizeRelease(pickRelease(snap.releases.map(function (r) {
-            return { tag_name: r.tag, name: r.name, published_at: r.published_at, prerelease: r.prerelease,
-              draft: false, body: r.body || '', assets: r.assets.map(function (a) {
-                return { name: a.name, size: a.size, browser_download_url: a.url, digest: a.digest,
-                         external: !!a.external };
-              }) };
-          })));
-          state.asset = pickAsset(state.release);
-          // 冷启动先按打包快照画一版日志；线上答案回来后 render() 会覆盖
-          var snapEntries = (snap.releases || []).filter(function (r) { return r && !r.prerelease; })
+          bundled = {
+            release: normalizeRelease(pickRelease(snap.releases.map(function (r) {
+              return { tag_name: r.tag, name: r.name, published_at: r.published_at, prerelease: r.prerelease,
+                draft: false, body: r.body || '', assets: r.assets.map(function (a) {
+                  return { name: a.name, size: a.size, browser_download_url: a.url, digest: a.digest,
+                           external: !!a.external };
+                }) };
+            }))),
+            ageMs: stampAge(snap.generated)
+          };
+        }
+        var offline = newerOffline(bundled, readOfflineCache());
+        if (offline && offline.release) {
+          state.release = offline.release;
+          state.asset = pickAsset(offline.release);
+          // 冷启动先按离线快照画一版日志；线上答案回来后 render() 会覆盖
+          var snapEntries = (snap && snap.releases || []).filter(function (r) { return r && !r.prerelease; })
             .map(logEntryOf).filter(Boolean);
           if (snapEntries.length && !state.history) state.history = snapEntries;
+          // 这份离线来源本身已经不新鲜了，就直接在第一屏说明，别让它冒充最新版
+          if (offline.ageMs > OFFLINE_TRUST_MS) state.versionSuffix = '（离线快照，可能非最新）';
           render();
         }
         return fetchLatestWithApk().then(function (live) {
           if (live) {
-            if (!state.release || live.tag !== state.release.tag) {
-              state.release = live;
-              state.asset = pickAsset(live);
-              state.measured = {};
-            }
+            if (state.release && live.tag !== state.release.tag) state.measured = {};
+            state.release = live;
+            state.asset = pickAsset(live);
           } else if (state.release) {
-            // Nothing answered: what is on screen came from the bundled snapshot and may be
+            // Nothing answered: what is on screen came from an offline snapshot and may be
             // an older build — label it instead of presenting it as the latest.
             state.versionSuffix = '（离线快照，可能非最新）';
           }

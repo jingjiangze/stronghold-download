@@ -1,20 +1,20 @@
 {
-  "generated": "2026-10-04T10:37:26.185Z",
+  "generated": "2026-10-06T15:29:44.398Z",
   "repo": "jingjiangze/Stronghold-Protocol",
   "releases": [
     {
-      "tag": "shell-v2.9.2",
-      "name": "卫戍协议 Android 壳 v2.9.2（加入 404 修复 · 离线默认启动 · 大厅整合）",
-      "published_at": "2026-10-04T10:18:51Z",
+      "tag": "shell-v2.9.27",
+      "name": "shell-v2.9.27（测试候选 test-52f1dcb7 通过）",
+      "published_at": "2026-10-06T01:29:17Z",
       "prerelease": false,
-      "html_url": "https://github.com/jingjiangze/Stronghold-Protocol/releases/tag/shell-v2.9.2",
-      "body": "v2.9.2：\n- **修复「加入房间全是 404」**：joinOnOrigin/resolveAndJoin 无条件拼 url + \"/?room=\"，对带路径的站（raiya/misyra 的 …/play）变成 …/play/?room= → 站点 404；改为 withRoom() 统一拼接（有 ? 用 &，否则直接接 ?room=）。\n- **进 app 默认启动离线服务**：首次页面加载后自动拉起 HostService，标题页「进入」即进本地服务。\n- 去掉「清单正在刷新 / 已更新」两条 toast（刷新失败提示保留）。\n- **延迟胶囊 → 打开大厅面板**（补丁 v3.8）；大厅新增「**加入自定义服务器**」（名称可空 → 自动取域名；立即切服并自动进入，同时同步提交到站点清单）；**提交房间 / 销毁**（房间牌 P2 上线，token 存本机，仅自己的房间可销毁）。\n- 内容轴 shell-v2.8.5（shell-ui v3）。",
+      "html_url": "https://github.com/jingjiangze/Stronghold-Protocol/releases/tag/shell-v2.9.27",
+      "body": "出自通过 T1–T5 的测试候选 `test-52f1dcb7`（staging `52f1dcb7`），逐字节复制、未重打包。\n下载站（dl.jiangjiangze.icu）的「最新版本」即本 release；溯源与哈希见资产 tested-id.json。\n\n> CDN 直链（R2）：https://weishucdn.jiangjiangze.icu/apk/shell-v2.9.27.apk\n",
       "assets": [
         {
-          "name": "stronghold-v2.9.2.apk",
-          "size": 543700332,
-          "url": "https://weishucdn.jiangjiangze.icu/apk/stronghold-v2.9.2.apk",
-          "digest": "sha256:b91fd575a488bbfd6bd59025e6b7c2fc4e1e5e1109f6c7df2e30c000f7b2f3df",
+          "name": "shell-v2.9.27.apk",
+          "size": 543906641,
+          "url": "https://weishucdn.jiangjiangze.icu/apk/shell-v2.9.27.apk",
+          "digest": "sha256:f5c051a5c906c771a42e81e10057c6024faeacf5599945315ee7852afa88811b",
           "external": true
         }
       ]
