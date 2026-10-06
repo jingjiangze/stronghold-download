@@ -85,7 +85,9 @@
    被它的 ellipsis 咬成 "v⋯" —— 长域名一多就等于没显示版本号） */
 .sv-hostline {
   display: flex;
-  align-items: baseline;
+  /* 不能用 baseline：.sv-host 带 overflow:hidden，它的基线会按外盒底边算，
+     结果版本号比域名低十几像素（实测 topDelta 12.3px） */
+  align-items: center;
   gap: .05rem;
   flex-wrap: wrap;
   min-width: 0;
