@@ -29,12 +29,13 @@
     size: document.getElementById('dl-size'),
     hash: document.getElementById('dl-hash'),
     note: document.getElementById('dl-note'),
-    downloads: document.getElementById('dl-downloads')
+    downloads: document.getElementById('dl-downloads'),
+    log: document.getElementById('dl-log')
   };
 
   var state = {
     release: null, asset: null, mirrors: [], measured: {}, primaryMirrorId: null,
-    versionSuffix: '', ghDownloads: null, cdn: null
+    versionSuffix: '', ghDownloads: null, cdn: null, history: null
   };
 
   var CDN_REASON = {
@@ -51,6 +52,106 @@
       ? 'CDN加速上的同名文件与本版本字节数不一致（CDN加速 ' + cdn.size + ' B · 发布 ' + cdn.expected + ' B）'
       : (CDN_REASON[cdn.reason] || 'CDN加速暂不可用');
     return why + ' · 主按钮改走公共加速器，也可点上方镜像按钮换源';
+  }
+
+  /* ---- changelog (auto-derived from the release notes) --------------------------------
+     没有人工维护的日志文件，所以这里从 release 正文自动提炼：稳定 release 里既有"壳版本"
+     （正文只有转正溯源，没有人话），也有纯热更新的"内容批次"（带真正的 bullet）。规则：
+     去噪 → 有 bullet 就取前两条，没 bullet 就用正文首行 → 两条都没有才写"构建更新"。
+     提炼逻辑只有这一份：线上走 /api/latest 的 _history，离线走打包的 data/releases.json，
+     两边喂的是同一批 {tag,name,published_at,body}，不会出现两种日志口径。 */
+
+  var LOG_MAX_ENTRIES = 3;
+  var LOG_MAX_BULLETS = 2;
+  var LOG_CLIP = 110;
+  // promote/apk-test 自动追加的溯源行，对玩家没有信息量
+  var LOG_NOISE = /逐字节复制|未重打包|CDN 直链|溯源与哈希|tested-id|生产指针|apk-test 全绿|^staging\b/;
+
+  function clip(text, max) {
+    var t = String(text || '').replace(/\s+/g, ' ').trim();
+    return t.length > max ? t.slice(0, max - 1).trim() + '…' : t;
+  }
+
+  /** 抹掉 markdown 痕迹与裸 URL：页面只用 textContent，这里管的是"读起来像源文"的问题。 */
+  function cleanLine(raw) {
+    return String(raw || '')
+      .replace(/`([^`]*)`/g, '$1')
+      .replace(/\*\*([^*]*)\*\*/g, '$1')
+      .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+      .replace(/https?:\/\/\S+/g, '')
+      .replace(/^[\s>]+/, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+  }
+
+  function summarize(entry) {
+    var head = '';
+    var bullets = [];
+    String(entry.body || '').split(/\r?\n/).forEach(function (raw) {
+      var line = raw.trim();
+      var text = cleanLine(line);
+      if (!text || LOG_NOISE.test(text)) return;
+      if (/^[-*•]/.test(line)) {
+        if (bullets.length < LOG_MAX_BULLETS) bullets.push(clip(text.replace(/^[-*•]+\s*/, ''), LOG_CLIP));
+        return;
+      }
+      if (!head) head = clip(text, LOG_CLIP);
+    });
+    if (!head && !bullets.length) {
+      var name = cleanLine(entry.name || '');
+      if (name && name.indexOf(String(entry.tag || '')) < 0) head = clip(name, LOG_CLIP);
+    }
+    return { head: head, bullets: bullets };
+  }
+
+  /** 把 GitHub 原始 release（或打包快照 data/releases.json 里的同形对象）折成日志四字段。 */
+  function logEntryOf(raw) {
+    if (!raw) return null;
+    var tag = raw.tag_name || raw.tag;
+    if (!tag) return null;
+    return { tag: tag, name: raw.name || tag, published_at: raw.published_at || '', body: raw.body || '' };
+  }
+
+  function logStamp(iso) {    var d = new Date(iso || '');
+    if (isNaN(d.getTime())) return '';
+    var two = function (n) { return (n < 10 ? '0' : '') + n; };
+    return (d.getMonth() + 1) + '月' + d.getDate() + '日 ' + two(d.getHours()) + ':' + two(d.getMinutes());
+  }
+
+  function renderLog() {
+    if (!el.log) return;
+    var list = (state.history || []).filter(function (e) { return e && e.tag; }).slice(0, LOG_MAX_ENTRIES);
+    el.log.textContent = '';
+    if (!list.length) { el.log.hidden = true; return; }
+    el.log.hidden = false;
+    list.forEach(function (entry, i) {
+      var row = document.createElement('div');
+      row.className = 'dl-log__row' + (i === 0 ? ' is-latest' : '');
+      var head = document.createElement('div');
+      head.className = 'dl-log__head';
+      var ver = document.createElement('span');
+      ver.className = 'dl-log__ver';
+      ver.textContent = String(entry.tag).replace(/^shell-/, '');
+      var when = document.createElement('span');
+      when.className = 'dl-log__time';
+      when.textContent = logStamp(entry.published_at);
+      head.appendChild(ver);
+      head.appendChild(when);
+      row.appendChild(head);
+
+      var sum = summarize(entry);
+      var line = document.createElement('div');
+      line.className = 'dl-log__text';
+      line.textContent = sum.head || '构建更新（内容走热更新，明细见发布页）';
+      row.appendChild(line);
+      sum.bullets.forEach(function (b) {
+        var li = document.createElement('div');
+        li.className = 'dl-log__bullet';
+        li.textContent = '· ' + b;
+        row.appendChild(li);
+      });
+      el.log.appendChild(row);
+    });
   }
 
   /* ---- helpers --------------------------------------------------------------------- */
@@ -120,6 +221,9 @@
       var latest = normalizeRelease(rel);
       if (!hasApk(latest)) return null;
       if (typeof rel._ghDownloads === 'number') state.ghDownloads = rel._ghDownloads;
+      // 日志优先用线上给的 _history；它缺席时只用当前这条，绝不混打包快照里的旧列表
+      state.history = (Array.isArray(rel._history) && rel._history.length)
+        ? rel._history : [logEntryOf(rel)].filter(Boolean);
       state.cdn = rel._cdn || null;
       state.versionSuffix = rel._stale ? '（缓存版本）' : '';
       return latest;
@@ -135,8 +239,14 @@
   function fetchLatestFromGithub() {
     return fetchJson(API_LATEST, API_TIMEOUT_MS).then(function (rel) {
       var latest = normalizeRelease(rel);
-      if (hasApk(latest)) return latest;
+      if (hasApk(latest)) {
+        // 只有单条可用时也比"没有日志"好；/api/latest 活着时不会走到这里
+        if (!state.history) state.history = [logEntryOf(rel)];
+        return latest;
+      }
       return fetchJson(API_LIST, API_TIMEOUT_MS).then(function (list) {
+        var entries = (Array.isArray(list) ? list : []).map(logEntryOf).filter(Boolean);
+        if (entries.length) state.history = entries;
         return normalizeRelease(pickRelease(list));
       });
     });
@@ -347,6 +457,7 @@
     }
 
     renderMirrors();
+    renderLog();
     applyPrimary();
   }
 
@@ -564,6 +675,10 @@
               }) };
           })));
           state.asset = pickAsset(state.release);
+          // 冷启动先按打包快照画一版日志；线上答案回来后 render() 会覆盖
+          var snapEntries = (snap.releases || []).filter(function (r) { return r && !r.prerelease; })
+            .map(logEntryOf).filter(Boolean);
+          if (snapEntries.length && !state.history) state.history = snapEntries;
           render();
         }
         return fetchLatestWithApk().then(function (live) {

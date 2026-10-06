@@ -61,7 +61,20 @@ async function fetchLatest(env) {
         if (/\.apk$/i.test(a.name)) ghDownloads += a.download_count || 0;
       });
     });
-    return release ? { release: release, ghDownloads: ghDownloads } : null;
+    // 更新日志的数据源：最近的稳定 release（含纯热更的"内容批次"，那几条才是人话）。
+    // 这里只做**筛选和截断**，提炼/清洗留给前端一处实现 —— 离线快照 data/releases.json
+    // 走的是同一套代码，两边不会出现两种日志口径。
+    const history = releases.filter(function (r) {
+      return r && !r.draft && !r.prerelease && r.tag_name;
+    }).slice(0, 5).map(function (r) {
+      return {
+        tag: r.tag_name,
+        name: String(r.name || r.tag_name).slice(0, 120),
+        published_at: r.published_at || r.created_at || '',
+        body: String(r.body || '').slice(0, 700),
+      };
+    });
+    return release ? { release: release, ghDownloads: ghDownloads, history: history } : null;
   } catch (err) {
     return null;
   }
@@ -130,6 +143,7 @@ export async function onRequestGet(context) {
       _cachedAt: Date.now(),
       _stale: false,
       _ghDownloads: fetched.ghDownloads,
+      _history: fetched.history || [],
       _cdn: cdn,
     });
     waitUntil(cache.put(key, respond(payload, STALE_KEEP_MS / 1000)));

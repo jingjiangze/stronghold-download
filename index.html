@@ -20,7 +20,7 @@
   <link rel="stylesheet" href="./css/components.css?v=4" />
   <link rel="stylesheet" href="./css/screens/title.css?v=4" />
   <link rel="stylesheet" href="./css/devices.css?v=4" />
-  <link rel="stylesheet" href="./css/dl.css?v=18" />
+  <link rel="stylesheet" href="./css/dl.css?v=19" />
 </head>
 <body>
   <div class="screen title-screen">
@@ -92,6 +92,9 @@
           <span id="dl-downloads" class="dl-downloads" title="GitHub 资产 + 页面直链下载合计" hidden></span>
         </div>
         <p class="dl-note" id="dl-note">支持断点续传 · 下载缓慢时切换其它镜像</p>
+
+        <!-- 更新日志由 js/download.js 从 release 正文自动提炼（最多三条），不手工维护 -->
+        <section class="dl-log" id="dl-log" aria-label="更新日志" hidden></section>
         <nav class="dl-nav" aria-label="服务器清单与分支构建">
           <a class="btn btn--primary btn--sm" href="./servers.html"
              title="查看自制联机服务器清单"><span class="btn__label">服务器清单</span></a>
@@ -115,6 +118,6 @@
     </main>
   </div>
 
-  <script src="./js/download.js?v=21" defer></script>
+  <script src="./js/download.js?v=22" defer></script>
 </body>
 </html>

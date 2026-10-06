@@ -95,6 +95,32 @@
   color: var(--text-dim);
 }
 
+/* ---- 更新日志：自动从 release 正文提炼，最多三条，不手工维护 ---------------------- */
+.dl-log {
+  margin: .1rem auto 0;
+  padding: .08rem .1rem;
+  max-width: 5.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: .07rem;
+  text-align: left;
+  border-left: .02rem solid rgba(140, 226, 205, .35);
+  background: rgba(8, 20, 18, .32);
+}
+.dl-log__row + .dl-log__row { border-top: 1px solid rgba(255, 255, 255, .06); padding-top: .07rem; }
+.dl-log__head { display: flex; align-items: baseline; gap: .08rem; }
+.dl-log__ver {
+  font-family: var(--font-display);
+  font-size: .13rem;
+  letter-spacing: .05em;
+  color: var(--mint-500);
+  white-space: nowrap;
+}
+.dl-log__row.is-latest .dl-log__ver { color: var(--mint-glow); }
+.dl-log__time { font-size: .11rem; letter-spacing: .04em; color: var(--text-dim); white-space: nowrap; }
+.dl-log__text { font-size: .12rem; line-height: 1.55; color: var(--text-md); }
+.dl-log__bullet { font-size: .11rem; line-height: 1.55; color: var(--text-lo); }
+
 /* fine print links: upstream repository + APK release page + QQ group */
 .dl-links {
   margin: 0;
@@ -135,6 +161,12 @@
   .dl-mirrors .btn { height: .46rem; }
   .dl-nav { gap: .12rem; }
   .dl-nav .btn--sm { height: .52rem; padding: 0 .18rem; font-size: .15rem; }
+  /* 竖屏根字号 52px：.11-.12rem 只有 5-6px，日志必须放大到可读 */
+  .dl-log { max-width: 92vw; margin: .12rem auto 0; padding: .06rem .08rem; gap: .04rem; }
+  .dl-log__ver { font-size: .16rem; }
+  .dl-log__time { font-size: .13rem; }
+  .dl-log__text { font-size: .15rem; }
+  .dl-log__bullet { font-size: .14rem; }
   .title-bg__radar { left: 50%; top: 30%; width: 7.2rem; height: 7.2rem; opacity: .35; }
   .title-bg__target { display: none; }
 }
