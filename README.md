@@ -54,41 +54,46 @@ node tools/sign-servers.mjs --sign --publish     # 重签并发布，发布后�
 对象键递归按字典序、数组顺序不变、无多余空白；**`updated` 参与签名**，所以手改时间戳必然验不过。
 `review` 的响应里带 `canonicalSha256`，和本机签名器打印的 sha 一致就说明签的是同一份。
 
-## 玩家匿名举报「进不去」与打开点击数（2026-10-06）
+## 玩家评价「大杯 / 小杯」与打开点击数（2026-10-06）
 
-同一天先加了"未核服务器的匿名核验"，**同日又取消了正向票**（站长的决定）：一个没有事实核验的
-点击去推翻判据，迟早变成"谁点得勤谁上线"。现在只剩两件事：
+**形态**：清单每行两个小按钮 —— **大杯 = 好评，小杯 = 差评**。两者**只调排序权重，永不决定某台显不显示**；
+显示/隐藏仍然只有三样东西说话：边缘健康端点指纹、盒子那路看得见状态码的国内探测、站长停用（终审）。
 
 ```bash
-curl -X POST https://dl.jiangjiangze.icu/api/servers/vouch -H 'content-type: application/json' -d '{"id":"<清单id>","verdict":"bad"}'    # 报告进不去
+curl -X POST https://dl.jiangjiangze.icu/api/servers/vouch -H 'content-type: application/json' -d '{"id":"<清单id>","verdict":"good"}'   # 大杯
+curl -X POST https://dl.jiangjiangze.icu/api/servers/vouch -H 'content-type: application/json' -d '{"id":"<清单id>","verdict":"bad"}'    # 小杯
 curl -X POST https://dl.jiangjiangze.icu/api/servers/vouch -H 'content-type: application/json' -d '{"id":"<清单id>","verdict":"clear"}'  # 撤回自己那张
-curl -X POST https://dl.jiangjiangze.icu/api/servers/open  -H 'content-type: application/json' -d '{"id":"<清单id>"}'                   # 记一次「打开」跳转
+curl -X POST https://dl.jiangjiangze.icu/api/servers/open  -H 'content-type: application/json' -d '{"id":"<清单id>"}'                    # 记一次「打开」跳转
 ```
 
-**负向票**（`vouch.js` + `verify.js`）：
+**排序**（`js/servers.js` 的 `versionRank` + `scoreOf`）：主键版本号降序（读不到版本的垫底），次键净分
+`大杯数 - 小杯数` 降序，再相同则保持清单原顺序（`sort` 稳定）。现网绝大多数服是同一个版本号，所以实际
+起区分作用的就是杯子。
 
-- 门槛是 **2 个不同来源**才隐藏一行。不是不信任玩家 —— 单条「我连不上」多半是本地噪声
-  （adblock、切网、页面没加载完、https 页面不让发 http 请求），10-05 就有一条这种回执把当天最大
-  的那台服（81 房/83 人）整条藏掉过。投完按钮会明确说"还差几个"。
-- 只翻**显示**，不翻**准入**：只接受签名清单里已存在的 id，地址/探针不接受访客输入，所以清单的
-  签名与条数不受任何影响（`node tools/sign-servers.mjs` 可复验）。
-- `enabled === false`（站长停用）硬拒 403 —— 停用是终审；当前已不显示的拒 409（这一票改变不了
-  什么），但**自己今天已有票的人改投/撤回永远允许**（分区快照可能滞后 120 s，不能拿它挡人）；
-  同一来源同一天同一台只有一张票，重复投 429。
-- 票 **7 天**过期；`verify.js` 把靠票隐藏的条目记进 `verified.json` 的 `player_state`，所以
-  撤回 / 管理页 purge / 过期都能**当场**回前台，不用等下一轮真探（那是 30 分钟）。
-- 按 `sha256(ip|id|当天)` 记名，**不存明文 IP**；写 R2 `site/vouches.json`，不占 KV 写额度
-  （旧文件里的正向 `ok`/`ips` 桶在任何一次写入时被裁掉）。
-- **维护者口**（要 `x-admin-key: $PUBLISH_KEY`）：`{"id":"<id>","verdict":"purge"}` 清某一条的票
-  （清单里已不存在的孤儿票也清得掉，所以这一步走在清单查询之前），`"all":true` 清整本；
-  `GET /api/servers/vouch` 读计数台账（只有票数与最后时间，不含来源哈希）。匿名 purge 一律 403，
-  不带口令的 GET 照旧 405。
-  **注意**：撤回只能撤"同一来源算出来的那一张"，而出口 IP 会漂（本机走代理就是这样），
-  所以要清别人或自己漂掉的票只能走 purge。
+**这一天在这里来回过两次，别再走一遍**：① 先做成正向「我核验通过」一票即恢复展示 —— 同日取消，因为一个
+没有事实核验的点击去推翻判据，迟早变成"谁点得勤谁上线"；② 再做成负向「进不去」两票即隐藏 —— 同日改成
+只降权，因为单条「我连不上」多半是本地噪声（adblock、切网、页面没加载完、https 页面不让发 http 请求），
+10-05 就有一条这种回执把当天最大的一台服（81 房/83 人）整条藏掉过。**往后挪是可逆的，藏掉是不可逆的。**
 
-**打开点击数**（`open.js`）：只统计次数、不当任何闸门。同一来源同一台 **10 秒内只算一次**（挡双击），
-同样不存明文 IP（16 位哈希只当时间窗键）。数字由 `verify.js` 并进 `site/verified.json` 的 `opens`，
-页面显示成「目前已点击 N 次」—— 少一个接口就少一次往返，在这条链路上很值钱。
+**边界**（`vouch.js`）：只接受签名清单里已存在的 id，地址/探针不接受访客输入 ⇒ 清单签名与条数不受影响
+（`node tools/sign-servers.mjs` 复验）；`enabled === false` 一律 403；同一来源同一天同一台只能有一张票，
+**大杯小杯互斥**（改投另一头自动撤掉原来那张），重复投同一向 429，`clear` 随时撤回；票 7 天过期。
+按 `sha256(ip|id|当天)` 记名，**不存明文 IP**；写 R2 `site/vouches.json`，不占 KV 写额度。
+
+**维护者口**（要 `x-admin-key: $PUBLISH_KEY`）：`{"id":"<id>","verdict":"purge"}` 清某一条的票（清单里已不
+存在的孤儿票也清得掉，所以这一步走在清单查询之前），`"all":true` 清整本；`GET /api/servers/vouch` 读计数
+台账（只有好/差/净分与最后时间，不含来源哈希）。匿名 purge 一律 403，无口令 GET 照旧 405。
+**为什么一定要有这个口**：撤回只能撤"同一来源算出来的那一张"，而出口 IP 会漂（本机走代理就是这样，实测
+一次 clear 没找回来、在小鹿宝上留了一张假票），所以清别人或自己漂掉的票只能靠 purge。
+
+**前端对账**（"撤回后提示还在"那个 bug 的根因与解法）：`verified.json` 有 120 s 边缘缓存，所以本机动作
+只有**时间戳晚于该条快照 `at`** 时才参与计算；撤回还必须记住撤的是哪一边（`{v:'clear', was:'good'|'bad'}`），
+否则净分不知道要往回补多少、位置就卡住。**徽章类提示一律不做** —— 挂在行上的文字是甩不掉的，位置本身就是反馈。
+
+**打开点击数**（`open.js`）：只统计次数、不当闸门；同一来源同一台 **10 秒内只算一次**（挡双击）；同样不存
+明文 IP（16 位哈希只当时间窗键）。数字由 `verify.js` 并进 `site/verified.json` 的 `opens`，页面显示
+「目前已点击 N 次」—— 少一个接口就少一次往返，在这条链路上很值钱。
+
 
 ## 清单页的缓存口径（2026-10-06 定，别再改回 5 分钟）
 

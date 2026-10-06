@@ -85,11 +85,13 @@
   // 票数文案单独成函数：与本机离线自测 (_tmp/vouch_test.mjs) 用的是同一段逻辑，
   // 免得为了看这行字要在浏览器里敲管理口令。
   function vouchTagText(v) {
+    var good = Number(v && v.good) || 0;
     var bad = Number(v && v.bad) || 0;
-    if (!bad) return '';
+    if (!good && !bad) return '';
     var at = Date.parse((v && v.at) || '');
-    return '玩家举报进不去 ' + bad + ' 个来源'
-      + (isNaN(at) ? '' : '（' + new Date(at).toLocaleString('zh-CN', { hour12: false }) + '）');
+    return '玩家评价 ' + good + ' 大杯 / ' + bad + ' 小杯（净分 '
+      + (good - bad > 0 ? '+' : '') + (good - bad) + '）'
+      + (isNaN(at) ? '' : '，最后 ' + new Date(at).toLocaleString('zh-CN', { hour12: false }));
   }
 
   // 玩家匿名核验的票数（verified.json 的 vouches）：暂存区每行都要显示「谁把它放回前台的」，

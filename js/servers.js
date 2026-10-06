@@ -36,12 +36,11 @@
   // user hits 立即测速.
   var CACHE_KEY = 'sp.serverProbeCache.v1';
   var CACHE_TTL_MS = 24 * 60 * 60 * 1000;
-  // 玩家自己的「进不去」举报记在本地（按钮要变成可撤回态）。正向票已取消。
-  var VOUCH_KEY = 'sp.vouchMine.v2';
+  // 玩家自己的评价（大杯=好评 / 小杯=差评）记在本地：按钮要显示已投的那只，撤回要能立刻改回位置。
+  var VOUCH_KEY = 'sp.vouchMine.v3';
   var VOUCH_LOCAL_TTL_MS = 24 * 60 * 60 * 1000;
   var VOUCH_URL = '/api/servers/vouch';
   var OPEN_URL = '/api/servers/open';
-  var VOUCH_BAD_MIN = 2; // 与 verify.js 一致：负向要 2 个不同来源才隐藏，按钮提示要说实话
   var OPEN_LOCAL_KEY = 'sp.openLocal.v1';
   var PROBE_CONCURRENCY = 4; // 一次打满 29 台会把本机代理隧道挤死（页面自己的资源也走那条路）
 
@@ -190,9 +189,13 @@
     return false;
   }
 
-  /* ---- 玩家匿名举报「进不去」+ 打开点击数 -------------------------------------------- */
+  /* ---- 玩家评价（大杯=好评 / 小杯=差评）+ 打开点击数 ---------------------------------- */
 
-  /** {id:{at:ms}} —— 只记自己报过「进不去」的条目（正向票已取消）。 */
+  /**
+   * 自己今天在这一条上的取向：{v:'good'|'bad'|'clear', at:ms, was?:'good'|'bad'}。
+   * 'clear' 也要记（带 was）：服务端快照有 120 s 边缘缓存，刚撤回时那份里可能还含着自己
+   * 那一票 —— 不记就会一直按"有票"算，位置回不来（用户报的"撤回后还有提示"就是这个滞后）。
+   */
   function loadMine() {
     var out = {};
     var cut = Date.now() - VOUCH_LOCAL_TTL_MS;
@@ -200,27 +203,50 @@
       var doc = JSON.parse(localStorage.getItem(VOUCH_KEY) || '{}');
       if (doc && typeof doc === 'object') {
         Object.keys(doc).forEach(function (k) {
-          var at = Number((doc[k] || {}).at);
-          if (at >= cut) out[k] = { at: at };
+          var rec = doc[k] || {};
+          var at = Number(rec.at);
+          if (at >= cut && (rec.v === 'good' || rec.v === 'bad' || rec.v === 'clear')) {
+            out[k] = { v: rec.v, at: at, was: rec.was || null };
+          }
         });
       }
     } catch (err) { /* 隐私模式 / 坏数据：当没投过 */ }
     return out;
   }
 
-  function markMine(id, on) {
-    if (on) state.mine[id] = { at: Date.now() };
-    else delete state.mine[id];
+  function markMine(id, rec) {
+    if (rec) state.mine[id] = rec; else delete state.mine[id];
     try { localStorage.setItem(VOUCH_KEY, JSON.stringify(state.mine)); } catch (err) { /* 本次会话内记住 */ }
   }
 
-  function reportedBad(id) { return !!state.mine[id]; }
+  function myVote(id) { return state.mine[id] || null; }
 
   function applyVoteCounts(doc) {
     var out = {};
     var src = (doc && doc.vouches && typeof doc.vouches === 'object') ? doc.vouches : {};
-    Object.keys(src).forEach(function (k) { out[k] = { bad: Number((src[k] || {}).bad) || 0 }; });
+    Object.keys(src).forEach(function (k) {
+      var v = src[k] || {};
+      out[k] = { good: Number(v.good) || 0, bad: Number(v.bad) || 0, at: v.at || null };
+    });
     state.voteCounts = out;
+  }
+
+  /**
+   * 净分 = 服务端 (大杯 - 小杯) + 本机这一票的修正。
+   * 修正只在"我的动作晚于快照 at"时生效：那时快照还没把我的票算进去。
+   * 撤回则反向修正（was=good 的票被撤 → 快照里那份要当没有）。
+   */
+  function scoreOf(id) {
+    var s = state.voteCounts[id] || { good: 0, bad: 0, at: null };
+    var net = s.good - s.bad;
+    var mine = myVote(id);
+    if (!mine || !mine.at) return net;
+    var cut = s.at ? (Date.parse(s.at) || 0) : 0;
+    if (mine.at <= cut) return net;
+    if (mine.v === 'good') return net + 1;
+    if (mine.v === 'bad') return net - 1;
+    if (mine.v === 'clear') return net + (mine.was === 'good' ? -1 : (mine.was === 'bad' ? 1 : 0));
+    return net;
   }
 
   /** 打开点击数：服务端快照（verified.json 里的 opens）+ **只算快照之后**的本机点击。
@@ -593,6 +619,36 @@
     return Math.round(server.ms) + ' ms' + (server.okCount < SAMPLES ? ' *' : '');
   }
 
+  /** 一只杯子按钮。自己投过的那只亮着，再点一下就是撤回 —— 不另外摆"撤回"文案，
+   *  那东西上次留在行上成了甩不掉的提示。 */
+  function cupButton(server, side) {
+    var label = side === 'good' ? '大杯' : '小杯';
+    var mine = myVote(server.id);
+    var on = !!mine && mine.v === side;
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'btn btn--ghost btn--sm sv-cup sv-cup--' + side + (on ? ' is-on' : '');
+    var s = document.createElement('span');
+    s.className = 'btn__label';
+    s.textContent = label;
+    b.title = on
+      ? '你已经给过这一台' + label + '。点一下撤回，它回到原来的位置'
+      : (side === 'good'
+        ? '大杯 = 好评：这一台在同版本里往前挪（不会因此改变是否显示）'
+        : '小杯 = 差评：这一台在同版本里往后挪（不会因此被隐藏）');
+    b.addEventListener('click', function () { postVouch(server, on ? 'clear' : side, b, s); });
+    b.appendChild(s);
+    return b;
+  }
+
+  function cupGroup(server) {
+    var wrap = document.createElement('span');
+    wrap.className = 'sv-cups';
+    wrap.appendChild(cupButton(server, 'good'));
+    wrap.appendChild(cupButton(server, 'bad'));
+    return wrap;
+  }
+
   function row(server) {
     var div = document.createElement('div');
     div.className = 'sv-row is-' + (server.level || 'pending');
@@ -665,16 +721,11 @@
       : '';
     div.appendChild(ms);
 
-    // 「进不去」排在「打开」前面：先给判断再给跳转。报进不去的人多半就是刚点开过的那个，
-    // 按钮放在跳转后面等于让他先做动作再回头找入口。
-    var c = state.voteCounts[server.id] || {};
-    if (c.bad) {
-      var vb = document.createElement('span');
-      vb.className = 'sv-vouchbadge is-bad';
-      vb.textContent = c.bad + ' 人进不去';
-      vb.title = '同一台要 ' + VOUCH_BAD_MIN + ' 个不同来源报告进不去才隐藏这一行（当前 ' + c.bad + ' 个）';
-      main.appendChild(vb);
-    }
+    // 大杯=好评、小杯=差评，放在「打开」前面（先给判断再给跳转）。两个都只调排序权重：
+    // 净分高的在同版本里往前挪，**不会因为被差评就消失**（理由见 vouch.js 的注释）。
+    var cup = cupGroup(server);
+    div.appendChild(cup);
+
     // 打开跳转的点击数：服务端快照 + 本机刚点过的增量（数字要立刻动，不等 120s 缓存）
     var oc = document.createElement('span');
     var on = openCount(server.id);
@@ -683,25 +734,6 @@
     oc.textContent = '目前已点击 ' + on.total + ' 次';
     oc.title = openTitle(on);
     main.appendChild(oc);
-
-    var bad = document.createElement('button');
-    bad.type = 'button';
-    bad.className = 'btn btn--ghost btn--sm sv-votebad';
-    var bl = document.createElement('span');
-    bl.className = 'btn__label';
-    if (reportedBad(server.id)) {
-      // 文案只写「已报告」，撤回这个动作挂在悬浮提示上：按钮上写"点撤回"会让人以为还能再点出别的什么
-      bl.textContent = '已报告';
-      bad.title = '你已经报告过这一行。点一下撤回这张「进不去」（撤回后它立刻回到清单）';
-      bad.addEventListener('click', function () { postVouch(server, 'clear', bad, bl); });
-    } else {
-      bl.textContent = '进不去';
-      bad.title = '只在「页面打得开、进不了游戏」时点。' + VOUCH_BAD_MIN
-        + ' 个不同来源报告进不去才会隐藏这一行（单条报告多半是本地网络噪声）';
-      bad.addEventListener('click', function () { postVouch(server, 'bad', bad, bl); });
-    }
-    bad.appendChild(bl);
-    div.appendChild(bad);
 
     if (server.url) {
       var open = document.createElement('a');
@@ -741,12 +773,10 @@
     }).catch(function () { /* 记账失败不打扰玩家 */ });
   }
 
-  /**
-   * 投「进不去」或撤回自己那张。门槛是 2 个不同来源（见 verify.js 的注释：单条"我连不上"
-   * 多半是本地噪声，10-05 就因此误藏过当天最大的一台服），所以投完要明确说还差几个。
-   */
+  /** 投大杯/小杯，或撤回自己那张。两者只改排序权重，不改某台显不显示。 */
   function postVouch(server, verdict, btn, label) {
     if (!btn || btn.disabled) return;
+    var prev = myVote(server.id);
     var old = label ? label.textContent : '';
     btn.disabled = true;
     if (label) label.textContent = '提交中…';
@@ -758,24 +788,26 @@
       return res.json().catch(function () { return {}; }).then(function (data) { return { status: res.status, data: data }; });
     }).then(function (outcome) {
       var c = (outcome.data && outcome.data.counts) || {};
+      var tally = (c.good || 0) + ' 大杯 / ' + (c.bad || 0) + ' 小杯';
       // 429 = 今天这台你已经投过了：本地同样按已投处理，别继续摆着让人重复点
-      if (outcome.status === 429) { markMine(server.id, true); render(); return; }
+      if (outcome.status === 429) { markMine(server.id, { v: verdict, at: Date.now() }); render(); return; }
       if (!outcome.data.ok) throw new Error(outcome.data.error || ('HTTP ' + outcome.status));
-      markMine(server.id, verdict !== 'clear');
       if (verdict === 'clear') {
-        setText(el.note, '已撤回你对「' + server.name + '」的「进不去」（现在 '
-          + (c.bad || 0) + ' 人报告进不去）。');
+        // 记下撤的是哪一边：服务端快照有 120 s 边缘缓存，那份里可能还含着自己这一票，
+        // 不记就不知道要把净分往回补多少，位置会卡住（上次"撤回后提示还在"就是这个滞后）。
+        markMine(server.id, { v: 'clear', was: (prev && prev.v) || null, at: Date.now() });
+        setText(el.note, '已撤回你对「' + server.name + '」的评价（现在 ' + tally + '）。');
       } else {
-        var left = Math.max(0, VOUCH_BAD_MIN - (Number(c.bad) || 0));
-        setText(el.note, '已报告「' + server.name + '」进不去（' + (c.bad || 1) + ' 个来源报告'
-          + (left ? '，还差 ' + left + ' 个才会隐藏这一行；单条报告多半是本地网络噪声' : '，已达隐藏门槛') + '）。');
+        markMine(server.id, { v: verdict, at: Date.now() });
+        setText(el.note, '已给「' + server.name + '」' + (verdict === 'good' ? '一个大杯' : '一张小杯')
+          + '（' + tally + '），它在同版本里' + (verdict === 'good' ? '往前挪了。' : '往后挪了。'));
       }
       render();
       triggerVerify(); // 请服务端把票认进分区（档位内走缓存直返分支，也会立刻补这一层）
     }).catch(function (err) {
       btn.disabled = false;
       if (label) label.textContent = old;
-      setText(el.note, '举报没提交上去：' + (err && err.message ? err.message : '网络'));
+      setText(el.note, '评价没提交上去：' + (err && err.message ? err.message : '网络'));
     });
   }
 
@@ -796,9 +828,14 @@
     if (!el.list) return;
     el.list.textContent = '';
     var shown = 0;
-    // Array.prototype.sort 稳定：同版本（含都读不到版本）的保持清单原顺序
+    // Array.prototype.sort 稳定：同版本同净分的保持清单原顺序。
+    // 主键是版本号（新的在前、读不到版本的垫底），次键才是杯子净分 —— 现网绝大多数服都是
+    // 同一个版本号，所以实际起区分作用的就是玩家的大杯小杯。
     state.servers.slice().sort(function (a, b) {
-      return versionRank(b) - versionRank(a);
+      var va = versionRank(a);
+      var vb = versionRank(b);
+      if (va !== vb) return vb - va;
+      return scoreOf(b.id) - scoreOf(a.id);
     }).forEach(function (server) {
       if (server.quarantined) return; // failed server-side verification: hidden from the page
       el.list.appendChild(row(server));

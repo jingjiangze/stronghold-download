@@ -212,17 +212,14 @@
 .sv-modal__card .admin-grid { grid-template-columns: 1fr 1.4fr; }
 .sv-modal[hidden] { display: none; }
 
-/* ---- 玩家匿名举报「进不去」的票数与打开点击数 --------------------------------------- */
-.sv-vouchbadge {
-  flex: 0 0 auto;
-  margin-left: .06rem;
-  padding: 0 .05rem;
-  border: 1px solid rgba(246, 163, 41, .55);
-  border-radius: .04rem;
-  color: var(--amber);
-  font-size: .11rem;
-  white-space: nowrap;
-}
+/* ---- 玩家评价：大杯=好评 / 小杯=差评（只调排序权重，不决定显不显示） ------------------ */
+.sv-cups { display: flex; align-items: center; gap: .04rem; flex: 0 0 auto; }
+.sv-cup { padding: 0 .07rem; opacity: .68; }
+.sv-cup:hover { opacity: 1; }
+.sv-cup .btn__label { font-size: .12rem; letter-spacing: .02em; }
+/* 已投的那只亮着，再点一下即撤回 —— 不另摆"撤回"字样，那东西上次留在行上成了甩不掉的提示 */
+.sv-cup--good.is-on { opacity: 1; border-color: var(--mint-a35); color: var(--mint-500); }
+.sv-cup--bad.is-on { opacity: 1; border-color: rgba(246, 163, 41, .55); color: var(--amber); }
 .sv-opencount {
   flex: 0 1 auto;
   margin-left: .06rem;
@@ -232,9 +229,6 @@
   white-space: nowrap;
 }
 .sv-opencount[hidden] { display: none; }
-/* 「进不去」刻意比「打开」弱一档：一次误点不该和主操作长一个样 */
-.sv-votebad { opacity: .62; }
-.sv-votebad:hover { opacity: 1; }
 
 /* ---- portrait / narrow screens ---------------------------------------------------- */
 @media (max-aspect-ratio: 12/10) {

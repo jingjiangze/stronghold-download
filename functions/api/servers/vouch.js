@@ -1,31 +1,34 @@
 // Pages Function: POST /api/servers/vouch
-// 匿名「进不去」举报。2026-10-06 先加了正反两向，同日又**取消了正向票**（站长定的），
-// 现在只剩负向：玩家点「我核验通过」不再能把一台被判死的服务器捞回清单。
+// 匿名评价：**大杯 = 好评，小杯 = 差评**（2026-10-06 站定的形态）。两个都只调清单排序权重，
+// 永远不决定某台服务器显不显示。
 //
-// 为什么取消正向：那一票能翻掉的是「读不到版本号即判死」这条判据 —— 出发点是对的（有些服
-// 跑的构建就是不回报 app/version，玩家进得去），但一个没有事实核验的点击去推翻判据，
-// 迟早变成"谁点得勤谁上线"。恢复展示交回维护者与盒子那路看得见状态码的探测。
+// 这一天在这里来回过两次，结论都写进注释里，别再走一遍：
+//   ① 先做成正向「我核验通过」一票即恢复展示 —— 同日取消：一个没有事实核验的点击去推翻判据，
+//      迟早变成"谁点得勤谁上线"。
+//   ② 再做成正向票 + 负向「进不去」两票即隐藏 —— 同日改成负向也只降权：单条「我连不上」多半是
+//      本地噪声（adblock、切网、页面没加载完、https 页面不让发 http 请求），10-05 就有一条这种
+//      回执把当天最大的一台服（81 房/83 人）整条藏掉过。往后挪是可逆的，藏掉是不可逆的。
+// 所以显示/隐藏仍然只有三样东西说话：边缘指纹、盒子那路看得见状态码的探测、站长停用（终审）。
 //
-// 为什么保留负向：边缘 403/超时按现政策一律放行展示，真只有某几张网进得去的死地址会一直挂在
-// 清单上，需要有人从里面往外说一句。门槛比正向高：**2 个不同来源**才隐藏一行，
-// 理由不是偏心 —— 10-05 一条本地噪声回执（adblock、切网、页面没加载完）就把当天最大那台服
-// （81 房/83 人）整条藏掉过。
+// 边界：
+//   - 只接受签名清单里已存在的 id，地址/名字/探针不接受访客输入 ⇒ 清单的签名与条数不受任何影响；
+//   - enabled === false（站长停用）硬拒 403；
+//   - 同一来源同一天同一台只能有一张票：大杯小杯互斥，改投另一头会自动撤掉原来那张
+//     （允许翻案，不允许堆票）；重复投同一向拒 429；verdict:'clear' 随时撤回自己那张。
+//   - 按 sha256(ip|id|当天) 记名，**不存明文 IP**；写 R2 site/vouches.json，不占 KV 写额度
+//     （免费额度 1000 写/天已被别的心跳吃掉一半）。
 //
-// 边界（与正向票同一套）：
-//   - 只接受签名清单里已存在的 id，地址/名字/探针不接受访客输入 ⇒ 清单的签名与条数不受影响；
-//   - enabled===false 硬拒 403（停用是维护者终审）；当前已经不在清单前台显示的拒 409（这一票
-//     改变不了什么），但**自己今天已有票的人改投/撤回永远允许**；
-//   - 同一来源同一天同一台只能有一张票，重复投拒 429；
-//   - 按 sha256(ip|id|当天) 记名，**不存明文 IP**；写 R2 site/vouches.json，不占 KV 写额度。
+// 票数由 /api/servers/verify 并进 site/verified.json 的 vouches，页面拿 good-bad 当净分排序。
 //
-// 维护者口：verdict:'purge' 清掉某一条的全部票（要 x-admin-key），{"all":true} 清整本；
-// GET 带同一口令读计数台账（只给每台的票数与最后时间，不含来源哈希）。
+// 维护者口（要 x-admin-key: $PUBLISH_KEY）：verdict:'purge' 清某一条的全部票（清单里已不存在的
+// 孤儿票也清得掉，所以这一步走在清单查询之前），"all":true 清整本；GET 读计数台账
+// （只给每台的好/差票数与最后时间，不含来源哈希）。匿名 purge 一律 403，无口令 GET 照旧 405。
 
 const LIST_KEY = 'site/servers.json';
-const VERIFIED_KEY = 'site/verified.json';
 const VOUCH_KEY = 'site/vouches.json';
 const MAX_IDS = 200;
-const MAX_TAGS_PER_ID = 64;    // 每条最多记名 64 个来源，超出丢最旧的
+const MAX_TAGS_PER_SIDE = 64;   // 每边最多记名 64 个来源，超出丢最旧的
+const SIDES = ['good', 'bad'];
 
 function json(data, status) {
   return new Response(JSON.stringify(data), {
@@ -40,15 +43,17 @@ async function ipTag(ip, id, day) {
   return Array.from(new Uint8Array(bytes)).map((b) => b.toString(16).padStart(2, '0')).join('').slice(0, 32);
 }
 
-/** 统一成 {at, bad:{tag:{at,day}}}。正向票（旧文件的 ok/ips 桶）在这里被丢掉。 */
+/** 统一成 {at, good:{tag:{at,day}}, bad:{...}, goodCount, badCount}；顺手裁掉越界的记名。 */
 function norm(rec) {
-  const out = { at: (rec && rec.at) || null, bad: {} };
-  const bad = (rec && rec.bad && typeof rec.bad === 'object') ? rec.bad : {};
-  for (const t of Object.keys(bad)) {
-    const v = bad[t];
-    if (v && typeof v === 'object') out.bad[t] = { at: v.at || out.at, day: v.day || String(v.at || '').slice(0, 10) };
+  const out = { at: (rec && rec.at) || null, good: {}, bad: {} };
+  for (const side of SIDES) {
+    const map = (rec && rec[side] && typeof rec[side] === 'object') ? rec[side] : {};
+    for (const t of Object.keys(map)) {
+      const v = map[t] || {};
+      out[side][t] = { at: v.at || out.at, day: v.day || String(v.at || '').slice(0, 10) };
+    }
+    out[side + 'Count'] = Object.keys(out[side]).length;
   }
-  out.count = Object.keys(out.bad).length;
   return out;
 }
 
@@ -62,13 +67,16 @@ function trim(oldDoc) {
   }
   for (const id of Object.keys(src)) {
     const rec = norm(src[id]);
-    const tags = Object.keys(rec.bad);
-    if (tags.length > MAX_TAGS_PER_ID) {
-      tags.sort((a, b) => String(rec.bad[b].at || '').localeCompare(String(rec.bad[a].at || '')));
-      tags.slice(MAX_TAGS_PER_ID).forEach((t) => delete rec.bad[t]);
-      rec.count = Object.keys(rec.bad).length;
+    for (const side of SIDES) {
+      const map = rec[side];
+      const tags = Object.keys(map);
+      if (tags.length > MAX_TAGS_PER_SIDE) {
+        tags.sort((a, b) => String(map[b].at || '').localeCompare(String(map[a].at || '')));
+        tags.slice(MAX_TAGS_PER_SIDE).forEach((t) => delete map[t]);
+        rec[side + 'Count'] = Object.keys(map).length;
+      }
     }
-    if (!rec.count) continue;
+    if (!rec.goodCount && !rec.badCount) continue;
     out.vouches[id] = rec;
   }
   return out;
@@ -87,6 +95,8 @@ async function writeVouches(env, doc) {
   });
 }
 
+const counts = (rec) => ({ good: (rec && rec.goodCount) || 0, bad: (rec && rec.badCount) || 0 });
+
 export async function onRequestPost(context) {
   const { request, env } = context;
   if (!env.R2BUCKET) return json({ ok: false, error: 'R2 binding missing' }, 500);
@@ -95,19 +105,14 @@ export async function onRequestPost(context) {
   try { body = await request.json(); } catch { return json({ ok: false, error: 'bad json' }, 400); }
   const id = typeof body.id === 'string' ? body.id.slice(0, 48) : '';
   if (!/^[a-zA-Z0-9_-]{1,48}$/.test(id)) return json({ ok: false, error: 'bad id' }, 400);
-  // 老客户端只发 {id}：当年那是正向票，而正向已取消，所以一律按撤回处理，绝不当成"能进"
-  const raw = body.verdict === undefined ? 'clear' : body.verdict;
-  if (raw === 'ok') {
-    return json({ ok: false, error: '玩家「核验通过」已取消：恢复展示由维护者与健康端点探测决定' }, 410);
-  }
-  if (raw !== 'bad' && raw !== 'clear' && raw !== 'purge') {
-    return json({ ok: false, error: "verdict 只能是 'bad' / 'clear' / 'purge'" }, 400);
+  // good = 大杯（好评），bad = 小杯（差评）。兼容早先的 'ok' 写法（它当年也叫"能进"）。
+  const raw = body.verdict === 'ok' ? 'good' : body.verdict;
+  if (raw !== 'good' && raw !== 'bad' && raw !== 'clear' && raw !== 'purge') {
+    return json({ ok: false, error: "verdict 只能是 'good' / 'bad' / 'clear' / 'purge'" }, 400);
   }
 
   const isAdmin = !!env.PUBLISH_KEY && (request.headers.get('x-admin-key') || '') === env.PUBLISH_KEY;
 
-  // 清票：投票刷屏时比「停用整条」轻一档的手段。放在清单查询之前 —— 清单里已经没这个 id 的
-  // 孤儿票正是要清的对象。匿名一律 403。
   if (raw === 'purge') {
     if (!isAdmin) return json({ ok: false, error: 'purge 需要 x-admin-key' }, 403);
     const doc = await readVouches(env);
@@ -125,12 +130,11 @@ export async function onRequestPost(context) {
   let entry;
   try {
     const doc = JSON.parse(await listRes.text());
-    const servers = Array.isArray(doc.servers) ? doc.servers : [];
-    entry = servers.find((s) => s && s.id === id);
+    entry = (Array.isArray(doc.servers) ? doc.servers : []).find((s) => s && s.id === id);
   } catch { return json({ ok: false, error: 'list corrupt' }, 500); }
   if (!entry) return json({ ok: false, error: 'unknown id' }, 404);
   if (entry.enabled === false) {
-    return json({ ok: false, error: '这条已由站长停用，无需玩家审核' }, 403);
+    return json({ ok: false, error: '这条已由站长停用，评价无意义' }, 403);
   }
 
   const now = new Date();
@@ -138,60 +142,52 @@ export async function onRequestPost(context) {
   const tag = await ipTag(request.headers.get('cf-connecting-ip') || 'unknown', id, day);
   const doc = await readVouches(env);
   const rec = norm(doc.vouches[id] || {});
+  rec.at = rec.at || null;
 
   if (raw === 'clear') {
-    const had = !!rec.bad[tag];
-    delete rec.bad[tag];
-    rec.count = Object.keys(rec.bad).length;   // 删完要重算，否则响应里报的是删除前的票数
-    if (!had) return json({ ok: true, id, verdict: 'clear', cleared: false, counts: { bad: rec.count } });
+    let cleared = 0;
+    for (const side of SIDES) {
+      if (rec[side][tag]) { delete rec[side][tag]; cleared += 1; }
+    }
+    for (const side of SIDES) rec[side + 'Count'] = Object.keys(rec[side]).length;
+    if (!cleared) return json({ ok: true, id, verdict: 'clear', cleared: false, counts: counts(rec) });
     rec.at = now.toISOString();
-    if (rec.count) doc.vouches[id] = rec; else delete doc.vouches[id];
+    doc.vouches[id] = rec;
     doc.updated = now.toISOString();
     await writeVouches(env, trim(doc));
-    return json({ ok: true, id, name: entry.name, verdict: 'clear', cleared: true, counts: { bad: rec.count } });
+    return json({ ok: true, id, name: entry.name, verdict: 'clear', cleared: true, counts: counts(rec) });
   }
 
-  // 这一票要能改变什么：已经不在前台显示的，再报"进不去"没有作用（页面也不会给它摆按钮）。
-  // 例外是自己今天已经投过 —— 分区快照可能滞后 120 s，不能拿它挡住改投/撤回。
-  const mineToday = rec.bad[tag] && String(rec.bad[tag].day || '') === day;
-  if (!mineToday && !isAdmin) {
-    const prevRes = await env.R2BUCKET.get(VERIFIED_KEY);
-    if (prevRes) {
-      try {
-        const v = JSON.parse(await prevRes.text());
-        if (Array.isArray(v.valid) && !v.valid.includes(id)) {
-          return json({ ok: false, error: '这台当前没在清单里显示，报告「进不去」没有作用' }, 409);
-        }
-      } catch { /* 分区读不到就照常收票 */ }
-    }
+  const mine = rec[raw];
+  const other = rec[raw === 'good' ? 'bad' : 'good'];
+  if (mine[tag] && String(mine[tag].day || '') === day) {
+    return json({ ok: false, error: '你今天已经评价过这条了', verdict: raw, counts: counts(rec) }, 429);
   }
-  if (mineToday) {
-    return json({ ok: false, error: '你今天已经审过这条了', verdict: 'bad', counts: { bad: rec.count } }, 429);
-  }
-
-  rec.bad[tag] = { at: now.toISOString(), day };
+  // 同一天同一来源只能有一张票：改投另一头先撤掉原来那张
+  if (other[tag] && String(other[tag].day || '') === day) delete other[tag];
+  mine[tag] = { at: now.toISOString(), day };
   rec.at = now.toISOString();
-  rec.count = Object.keys(rec.bad).length;
+  for (const side of SIDES) rec[side + 'Count'] = Object.keys(rec[side]).length;
   doc.vouches[id] = rec;
   doc.updated = now.toISOString();
   const saved = trim(doc);
   await writeVouches(env, saved);
-  const mine = saved.vouches[id];
-  if (!mine) return json({ ok: false, error: '写入被裁剪，请重试' }, 500);
-  return json({ ok: true, id, name: entry.name, verdict: 'bad', counts: { bad: mine.count },
-                need: Math.max(0, 2 - mine.count) });
+  const stored = saved.vouches[id];
+  if (!stored) return json({ ok: false, error: '写入被裁剪，请重试' }, 500);
+  const c = counts(stored);
+  return json({ ok: true, id, name: entry.name, verdict: raw, counts: c, score: c.good - c.bad });
 }
 
 export async function onRequestGet(context) {
   const { request, env } = context;
-  // 只有出示管理口令才给读数；没口令照旧 405，不对外宣布这里有维护者口
   const isAdmin = !!env.PUBLISH_KEY
     && (request.headers.get('x-admin-key') || '') === env.PUBLISH_KEY;
   if (!isAdmin || !env.R2BUCKET) return json({ ok: false, error: 'POST only' }, 405);
   const doc = await readVouches(env);
   const ids = {};
   for (const id of Object.keys(doc.vouches)) {
-    ids[id] = { bad: doc.vouches[id].count, at: doc.vouches[id].at || null };
+    const c = counts(doc.vouches[id]);
+    ids[id] = { good: c.good, bad: c.bad, score: c.good - c.bad, at: doc.vouches[id].at || null };
   }
   return json({ ok: true, updated: doc.updated || null, ids });
 }
