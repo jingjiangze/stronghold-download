@@ -234,6 +234,10 @@
   font-size: .11rem;
   white-space: nowrap;
 }
+.sv-vouchbadge.is-bad { border-color: rgba(246, 163, 41, .55); color: var(--amber); }
+/* 反向按钮刻意比「打开」弱一档：一次误点不该和主操作长一个样 */
+.sv-votebad { opacity: .62; }
+.sv-votebad:hover { opacity: 1; }
 
 /* ---- portrait / narrow screens ---------------------------------------------------- */
 @media (max-aspect-ratio: 12/10) {

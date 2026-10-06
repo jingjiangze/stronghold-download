@@ -15,8 +15,8 @@
 // but the download page hides invalid entries until they pass again.
 //
 // 证据分层（从弱到强）：边缘指纹 > 盒子国内服务端探测（看得见状态码）> 玩家浏览器 no-cors 回执
-// > **玩家点「我核验通过」**（/api/servers/vouch，人眼看过游戏能进，7 天内可翻 5xx 与"无版本号"）
-// > 站长停用（终审，任何票都翻不动）。
+// > **玩家匿名审核**（/api/servers/vouch，正反两向：1 票救回"探不到版本号/边缘 5xx"，
+// 2 个不同来源才能把正在显示的判成"玩家实测进不去"）> 站长停用（终审，任何票都翻不动）。
 
 import { verifyServerHealth, checkEntryUrl } from '../_verify.js';
 
@@ -84,58 +84,92 @@ export async function onRequestGet(context) {
     const age = Date.now() - Date.parse(p.at || '');
     return Number.isFinite(age) && age < 2 * 3600e3 ? p : null;
   };
-  // 玩家点过「我核验通过」（写口是 POST /api/servers/vouch）：2026-10-06 定的口径是
-  // **一个人点一下就算过核验**，7 天内有效，过期自动退回原判据（要留前台就得有人续点）。
-  // 为什么给它这么高的权重：这是全套判据里唯一一条「人眼看过游戏真能进」的证据。
+  // 玩家匿名审核（写口 POST /api/servers/vouch，正反两个方向）。2026-10-06 定的口径：
+  // **正向 1 票即恢复展示，负向要 2 个不同来源**，两边比多数，7 天内有效、过期自动退回原判据。
+  // 为什么给它这么高的权重：这是全套判据里唯一一条「人眼看过游戏真能进 / 真进不去」的证据。
   // 浏览器回执是 no-cors，502 的页面也算"连上了"，表达不了健康与否；玩家的点击没有这个盲区，
-  // 所以它连边缘看见的 5xx 也能翻案。但仍翻不动 已停用 —— 那是维护者的终审（见 disabledIds）。
+  // 所以正向票连边缘看见的 5xx 也能翻案。但仍翻不动 已停用 —— 那是维护者的终审（见 disabledIds）。
+  // 负向门槛比正向高不是因为不信任它，而是 10-05 吃过两次亏：单条「我连不上」多半是本地噪声
+  // （adblock、切网、页面没加载完），曾把当天最大的一台服（81 房/83 人）整条藏掉。
   let vouches = {};
   const vouchRes = await env.R2BUCKET.get(VOUCH_KEY);
   if (vouchRes) { try { vouches = (JSON.parse(await vouchRes.text()) || {}).vouches || {}; } catch { /* 没人投过 */ } }
   const VOUCH_TTL_MS = 7 * 24 * 3600e3;
-  const vouchOk = (id) => {
+  const VOUCH_BAD_MIN = 2;
+  const vCounts = (id) => {
     const v = vouches[id];
-    if (!v || Number(v.count || 0) < 1 || !Object.keys(v.ips || {}).length) return null;
+    if (!v || typeof v !== 'object') return null;
     const age = Date.now() - Date.parse(v.at || '');
-    return Number.isFinite(age) && age < VOUCH_TTL_MS ? v : null;
+    if (!Number.isFinite(age) || age >= VOUCH_TTL_MS) return null;
+    const okMap = (v.ok && typeof v.ok === 'object') ? v.ok
+      : ((v.ips && typeof v.ips === 'object') ? v.ips : {});   // 旧文件只有正向，键名是 ips
+    const badMap = (v.bad && typeof v.bad === 'object') ? v.bad : {};
+    return { ok: Object.keys(okMap).length, bad: Object.keys(badMap).length, at: v.at || null };
+  };
+  const vouchOk = (id) => {
+    const c = vCounts(id);
+    return c && c.ok >= 1 && c.ok > c.bad ? c : null;
+  };
+  const vouchBad = (id) => {
+    const c = vCounts(id);
+    return c && c.bad >= VOUCH_BAD_MIN && c.bad > c.ok ? c : null;
   };
   const disabledIds = new Set(servers.filter((s) => s && s.enabled === false).map((s) => s.id));
+  const entryOf = new Map(servers.map((s) => [s.id, s]));
   /**
-   * 把玩家票应用到一份分区上（valid / invalid / occupancy 就地改），返回捞回的条数。
-   * 判死链的每一支都从这里过一遍：冷却沿用、边缘超时、5xx、探不到版本号，一律认票；
-   * 只认 已停用（站长关的）。
+   * 把玩家票应用到一份分区上（valid / invalid / occupancy 就地改），返回 {promoted, demoted}。
+   * 正向：判死链的每一支都认 —— 冷却沿用、边缘超时、5xx、探不到版本号，一律捞回；
+   * 负向：正在显示的条目只要攒够 2 个不同来源就挪进暂存区（不写退避，下一轮照探，
+   * 票数被正向翻回去就自动回前台）。两边的终审都是 已停用（站长关的东西玩家票翻不动）。
    */
   const applyVouches = function (validArr, invalidArr, occ) {
-    let moved = 0;
-    for (let i = invalidArr.length - 1; i >= 0; i -= 1) {
-      const it = invalidArr[i];
-      if (!it || !it.id || disabledIds.has(it.id)) continue;
-      const v = vouchOk(it.id);
-      if (!v) continue;
-      invalidArr.splice(i, 1);
-      validArr.push(it.id);
-      const p = pings[it.id] || {};
-      const base = occ[it.id] || {};
-      occ[it.id] = {
+    let promoted = 0;
+    let demoted = 0;
+    const stamp = function (id, c) {
+      const p = pings[id] || {};
+      const base = occ[id] || {};
+      occ[id] = {
         rooms: base.rooms != null ? base.rooms : (p.rooms != null ? p.rooms : null),
         humans: base.humans != null ? base.humans : (p.humans != null ? p.humans : null),
         app: base.app || p.app || null,
         build: base.build || p.build || null,
         variant: base.variant || p.variant || 'player',
         entry_status: base.entry_status || null,
-        player_vouched: Number(v.count) || 1,
-        vouched_at: v.at || null,
+        player_vouched: c.ok,
+        player_bad: c.bad,
+        vouched_at: c.at,
       };
-      moved += 1;
+    };
+    for (let i = invalidArr.length - 1; i >= 0; i -= 1) {
+      const it = invalidArr[i];
+      if (!it || !it.id || disabledIds.has(it.id)) continue;
+      const c = vouchOk(it.id);
+      if (!c) continue;
+      invalidArr.splice(i, 1);
+      validArr.push(it.id);
+      stamp(it.id, c);
+      promoted += 1;
     }
-    return moved;
+    for (let i = validArr.length - 1; i >= 0; i -= 1) {
+      const id = validArr[i];
+      if (disabledIds.has(id)) continue;
+      const c = vouchBad(id);
+      if (!c) continue;
+      validArr.splice(i, 1);
+      const e = entryOf.get(id) || {};
+      invalidArr.push({ id, name: e.name || id, url: e.url || null,
+        reason: '玩家实测进不去（' + c.bad + ' 人报告进不去，' + c.ok + ' 人报告能进）' });
+      stamp(id, c);
+      demoted += 1;
+    }
+    return { promoted, demoted };
   };
   /** 给页面与管理页看的票数快照（只含还没过期的票）。 */
   const vouchSnapshot = function () {
     const out = {};
     for (const id of Object.keys(vouches)) {
-      const v = vouchOk(id);
-      if (v) out[id] = { count: Number(v.count) || 1, at: v.at || null };
+      const c = vCounts(id);
+      if (c && (c.ok || c.bad)) out[id] = { ok: c.ok, bad: c.bad, count: c.ok, at: c.at };
     }
     return out;
   };
@@ -160,13 +194,13 @@ export async function onRequestGet(context) {
     // 而这一分支根本不会重新探测，所以直接在上一轮结论上补这一层。
     // 回写时**保持 updated 不变** —— 否则每次读都会把档位起点往后推，真探永远轮不到。
     const occ = (previous.occupancy && typeof previous.occupancy === 'object') ? previous.occupancy : {};
-    const promoted = applyVouches(
+    const mv = applyVouches(
       Array.isArray(previous.valid) ? previous.valid : [],
       Array.isArray(previous.invalid) ? previous.invalid : [],
       occ,
     );
     const vshot = vouchSnapshot();
-    if (promoted) {
+    if (mv.promoted || mv.demoted) {
       await env.R2BUCKET.put(VERIFIED_KEY, JSON.stringify({
         updated: previous.updated, listUpdated: previous.listUpdated,
         valid: previous.valid, invalid: previous.invalid, occupancy: occ,
@@ -180,7 +214,7 @@ export async function onRequestGet(context) {
     return json({ ok: true, cached: true, updated: previous.updated, listUpdated: previous.listUpdated,
                   nextRetryAt: new Date(prevAt + FLOOR_MS).toISOString(),
                   valid: (previous.valid || []).length, invalid: previous.invalid || [],
-                  vouch_promoted: promoted, vouches: vshot,
+                  vouch_promoted: mv.promoted, vouch_demoted: mv.demoted, vouches: vshot,
                   backoff: previous.backoff || {} });
   }
 
@@ -370,9 +404,12 @@ export async function onRequestGet(context) {
       }
     }
   }
-  // 玩家票统一过一遍：判死链的每一支（冷却沿用、边缘探不到、5xx）都能被这一条翻案。
-  // 顺带清掉退避，下一轮照样真探它 —— 票只是"别藏起来"，不是"以后不用再看了"。
-  const vouchPromoted = applyVouches(valid, invalid, occupancy);
+  // 玩家票统一过一遍：正向能翻判死链的每一支（冷却沿用、边缘探不到、5xx、无版本号），
+  // 负向攒够 2 个不同来源就把正在显示的挪进暂存区。顺带清掉被捞回者的退避 —— 票只是
+  // "别藏起来"，不是"以后不用再看了"；被负向隐藏的**不写退避**，下一轮照探、票一翻回去就回前台。
+  const vouchMoves = applyVouches(valid, invalid, occupancy);
+  const vouchPromoted = vouchMoves.promoted;
+  const vouchDemoted = vouchMoves.demoted;
   for (const id of Object.keys(backoff)) { if (vouchOk(id)) delete backoff[id]; }
   const liveIds = new Set(servers.map((s) => s.id));
   // 版本号是"这台真的在跑一个我们能对话的服务"的唯一硬证据。occupancy 里没有点分版本号
@@ -384,15 +421,16 @@ export async function onRequestGet(context) {
   for (let i = valid.length - 1; i >= 0; i -= 1) {
     const vid = valid[i];
     if (isVersion((occupancy[vid] || {}).app)) continue;
-    const v = vouchOk(vid);
-    if (v) {
+    const c = vouchOk(vid);
+    if (c) {
       // 版本号读不到、但玩家点过「我核验通过」：只标不藏。
       // 这条判据的原意是"别把不是卫戍的服务当服务器列出来"，而准入在 submit 那道
       // 健康端点指纹上已经把过了；这里再判死只会把活着但构建不回报 app/version 的服藏掉。
       occupancy[vid] = Object.assign({}, occupancy[vid] || {}, {
         variant: (occupancy[vid] || {}).variant || 'player',
-        player_vouched: Number(v.count) || 1,
-        vouched_at: v.at || null,
+        player_vouched: c.ok,
+        player_bad: c.bad,
+        vouched_at: c.at,
       });
       continue;
     }
@@ -429,6 +467,7 @@ export async function onRequestGet(context) {
   return json({ ok: true, updated: verifiedDoc.updated, valid: valid.length,
                 invalid: invalid.map((i) => ({ id: i.id, name: i.name, reason: i.reason })),
                 skipped: skipped, cooling: Object.keys(backoff).length,
-                entry_dead: entryDead, versionless, vouch_promoted: vouchPromoted,
+                entry_dead: entryDead, versionless,
+                vouch_promoted: vouchPromoted, vouch_demoted: vouchDemoted,
                 nextRetryAt: new Date(Date.now() + FLOOR_MS).toISOString() });
 }

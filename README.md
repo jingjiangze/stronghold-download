@@ -54,25 +54,35 @@ node tools/sign-servers.mjs --sign --publish     # 重签并发布，发布后�
 对象键递归按字典序、数组顺序不变、无多余空白；**`updated` 参与签名**，所以手改时间戳必然验不过。
 `review` 的响应里带 `canonicalSha256`，和本机签名器打印的 sha 一致就说明签的是同一份。
 
-## 未核服务器的匿名核验（2026-10-06 加）
+## 未核服务器的匿名审核（正反两向，2026-10-06 加）
 
 `/api/servers/verify` 判死的条目以前在公开页是**整行隐藏**的，玩家连提供证词的入口都没有；
 而判死链里最严的一条「读不到点分版本号即判死」常常只是那台跑的构建不回报 `app/version`。
-现在这些条目落在 `servers.html` 的「待玩家核验」区，点一下 **我核验通过** 即代表过了核验：
+现在这些条目落在 `servers.html` 的「待玩家核验」区，**点一下「我核验通过」即代表过了核验**；
+反过来，正在显示的那一行也给了「进不去」按钮：
 
 ```bash
-curl -X POST https://dl.jiangjiangze.icu/api/servers/vouch -H 'content-type: application/json' -d '{"id":"rincynar"}'
+curl -X POST https://dl.jiangjiangze.icu/api/servers/vouch -H 'content-type: application/json' -d '{"id":"rincynar","verdict":"ok"}'    # 我能进
+curl -X POST https://dl.jiangjiangze.icu/api/servers/vouch -H 'content-type: application/json' -d '{"id":"some-id","verdict":"bad"}'   # 我进不去
+curl -X POST https://dl.jiangjiangze.icu/api/servers/vouch -H 'content-type: application/json' -d '{"id":"some-id","verdict":"clear"}' # 撤回自己今天这张
 ```
 
 口径与边界（都写在 `functions/api/servers/vouch.js` 与 `verify.js` 的注释里）：
 
-- 一票即通过，**7 天**内有效，过期自动退回原判据（要留前台就得有人续点）；
+- **门槛刻意不对称**：正向 **1 票**即恢复展示；负向要 **2 个不同来源**才隐藏，并且两边比净多数
+  （1 正 3 负捞不回来，2 正 2 负平票则维持原判据）。理由不是偏心 —— 单条「我连不上」多半是本地
+  噪声（adblock、切网、页面没加载完、https 页面不让发 http 请求），10-05 就有一条这种回执把当天
+  最大的那台服（81 房/83 人）整条藏掉过；而「多显示一台暂时坏的」只让玩家点开发现打不开。
+- 票 **7 天**内有效，过期自动退回原判据（要留前台就得有人续点）；
 - 只翻**显示**，不翻**准入**：只接受签名清单里已存在的 id，地址/探针不接受访客输入，
   所以清单的签名与条数不会因为票发生任何变化（`node tools/sign-servers.mjs` 可复验）；
-- `enabled === false`（管理页停用）服务端硬拒 403 —— 停用是维护者终审，票翻不动；
-  当前正常显示的条目拒收 409；同一 IP 同一天重复投 429；
-- 按 `sha256(ip|id|当天)` 记名，**不存明文 IP**；票写 R2 `site/vouches.json`，不占 KV 写额度；
-- 管理页暂存区每行显示「玩家已核验 N 人（时间）」，觉得不对点停用即可压票。
+- `enabled === false`（管理页停用）服务端硬拒 403 —— 停用是维护者终审，正反两向都翻不动；
+  这一票改变不了什么的（正在显示的收正向、已隐藏的收负向）拒 409，**例外**是撤回和自己改票；
+  同一来源同一天同一台只能有一张票，重复投拒 429；
+- 按 `sha256(ip|id|当天)` 记名，**不存明文 IP**；票写 R2 `site/vouches.json`，不占 KV 写额度
+  （旧文件里只有 `ips` 的形状会自动当正向票读）；
+- 页面上行内标「N 人能进 · M 人进不去」，自己投过的按钮变撤回态；管理页暂存区显示同样票数，
+  觉得不对点停用即可压票。
 
 ## 公开房间中转 `GET /api/rooms`
 

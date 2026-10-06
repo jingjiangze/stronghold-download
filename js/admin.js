@@ -85,9 +85,12 @@
   // 票数文案单独成函数：与本机离线自测 (_tmp/vouch_test.mjs) 用的是同一段逻辑，
   // 免得为了看这行字要在浏览器里敲管理口令。
   function vouchTagText(v) {
-    if (!v || !v.count) return '';
+    if (!v) return '';
+    var ok = Number(v.ok != null ? v.ok : v.count) || 0;   // 旧形状只有 count，等同正向票
+    var bad = Number(v.bad) || 0;
+    if (!ok && !bad) return '';
     var at = Date.parse(v.at || '');
-    return '玩家已核验 ' + v.count + ' 人'
+    return '玩家审核 ' + ok + ' 能进 / ' + bad + ' 进不去'
       + (isNaN(at) ? '' : '（' + new Date(at).toLocaleString('zh-CN', { hour12: false }) + '）');
   }
 
