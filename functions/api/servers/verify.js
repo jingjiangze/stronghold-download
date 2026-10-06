@@ -13,12 +13,17 @@
 //
 // Publishing a failing entry stays possible (transient downtime must not delete data),
 // but the download page hides invalid entries until they pass again.
+//
+// 证据分层（从弱到强）：边缘指纹 > 盒子国内服务端探测（看得见状态码）> 玩家浏览器 no-cors 回执
+// > **玩家点「我核验通过」**（/api/servers/vouch，人眼看过游戏能进，7 天内可翻 5xx 与"无版本号"）
+// > 站长停用（终审，任何票都翻不动）。
 
 import { verifyServerHealth, checkEntryUrl } from '../_verify.js';
 
 const LIST_KEY = 'site/servers.json';
 const VERIFIED_KEY = 'site/verified.json';
 const PINGS_KEY = 'site/pings.json';
+const VOUCH_KEY = 'site/vouches.json';
 
 function json(data, status) {
   return new Response(JSON.stringify(data), {
@@ -79,6 +84,52 @@ export async function onRequestGet(context) {
     const age = Date.now() - Date.parse(p.at || '');
     return Number.isFinite(age) && age < 2 * 3600e3 ? p : null;
   };
+  // 玩家点过「我核验通过」（写口是 POST /api/servers/vouch）：2026-10-06 定的口径是
+  // **一个人点一下就算过核验**，7 天内有效，过期自动退回原判据（要留前台就得有人续点）。
+  // 为什么给它这么高的权重：这是全套判据里唯一一条「人眼看过游戏真能进」的证据。
+  // 浏览器回执是 no-cors，502 的页面也算"连上了"，表达不了健康与否；玩家的点击没有这个盲区，
+  // 所以它连边缘看见的 5xx 也能翻案。但仍翻不动 已停用 —— 那是维护者的终审（见 disabledIds）。
+  let vouches = {};
+  const vouchRes = await env.R2BUCKET.get(VOUCH_KEY);
+  if (vouchRes) { try { vouches = (JSON.parse(await vouchRes.text()) || {}).vouches || {}; } catch { /* 没人投过 */ } }
+  const VOUCH_TTL_MS = 7 * 24 * 3600e3;
+  const vouchOk = (id) => {
+    const v = vouches[id];
+    if (!v || Number(v.count || 0) < 1 || !Object.keys(v.ips || {}).length) return null;
+    const age = Date.now() - Date.parse(v.at || '');
+    return Number.isFinite(age) && age < VOUCH_TTL_MS ? v : null;
+  };
+  const disabledIds = new Set(servers.filter((s) => s && s.enabled === false).map((s) => s.id));
+  /**
+   * 把玩家票应用到一份分区上（valid / invalid / occupancy 就地改），返回捞回的条数。
+   * 判死链的每一支都从这里过一遍：冷却沿用、边缘超时、5xx、探不到版本号，一律认票；
+   * 只认 已停用（站长关的）。
+   */
+  const applyVouches = function (validArr, invalidArr, occ) {
+    let moved = 0;
+    for (let i = invalidArr.length - 1; i >= 0; i -= 1) {
+      const it = invalidArr[i];
+      if (!it || !it.id || disabledIds.has(it.id)) continue;
+      const v = vouchOk(it.id);
+      if (!v) continue;
+      invalidArr.splice(i, 1);
+      validArr.push(it.id);
+      const p = pings[it.id] || {};
+      const base = occ[it.id] || {};
+      occ[it.id] = {
+        rooms: base.rooms != null ? base.rooms : (p.rooms != null ? p.rooms : null),
+        humans: base.humans != null ? base.humans : (p.humans != null ? p.humans : null),
+        app: base.app || p.app || null,
+        build: base.build || p.build || null,
+        variant: base.variant || p.variant || 'player',
+        entry_status: base.entry_status || null,
+        player_vouched: Number(v.count) || 1,
+        vouched_at: v.at || null,
+      };
+      moved += 1;
+    }
+    return moved;
+  };
   // 5xx 是「看见了它坏了」，不是「看不见」：这类失败**不认玩家回执免死**。
   // 浏览器探针是 no-cors（响应不透明），502 的页面照样算"连上了"，回执的 ok:true 根本
   // 表达不了健康与否 —— 10-05 的 anciusland 就是靠一条 6 分钟前的 ok:true 回执被捞回清单，
@@ -96,9 +147,29 @@ export async function onRequestGet(context) {
   const prevAt = Date.parse(previous.updated || '');
   const listUnchanged = previous.listUpdated && previous.listUpdated === doc.updated;
   if (!force && prevAt && listUnchanged && Date.now() - prevAt < FLOOR_MS) {
+    // 档位内也不许把玩家已经核验过的服务器藏著：点一下按钮要立刻见到效果，
+    // 而这一分支根本不会重新探测，所以直接在上一轮结论上补这一层。
+    // 回写时**保持 updated 不变** —— 否则每次读都会把档位起点往后推，真探永远轮不到。
+    const occ = (previous.occupancy && typeof previous.occupancy === 'object') ? previous.occupancy : {};
+    const promoted = applyVouches(
+      Array.isArray(previous.valid) ? previous.valid : [],
+      Array.isArray(previous.invalid) ? previous.invalid : [],
+      occ,
+    );
+    if (promoted) {
+      await env.R2BUCKET.put(VERIFIED_KEY, JSON.stringify({
+        updated: previous.updated, listUpdated: previous.listUpdated,
+        valid: previous.valid, invalid: previous.invalid, occupancy: occ,
+        backoff: previous.backoff || {}, evidence: previous.evidence || {},
+        entry_down_rounds: previous.entry_down_rounds || {},
+      }, null, 2) + '\n', {
+        httpMetadata: { contentType: 'application/json', cacheControl: 'public, max-age=120' },
+      });
+    }
     return json({ ok: true, cached: true, updated: previous.updated, listUpdated: previous.listUpdated,
                   nextRetryAt: new Date(prevAt + FLOOR_MS).toISOString(),
                   valid: (previous.valid || []).length, invalid: previous.invalid || [],
+                  vouch_promoted: promoted,
                   backoff: previous.backoff || {} });
   }
 
@@ -288,6 +359,10 @@ export async function onRequestGet(context) {
       }
     }
   }
+  // 玩家票统一过一遍：判死链的每一支（冷却沿用、边缘探不到、5xx）都能被这一条翻案。
+  // 顺带清掉退避，下一轮照样真探它 —— 票只是"别藏起来"，不是"以后不用再看了"。
+  const vouchPromoted = applyVouches(valid, invalid, occupancy);
+  for (const id of Object.keys(backoff)) { if (vouchOk(id)) delete backoff[id]; }
   const liveIds = new Set(servers.map((s) => s.id));
   // 版本号是"这台真的在跑一个我们能对话的服务"的唯一硬证据。occupancy 里没有点分版本号
   // （边缘读不到、玩家与盒子的回执也没回报过）就按**校验失败**处理 —— 而不是只让每个网页
@@ -298,6 +373,18 @@ export async function onRequestGet(context) {
   for (let i = valid.length - 1; i >= 0; i -= 1) {
     const vid = valid[i];
     if (isVersion((occupancy[vid] || {}).app)) continue;
+    const v = vouchOk(vid);
+    if (v) {
+      // 版本号读不到、但玩家点过「我核验通过」：只标不藏。
+      // 这条判据的原意是"别把不是卫戍的服务当服务器列出来"，而准入在 submit 那道
+      // 健康端点指纹上已经把过了；这里再判死只会把活着但构建不回报 app/version 的服藏掉。
+      occupancy[vid] = Object.assign({}, occupancy[vid] || {}, {
+        variant: (occupancy[vid] || {}).variant || 'player',
+        player_vouched: Number(v.count) || 1,
+        vouched_at: v.at || null,
+      });
+      continue;
+    }
     const entry = byId.get(vid) || {};
     valid.splice(i, 1);
     invalid.push({ id: vid, name: entry.name, url: entry.url,
@@ -311,6 +398,11 @@ export async function onRequestGet(context) {
     if (!liveIds.has(k)) delete entryDown[k];
   }
 
+  const freshVouches = {};
+  for (const id of Object.keys(vouches)) {
+    const v = vouchOk(id);
+    if (v) freshVouches[id] = { count: Number(v.count) || 1, at: v.at || null };
+  }
   const verifiedDoc = {
     updated: new Date().toISOString(),
     listUpdated: doc.updated, // 清单一变就立刻重探，否则新上的服务器会被缓存挡到下个档位
@@ -319,6 +411,7 @@ export async function onRequestGet(context) {
     occupancy,
     backoff,
     evidence,
+    vouches: freshVouches,   // 页面据此显示「已有 N 位玩家核验」，管理页据此复核是谁把它放回前台的
     entry_down_rounds: entryDown,
   };
   await env.R2BUCKET.put(VERIFIED_KEY, JSON.stringify(verifiedDoc, null, 2) + '\n', {
@@ -330,6 +423,6 @@ export async function onRequestGet(context) {
   return json({ ok: true, updated: verifiedDoc.updated, valid: valid.length,
                 invalid: invalid.map((i) => ({ id: i.id, name: i.name, reason: i.reason })),
                 skipped: skipped, cooling: Object.keys(backoff).length,
-                entry_dead: entryDead, versionless,
+                entry_dead: entryDead, versionless, vouch_promoted: vouchPromoted,
                 nextRetryAt: new Date(Date.now() + FLOOR_MS).toISOString() });
 }

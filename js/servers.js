@@ -36,8 +36,13 @@
   // user hits 立即测速.
   var CACHE_KEY = 'sp.serverProbeCache.v1';
   var CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+  // 玩家自己点过的「我核验通过」记在本地：服务端档位缓存最长 120s 才刷新，
+  // 不本地先放行会让人以为按钮没反应。24 小时后本地标记自动失效，以服务端结论为准。
+  var VOUCH_KEY = 'sp.vouchMine.v1';
+  var VOUCH_LOCAL_TTL_MS = 24 * 60 * 60 * 1000;
+  var VOUCH_URL = '/api/servers/vouch';
 
-  var state = { servers: [], updated: null, running: false, lastRun: 0, nextRun: 0, timer: null, fromCache: false, occupancy: {} };
+  var state = { servers: [], updated: null, running: false, lastRun: 0, nextRun: 0, timer: null, fromCache: false, occupancy: {}, quarantine: [], vouches: {} };
 
   var el = {
     list: document.getElementById('sv-list'),
@@ -46,6 +51,8 @@
     refresh: document.getElementById('sv-refresh'),
     note: document.getElementById('sv-note'),
     add: document.getElementById('sv-add'),
+    unverified: document.getElementById('sv-unverified'),
+    unverifiedList: document.getElementById('sv-unverified-list'),
     modal: document.getElementById('sv-modal'),
     modalForm: document.getElementById('sv-modal-form'),
     addName: document.getElementById('sv-add-name'),
@@ -151,6 +158,28 @@
     return false;
   }
 
+  /* ---- 玩家匿名核验（点一下即通过）---------------------------------------------------- */
+
+  function loadVouches() {
+    try {
+      var raw = localStorage.getItem(VOUCH_KEY);
+      if (!raw) return {};
+      var doc = JSON.parse(raw);
+      if (!doc || typeof doc !== 'object') return {};
+      var cut = Date.now() - VOUCH_LOCAL_TTL_MS;
+      var out = {};
+      Object.keys(doc).forEach(function (k) { if (Number(doc[k]) >= cut) out[k] = Number(doc[k]); });
+      return out;
+    } catch (err) { return {}; }
+  }
+
+  function markVouched(id) {
+    state.vouches[id] = Date.now();
+    try { localStorage.setItem(VOUCH_KEY, JSON.stringify(state.vouches)); } catch (err) { /* 隐私模式：只在本次会话内记住 */ }
+  }
+
+  function vouchedHere(id) { return !!state.vouches[id]; }
+
   function applyVerified(doc) {
     if (!doc) return 0;
     applyOccupancy(doc);
@@ -160,9 +189,12 @@
     var reasons = {};
     doc.invalid.forEach(function (item) { reasons[item.id] = item.reason || '校验未通过'; });
     var hidden = 0;
+    var pool = [];
+    var seen = {};
     state.servers.forEach(function (server) {
       // A published id must be in `valid` to stay visible; anything else quarantines.
-      if (okIds[server.id]) {
+      // 玩家点过「我核验通过」的条目本地先放行（服务端最迟 30 分钟内会把票认下来并写进 valid）
+      if (okIds[server.id] || vouchedHere(server.id)) {
         server.quarantined = false;
         // 靠玩家证据活着的条目必须继续回执，否则 24 小时后证据过期会被重新隐藏，来回抖
         server.viaBrowser = !!(doc.evidence && doc.evidence[server.id]);
@@ -174,7 +206,16 @@
       // 已经有成绩、这一轮才发现它被隐藏：立刻回执，不等 30 分钟后的下一轮测速
       if (server.ms != null && !server.offline) reportPing(server);
       hidden += 1;
+      // 停用项不进可投票的池子：那是站长的终审（服务端同样硬拒）
+      if (/停用/.test(server.quarantineReason) || !server.name) return;
+      var occ = state.occupancy[server.id] || {};
+      var v = (doc.vouches && doc.vouches[server.id]) || null;
+      pool.push({ id: server.id, name: server.name, host: server.url ? server.url.host : '',
+                  url: server.url ? server.url.href : '', reason: server.quarantineReason,
+                  ms: server.ms, count: (v && v.count) || occ.player_vouched || 0 });
+      seen[server.id] = true;
     });
+    state.quarantine = pool;
     state.hiddenCount = hidden;
     return hidden;
   }
@@ -188,7 +229,7 @@
       // 探不到版本号的判死已经挪到服务端（verify.js 直接进 invalid），所以这里只报一个数：
       // 页面各自再判一次会出现"同一台在网页藏着、在客户端还亮着"两种口径，维护者复核时看不出差别
       if (hidden) {
-        setText(el.note, hidden + ' 台服务器因服务端校验未通过已暂时隐藏（可在恢复后自动重新展示）。');
+        setText(el.note, hidden + ' 台服务器因服务端校验未通过被挪到下方「待玩家核验」，你能连上就点一下恢复展示。');
       }
       render();
       return hidden;
@@ -556,15 +597,131 @@
     return div;
   }
 
+  /**
+   * 「待玩家核验」区：被服务端判死、但玩家进得去的那些服务器。
+   * 存在的理由：判据里最严的一条是「读不到版本号即判死」，而读不到版本号常常只是那台跑的构建
+   * 不回报 app/version —— 服务器活着，玩家却完全看不到它（这一版之前整行是隐藏的）。
+   * 点一下「我核验通过」= 这台过了核验（服务端认票，见 functions/api/servers/vouch.js）。
+   */
+  function unrow(item) {
+    var div = document.createElement('div');
+    div.className = 'sv-row is-unverified';
+    var dot = document.createElement('span');
+    dot.className = 'sv-dot';
+    div.appendChild(dot);
+
+    var main = document.createElement('div');
+    main.className = 'sv-main';
+    var name = document.createElement('span');
+    name.className = 'sv-name';
+    name.textContent = item.name;
+    var host = document.createElement('span');
+    host.className = 'sv-host';
+    host.textContent = (item.host || '') + ' · ' + item.reason;
+    main.appendChild(name);
+    main.appendChild(host);
+    if (item.count) {
+      var badge = document.createElement('span');
+      badge.className = 'sv-vouchbadge';
+      badge.textContent = item.count + ' 人已核验';
+      main.appendChild(badge);
+    }
+    div.appendChild(main);
+
+    var ms = document.createElement('span');
+    ms.className = 'sv-ms';
+    ms.textContent = item.ms == null ? '—' : Math.round(item.ms) + ' ms';
+    div.appendChild(ms);
+
+    if (item.url) {
+      var open = document.createElement('a');
+      open.className = 'btn btn--secondary btn--sm';
+      open.href = item.url;
+      open.target = '_blank';
+      open.rel = 'noopener noreferrer';
+      var ol = document.createElement('span');
+      ol.className = 'btn__label';
+      ol.textContent = '打开';
+      open.appendChild(ol);
+      div.appendChild(open);
+    }
+
+    var go = document.createElement('button');
+    go.type = 'button';
+    go.className = 'btn btn--primary btn--sm';
+    var label = document.createElement('span');
+    label.className = 'btn__label';
+    if (vouchedHere(item.id)) {
+      go.disabled = true;
+      label.textContent = '你已核验';
+    } else {
+      label.textContent = '我核验通过';
+      go.addEventListener('click', function () { postVouch(item, go, label); });
+    }
+    go.appendChild(label);
+    div.appendChild(go);
+    return div;
+  }
+
+  function postVouch(item, btn, label) {
+    if (!btn || btn.disabled) return;
+    btn.disabled = true;
+    var old = label ? label.textContent : '';
+    if (label) label.textContent = '提交中…';
+    fetch(VOUCH_URL, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ id: item.id }),
+    }).then(function (res) {
+      return res.json().catch(function () { return {}; }).then(function (data) { return { status: res.status, data: data }; });
+    }).then(function (outcome) {
+      // 429 = 今天这台你已经投过了：本地同样按「已核验」处理，别继续把它摆在待核验区
+      if (outcome.status === 429) { markVouched(item.id); render(); return; }
+      if (!outcome.data.ok) throw new Error(outcome.data.error || ('HTTP ' + outcome.status));
+      markVouched(item.id);
+      setText(el.note, '已记下你对「' + item.name + '」的核验（共 '
+        + (Number(outcome.data.confirmed_by) || 1) + ' 位玩家确认），已恢复展示。');
+      render();
+      triggerVerify(); // 请服务端把票认进分区（档位内走缓存直返分支，也会立刻补这一层）
+    }).catch(function (err) {
+      btn.disabled = false;
+      if (label) label.textContent = old;
+      setText(el.note, '核验没有提交上去：' + (err && err.message ? err.message : '网络'));
+    });
+  }
+
+  function renderUnverified() {
+    if (!el.unverified || !el.unverifiedList) return;
+    var pool = state.quarantine.filter(function (it) { return !vouchedHere(it.id); });
+    if (!pool.length) { el.unverified.hidden = true; el.unverifiedList.textContent = ''; return; }
+    el.unverified.hidden = false;
+    el.unverifiedList.textContent = '';
+    pool.sort(function (a, b) { return (b.count || 0) - (a.count || 0); });
+    pool.forEach(function (it) { el.unverifiedList.appendChild(unrow(it)); });
+  }
+
+  function renderUnverified() {
+    if (!el.unverified || !el.unverifiedList) return;
+    var pool = (state.quarantine || []).filter(function (it) { return !vouchedHere(it.id); });
+    if (!pool.length) { el.unverified.hidden = true; el.unverifiedList.textContent = ''; return; }
+    pool.sort(function (a, b) { return (b.count || 0) - (a.count || 0); });
+    el.unverified.hidden = false;
+    el.unverifiedList.textContent = '';
+    pool.forEach(function (it) { el.unverifiedList.appendChild(unrow(it)); });
+    var head = document.getElementById('sv-unverified-head');
+    if (head) setText(head, '以下 ' + pool.length + ' 台服务器我们读不到它的版本号或状态，但你能连上、进得去游戏就算它活着 —— 点一下即恢复展示。');
+  }
+
   function render() {
     if (!el.list) return;
     el.list.textContent = '';
     var shown = 0;
     state.servers.forEach(function (server) {
-      if (server.quarantined) return; // failed server-side verification: hidden from the page
+      if (server.quarantined) return; // 未核的条目挪到下面的「待玩家核验」区，不在主清单里重复
       el.list.appendChild(row(server));
       shown += 1;
     });
+    renderUnverified();
     if (state.updated) {
       var stamp = new Date(state.updated);
       setText(el.updated, '清单更新 ' + (isNaN(stamp.getTime())
@@ -656,6 +813,7 @@
   /* ---- boot ------------------------------------------------------------------------- */
 
   function boot() {
+    state.vouches = loadVouches();
     if (el.refresh) {
       el.refresh.addEventListener('click', function () { probeAll(true); });
     }

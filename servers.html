@@ -20,7 +20,7 @@
   <link rel="stylesheet" href="./css/screens/title.css?v=4" />
   <link rel="stylesheet" href="./css/devices.css?v=4" />
   <link rel="stylesheet" href="./css/dl.css?v=7" />
-  <link rel="stylesheet" href="./css/servers.css?v=17" />
+  <link rel="stylesheet" href="./css/servers.css?v=18" />
   <link rel="stylesheet" href="./css/admin.css?v=7" />
 </head>
 <body>
@@ -81,6 +81,10 @@
           <button type="button" class="btn btn--primary btn--sm" id="sv-refresh"><span class="btn__label">立即测速</span></button>
         </div>
         <div class="servers-list" id="sv-list" aria-live="polite"></div>
+        <div class="sv-unverified" id="sv-unverified" hidden>
+          <p class="micro micro--mint sv-unverified__head" id="sv-unverified-head">以下服务器我们读不到它的版本号或状态，但你能连上、进得去游戏就算它活着 —— 点一下即恢复展示。</p>
+          <div class="servers-list" id="sv-unverified-list"></div>
+        </div>
         <p class="dl-note" id="sv-note">延迟为当前浏览器实测往返时间（每台先预热再取 3 次采样中位数），仅供参考。</p>
         <div class="sv-modal" id="sv-modal" hidden>
           <div class="sv-modal__backdrop" data-close="1"></div>
@@ -118,6 +122,6 @@
     </main>
   </div>
 
-  <script src="./js/servers.js?v=23" defer></script>
+  <script src="./js/servers.js?v=24" defer></script>
 </body>
 </html>
