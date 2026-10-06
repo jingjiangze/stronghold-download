@@ -200,7 +200,10 @@ export async function onRequestGet(context) {
       occ,
     );
     const vshot = vouchSnapshot();
-    if (mv.promoted || mv.demoted) {
+    // 票数变了也要回写：管理页 purge 掉一张票之后，不该再挂着「1 人进不去」的徽章等下一轮真探。
+    // 比较用 JSON 串，一次写就收敛，不会每次都写。
+    const staleShot = JSON.stringify(previous.vouches || {}) !== JSON.stringify(vshot);
+    if (mv.promoted || mv.demoted || staleShot) {
       await env.R2BUCKET.put(VERIFIED_KEY, JSON.stringify({
         updated: previous.updated, listUpdated: previous.listUpdated,
         valid: previous.valid, invalid: previous.invalid, occupancy: occ,
