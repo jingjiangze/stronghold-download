@@ -8,33 +8,28 @@
 ```
 index.html            页面（复用游戏客户端自身的 CSS 与字体）
 css/ js/ fonts/       从游戏客户端复制的样式、脚本与字体 + dl.css / download.js
+data/releases.json    离线快照（API 不可达时的兜底）
 data/mirrors.json     镜像清单（可热更新，无需改代码）
+tools/gen-snapshot.mjs 重新生成 releases.json
 _headers              CF Pages 缓存策略
 ```
 
 ## 更新流程
 
-版本发布后**不需要人工刷新任何东西**：页面自己会去 `/api/latest` 取真值，
-`mirror-apk` 会把 APK 补到 CDN 并把玩家向更新日志写到 R2。只有改了本站代码才上线：
+版本发布后：
 
 ```bash
+node tools/gen-snapshot.mjs          # 刷新离线快照（只写最新一个 release 的 APK）
 node tools/deploy.mjs                # 构建 staging 并上线（等价于加 --dry 只看清单）
 ```
-
-（先 `git push` 再直传 —— 见下面「直传与 git 构建会互相盖」。）
 
 **别再用 `wrangler pages deploy .` 直传本目录**：那条通道会把工作目录里的每个文件都烤进
 deployment，而实测 `.assetsignore` 对它无效（连自己都在文件里却仍返回 200）—— 于是
 README、`wrangler.toml`、`.github/workflows/*`、`tools/*`、`.mimosa/**` 和任何调试输出都会
 变成线上可下载的文件。`tools/deploy.mjs` 只上传这 35 个真正对外的文件。
 
-**版本策略：页面只提供最新版 APK 的下载链接，不保留、不展示任何旧版本。**
-版本号只有两个来源：线上真值（`/api/latest`，回退 `api.github.com`）和**这个浏览器自己 24 小时内**
-从线上拿到的答案（localStorage `sp-offline-release`；超过 24 小时直接不画）。拿不到就写
-「暂无法获取版本信息」并指向发布页 —— **绝不画一个没确认过的版本号**。仓库里以前那份打包快照
-`data/releases.json` 连同 `tools/gen-snapshot.mjs` 一起删了（10-06）：GitHub Pages 那份镜像没有
-Functions，`/api/latest` 永远 404，于是它只能显示打包的旧版本，实际连着两天把 `shell-v2.9.2`
-当最新版显示，而那时候真值已经是 `shell-v2.9.27`。
+**版本策略：页面只提供最新版 APK 的下载链接，不保留、不展示任何旧版本**
+（快照里只有一个 release，且只有 `.apk` 资产；R2 模板镜像的 `tags` 只放当前 tag）。
 
 ## 服务器清单：提交 → 审核 → 本机重签
 
@@ -69,12 +64,18 @@ curl -X POST https://dl.jiangjiangze.icu/api/servers/vouch -H 'content-type: app
 curl -X POST https://dl.jiangjiangze.icu/api/servers/vouch -H 'content-type: application/json' -d '{"id":"<清单id>","verdict":"bad"}'    # 小杯
 curl -X POST https://dl.jiangjiangze.icu/api/servers/vouch -H 'content-type: application/json' -d '{"id":"<清单id>","verdict":"clear"}'  # 撤回自己那张
 curl -X POST https://dl.jiangjiangze.icu/api/servers/open  -H 'content-type: application/json' -d '{"id":"<清单id>"}'                    # 记一次「打开」跳转
+curl -X POST https://dl.jiangjiangze.icu/api/servers/latency -H 'content-type: application/json' \
+     -d '{"samples":[{"id":"<清单id>","ms":123}]}'                                                                                       # 批量交本机实测延迟
 ```
 
 **排序 = 综合权重**（`js/servers.js`：`weightOf = 0.45×延迟 + 0.30×版本 + 0.25×评价`，三项各自归一到 0..1）：
 
-- **延迟 45%**：用**共享探测值**（`verified.json.latency`：盒子国内探测 6 小时内优先，其次上一位玩家的
-  实测回执 24 小时内），归一化是**同批已测到的百分位**（最快 1、最慢 0、并列同档），所以"没测到"的 0.5
+- **延迟 45%**：用**共同延迟**（`verified.json.latency`），第一来源是**玩家反馈的中位数** —— 每轮测速跑完，
+  浏览器把本机实测到的一整批延迟 `POST /api/servers/latency` 交上去（一次一批，不是每台一次），服务端按
+  `sha256(ip|id|当天)` 去重存进 `site/latency.json`；verify 取中位数，**国内样本 ≥3 就只用国内的**
+  （这站主要给国内玩家用，一个海外浏览器 300 ms 的样本不该把国内好服判成慢），不足则用全部样本，
+  再没有才退回盒子的国内探测（6 小时内）与上一位玩家的单条回执（24 小时内）。
+  归一化是**同批已测到的百分位**（最快 1、最慢 0、并列同档），所以"没测到"的 0.5 就是字面中位。，归一化是**同批已测到的百分位**（最快 1、最慢 0、并列同档），所以"没测到"的 0.5
   就是字面中位。本机自己测的那次只在共享值缺失时兜底；**延迟列里显示的仍是本机实测**（这一页对玩家的承诺）。
   为什么不能拿"各人测各人的"当主输入：顺序会随访客网络浮动，而且**测不到 = 没数据 = 被当成慢**。
   实测 28 条里 27 条本来就有盒子的小时级 ms（中位 246 ms），旧权重根本没读它 —— 于是 7 台本机没测到的
