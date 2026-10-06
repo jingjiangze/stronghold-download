@@ -223,12 +223,14 @@
     state.voteCounts = out;
   }
 
-  /** 打开点击数：服务端快照（verified.json 里的 opens）+ 本机自己刚点过的增量。 */
+  /** 打开点击数：服务端快照（verified.json 里的 opens）+ **只算快照之后**的本机点击。
+   *  快照里带该条最后写入时间 at，早于它的本地增量已经被服务端计过了，再叠加就是重复计数
+   *  （实测点一次显示 2 次就是这么来的）。 */
   function applyOpens(doc) {
     var src = (doc && doc.opens && typeof doc.opens === 'object') ? doc.opens : {};
     var out = {};
     Object.keys(src).forEach(function (k) {
-      out[k] = { total: Number(src[k].total) || 0, today: Number(src[k].today) || 0 };
+      out[k] = { total: Number(src[k].total) || 0, today: Number(src[k].today) || 0, at: src[k].at || null };
     });
     state.opens = out;
     var local = {};
@@ -236,23 +238,24 @@
       var cut = Date.now() - VOUCH_LOCAL_TTL_MS;
       var doc2 = JSON.parse(localStorage.getItem(OPEN_LOCAL_KEY) || '{}');
       Object.keys(doc2 || {}).forEach(function (k) {
-        var rec = doc2[k] || {};
-        if (Number(rec.at) >= cut) local[k] = { n: Number(rec.n) || 0, at: Number(rec.at) };
+        var keep = (Array.isArray(doc2[k]) ? doc2[k] : []).filter(function (t) { return Number(t) >= cut; });
+        if (keep.length) local[k] = keep;
       });
     } catch (err) { /* 没本地增量就用服务端值 */ }
     state.openLocal = local;
   }
 
   function openCount(id) {
-    var s = state.opens[id] || { total: 0, today: 0 };
-    var l = state.openLocal[id];
-    return { total: s.total + (l ? l.n : 0), today: s.today + (l ? l.n : 0) };
+    var s = state.opens[id] || { total: 0, today: 0, at: null };
+    var cut = s.at ? (Date.parse(s.at) || 0) : 0;
+    var extra = (state.openLocal[id] || []).filter(function (t) { return Number(t) > cut; }).length;
+    return { total: (s.total || 0) + extra, today: (s.today || 0) + extra };
   }
 
   function bumpOpenLocal(id) {
-    var l = state.openLocal[id] || { n: 0, at: Date.now() };
-    l.n += 1; l.at = Date.now();
-    state.openLocal[id] = l;
+    var list = state.openLocal[id] || [];
+    list.push(Date.now());
+    state.openLocal[id] = list;
     try { localStorage.setItem(OPEN_LOCAL_KEY, JSON.stringify(state.openLocal)); } catch (err) { /* ignore */ }
   }
 
