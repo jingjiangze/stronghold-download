@@ -988,7 +988,7 @@
         + (LAT_SRC[l.src] || l.src) + (l.n > 1 ? '，' + l.n + ' 个来源' : '')
         + '；这一列里显示的是你本机实测的数）';
     return '权重 = 延迟 ' + Math.round(W_LATENCY * 100) + '% + 版本 ' + Math.round(W_VERSION * 100)
-      + '% + 评价 ' + Math.round(W_CUP * 100) + '%\n'
+      + '% + 评价 ' + Math.round(W_CUP * 100) + '% = ' + weightOf(server, scale, lscale).toFixed(3) + '\n'
       + '  延迟：' + latLine + '\n'
       + '  版本：' + ((state.occupancy[server.id] || {}).app || '读不到') + (v > 0 ? '' : '（无版本，垫底处理）') + '\n'
       + '  评价：净分 ' + scoreOf(server.id) + '（大杯-小杯，含你自己这一票）';
