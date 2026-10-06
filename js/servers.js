@@ -110,17 +110,39 @@
   }
 
   /**
-   * 清单取数：先让**打包快照**（同源、可被浏览器/边缘缓存）立刻把页面渲染出来，
-   * 后台再取 R2 现网值并替换。以前是"先等 R2，失败才退回快照"，而这条链路的首字节实测
-   * 2–26 秒（本机走代理），整页就跟着空在那儿 —— 清单"加载很慢"的主因不是数据量（7 KB），
-   * 是把首屏挂在了一个跨源请求上。
+   * 清单取数：三级。① localStorage 里上次的清单 —— 有就先画，首屏零等待；
+   * ② 打包快照（同源、可缓存）；③ R2 现网值，到了就替换。
+   * 以前是"先等 R2，失败才退回快照"，而这条链路首字节实测 1.5–26 秒，整页跟着空在那儿 ——
+   * 清单"加载很慢"的主因不是数据量（7 KB），是把首屏挂在了一个跨源请求上。
    */
+  var LIST_CACHE_KEY = 'sp.serverListCache.v1';
+  var LIST_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+
+  function loadListCache() {
+    try {
+      var doc = JSON.parse(localStorage.getItem(LIST_CACHE_KEY) || 'null');
+      if (!doc || !Array.isArray(doc.servers)) return null;
+      if (Date.now() - (doc.at || 0) > LIST_CACHE_TTL_MS) return null;
+      return doc;
+    } catch (err) { return null; }
+  }
+
+  function saveListCache(data) {
+    if (!data || !Array.isArray(data.servers)) return;
+    try { localStorage.setItem(LIST_CACHE_KEY, JSON.stringify({ at: Date.now(), servers: data.servers, updated: data.updated || null })); } catch (err) { /* 满了就用不上，不影响功能 */ }
+  }
+
   function loadList() {
+    var cached = loadListCache();
+    if (cached) { prepare(cached); render(); }
     var snap = fetchJson(LIST_SOURCES[1]).catch(function () { return null; });
     var live = fetchJson(LIST_SOURCES[0]).catch(function () { return null; });
-    snap.then(function (data) { if (data) { prepare(data); render(); } }); // 先到先画，通常命中缓存
-    // 返回值仍是"现网优先、快照兜底"，boot 拿到它再做后续（测速/取分区结论）
-    return Promise.all([snap, live]).then(function (r) { return r[1] || r[0] || null; });
+    snap.then(function (data) { if (data) { prepare(data); render(); } });
+    return Promise.all([snap, live]).then(function (r) {
+      var data = r[1] || r[0] || null;
+      if (data) saveListCache(data);
+      return data;
+    });
   }
 
   function prepare(data) {
