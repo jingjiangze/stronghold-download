@@ -1,0 +1,18 @@
+version: 2
+updates:
+  # 下载站本身没有 JS/Python 清单（tools/*.mjs 直接跑），可跟踪的依赖只有 workflow 里的 action
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "17:00"
+      timezone: Asia/Shanghai
+    open-pull-requests-limit: 5
+    groups:
+      actions-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
