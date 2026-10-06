@@ -117,6 +117,28 @@ export async function onRequestGet(context) {
     }
     return out;
   };
+  /**
+   * 共享延迟：**排序用它，而不是每个访客自己浏览器测的那次** —— 这样所有人看到的顺序一致（公平），
+   * 也不会因为某台不让跨域探测、或谁的网差，就把它系统性压到底部。
+   * 优先盒子那路国内服务器端探测（每小时一轮、看得见状态码），其次最近一位玩家浏览器的实测回执。
+   * 时效：盒子 6 小时、玩家回执 24 小时（与存活证据同口径）；过期的宁可不给，页面按"未测到"处理。
+   */
+  const sharedLatency = function () {
+    const out = {};
+    const stamp = Date.now();
+    for (const id of Object.keys(pings)) {
+      const p = pings[id] || {};
+      const ms = Number(p.ms);
+      if (!(ms >= 0) || p.ok !== true) continue;
+      const age = stamp - Date.parse(p.at || '');
+      if (!Number.isFinite(age) || age < 0) continue;
+      const cn = p.src === 'cn-probe';
+      if (age > (cn ? 6 : 24) * 3600e3) continue;
+      out[id] = { ms: Math.round(ms), src: cn ? 'cn-probe' : 'browser',
+                  ageMin: Math.round(age / 60000), at: p.at || null };
+    }
+    return out;
+  };
   /** 打开跳转计数：两个分支都要现读，否则缓存直返分支只透传旧值，
    *  玩家点了「打开」要等下一轮真探（30 分钟）才在别人屏幕上显示出来。 */
   const readOpens = async () => {
@@ -159,17 +181,19 @@ export async function onRequestGet(context) {
     const validArr = Array.isArray(previous.valid) ? previous.valid : [];
     const invalidArr = Array.isArray(previous.invalid) ? previous.invalid : [];
     const vshot = vouchSnapshot();
-    // 票数/点击数变了就回写：玩家刚投的大杯小杯、刚点的一次「打开」，不该等下一轮真探才在别人
-    // 屏幕上出现。比较用 JSON 串，一次写就收敛，不会每次都写。
+    const latNow = sharedLatency();
+    // 票数/点击数/共享延迟变了就回写：玩家刚投的大杯小杯、刚点的一次「打开」、盒子刚跑完的
+    // 一轮国内探测，都不该等下一轮真探才在别人屏幕上出现。比较用 JSON 串，一次写就收敛。
     const staleShot = JSON.stringify(previous.vouches || {}) !== JSON.stringify(vshot);
     const opensNow = await readOpens();
     const staleOpens = JSON.stringify(previous.opens || {}) !== JSON.stringify(opensNow);
-    if (staleShot || staleOpens) {
+    const staleLat = JSON.stringify(previous.latency || {}) !== JSON.stringify(latNow);
+    if (staleShot || staleOpens || staleLat) {
       await env.R2BUCKET.put(VERIFIED_KEY, JSON.stringify({
         updated: previous.updated, listUpdated: previous.listUpdated,
         valid: validArr, invalid: invalidArr, occupancy: occ,
         backoff: previous.backoff || {}, evidence: previous.evidence || {},
-        vouches: vshot, opens: opensNow,
+        vouches: vshot, opens: opensNow, latency: latNow,
         entry_down_rounds: previous.entry_down_rounds || {},
       }, null, 2) + '\n', {
         httpMetadata: { contentType: 'application/json', cacheControl: 'public, max-age=120' },
@@ -403,6 +427,7 @@ export async function onRequestGet(context) {
     backoff,
     evidence,
     vouches: vouchSnapshot(),   // 大杯/小杯票数：页面只拿它调权重，不参与隐藏判断
+    latency: sharedLatency(),   // 共享延迟（盒子国内探测优先）：排序用它，保证所有人顺序一致
     opens,                      // 「目前已点击 N 次」
     entry_down_rounds: entryDown,
   };

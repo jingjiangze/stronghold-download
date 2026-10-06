@@ -45,7 +45,7 @@
   var PROBE_CONCURRENCY = 4; // 一次打满 29 台会把本机代理隧道挤死（页面自己的资源也走那条路）
 
   var state = { servers: [], updated: null, running: false, lastRun: 0, nextRun: 0, timer: null,
-                fromCache: false, occupancy: {}, mine: {}, voteCounts: {}, opens: {}, openLocal: {} };
+                fromCache: false, occupancy: {}, latency: {}, mine: {}, voteCounts: {}, opens: {}, openLocal: {} };
 
   var el = {
     list: document.getElementById('sv-list'),
@@ -221,6 +221,18 @@
 
   function myVote(id) { return state.mine[id] || null; }
 
+  /** 共享延迟（verified.json 的 latency）：盒子国内探测优先，其次上一位玩家的实测回执。 */
+  function applyLatency(doc) {
+    var src = (doc && doc.latency && typeof doc.latency === 'object') ? doc.latency : {};
+    var out = {};
+    Object.keys(src).forEach(function (k) {
+      var v = src[k] || {};
+      var ms = Number(v.ms);
+      if (ms >= 0) out[k] = { ms: ms, src: v.src || 'shared', ageMin: Number(v.ageMin) || null };
+    });
+    state.latency = out;
+  }
+
   function applyVoteCounts(doc) {
     var out = {};
     var src = (doc && doc.vouches && typeof doc.vouches === 'object') ? doc.vouches : {};
@@ -288,6 +300,7 @@
   function applyVerified(doc) {
     if (!doc) return 0;
     applyOccupancy(doc);
+    applyLatency(doc);
     applyVoteCounts(doc);
     applyOpens(doc);
     if (!Array.isArray(doc.valid) || !Array.isArray(doc.invalid)) return 0;
@@ -853,16 +866,46 @@
     return r > 0 ? (scale[r] != null ? scale[r] : 0) : scale.unknown;
   }
 
-  /** 延迟归一化（**本机自己测的那次**，每个访客看到的顺序因此可以不同 —— 这是对的，
-   *  延迟本来就是"对你而言"的）。150 ms 以内满分，1500 ms 及以上 0 分；
-   *  还没测到给 0.5（中性，不让它靠"没数据"占便宜也不罚它）；测出离线罚到 -0.2。 */
-  function latencyScore(server) {
-    if (server.offline) return -0.2;
-    if (server.ms == null) return 0.5;
-    var ms = Number(server.ms);
-    if (!Number.isFinite(ms) || ms < 0) return 0.5;
-    if (ms <= GOOD_MS) return 1;
-    return Math.max(0, 1 - (ms - GOOD_MS) / (1500 - GOOD_MS));
+  /**
+   * 权重用的那个延迟值：**共享探测优先**（盒子国内探测 → 上一位玩家的实测回执），
+   * 本机自己测的那次只在共享值缺失时兜底。
+   * 为什么不是"各人用自己测的"：那会让顺序随访客的网络浮动，而且**测不到就等于慢** ——
+   * http 条目在 https 页面浏览器根本不让发探测（显示"不可测速"），这纯属协议限制，
+   * 拿它当"这台很慢"是把好服务器压到底部（用户就是这么发现的）。延迟列里显示的还是本机实测，
+   * 那是这一页对玩家的承诺；排序要的是公平。
+   */
+  function latencyOf(server) {
+    var sh = state.latency[server.id];
+    if (sh && sh.ms != null) return sh;
+    if (server.ms != null && !server.offline) return { ms: server.ms, src: 'local' };
+    return { ms: null, src: null };
+  }
+
+  /** 延迟归一化 = **同批已测到的里面的百分位**（最快 1、最慢 0，并列取同一档）。
+   *  这样"没数据"给 0.5 就是字面意思的中位，而不是旧版绝对映射里的 ≈832 ms。 */
+  function latencyScale(list) {
+    var vals = [];
+    list.forEach(function (s) {
+      var l = latencyOf(s);
+      if (l.ms != null) vals.push(Math.round(l.ms));
+    });
+    vals.sort(function (a, b) { return a - b; });
+    var uniq = vals.filter(function (v, i) { return i === 0 || v !== vals[i - 1]; });
+    var map = {};
+    uniq.forEach(function (ms, i) { map[ms] = uniq.length > 1 ? 1 - i / (uniq.length - 1) : 1; });
+    map.n = uniq.length;
+    return map;
+  }
+
+  function latencyScore(server, scale) {
+    var l = latencyOf(server);
+    if (l.ms == null) {
+      // 共享值和本机值都没有时，只有"本机明确测到离线"才算负面证据；
+      // 协议不让测（level='na'）走不到这里，落到中性 0.5。
+      return server.offline ? -0.2 : 0.5;
+    }
+    var v = scale[Math.round(l.ms)];
+    return v == null ? 0.5 : v;
   }
 
   /** 评价归一化：净分（大杯-小杯）过一道软饱和，±4 杯基本就到顶/到底，
@@ -873,18 +916,16 @@
   }
 
   /**
-   * 综合权重 = 延迟 45% + 版本 30% + 评价 25%。
-   * 为什么延迟占最大头：这一页的标题就是"延迟实测清单"，对开黑来说"对你而言多少毫秒"
-   * 比别的都可感知；但它只占 45%，因为它是**每个访客自己测的**，不能替别人决定谁在前面。
-   * 三项都归一到 0..1（未知版本与离线是负分），所以任何一项都不会被静默忽略，
-   * 缺数据的那项退回中性值而不是满分。
+   * 综合权重 = 延迟 45% + 版本 30% + 评价 25%，三项都归一到 0..1。
+   * 延迟占最大头（这一页的标题就是"延迟实测清单"），但用的是**共享探测值 + 同批百分位**，
+   * 所以顺序对所有访客一致，且"没测到"是中位而不是垫底。
    */
   var W_LATENCY = 0.45;
   var W_VERSION = 0.30;
   var W_CUP = 0.25;
 
-  function weightOf(server, scale) {
-    return W_LATENCY * latencyScore(server)
+  function weightOf(server, scale, lscale) {
+    return W_LATENCY * latencyScore(server, lscale)
       + W_VERSION * versionScore(server, scale)
       + W_CUP * cupScore(server.id);
   }
@@ -892,7 +933,8 @@
   /**
    * 排序结果在**测速进行中冻结**。不冻的话每台测完都会 render 一次，
    * 行会一边出结果一边往前跳，玩家根本点不到自己想点的那一行。
-   * 一轮跑完（state.running=false）再按新的延迟重排。
+   * 一轮跑完（state.running=false）再重排 —— 现在延迟主用共享值，本机测速对顺序的影响
+   * 只剩"共享值缺失的那几台"，跳动比旧版小得多。
    */
   var frozenOrder = null;
 
@@ -900,17 +942,25 @@
     if (state.running && frozenOrder) return frozenOrder;
     var visible = state.servers.filter(function (s) { return !s.quarantined; });
     var scale = versionScale(visible);
+    var lscale = latencyScale(visible);
     // Array.prototype.sort 稳定：权重相同的保持清单原顺序
-    visible.sort(function (a, b) { return weightOf(b, scale) - weightOf(a, scale); });
+    visible.sort(function (a, b) { return weightOf(b, scale, lscale) - weightOf(a, scale, lscale); });
     frozenOrder = visible;
     return visible;
   }
 
-  function weightText(server, scale) {
+  var LAT_SRC = { 'cn-probe': '国内探测共享值（盒子出口）', browser: '上一位玩家的实测回执', local: '本机实测' };
+
+  function weightText(server, scale, lscale) {
     var v = versionRank(server);
+    var l = latencyOf(server);
+    var latLine = l.ms == null
+      ? (server.offline ? '本机测到离线，且没有共享值（按负面证据罚分）' : '没测到（共享值也没有）→ 按中位算，不罚')
+      : Math.round(l.ms) + ' ms → 同批第 ' + Math.round((latencyScore(server, lscale)) * 100) + ' 百分位（'
+        + (LAT_SRC[l.src] || l.src) + '；这一列里显示的是你本机实测的数）';
     return '权重 = 延迟 ' + Math.round(W_LATENCY * 100) + '% + 版本 ' + Math.round(W_VERSION * 100)
       + '% + 评价 ' + Math.round(W_CUP * 100) + '%\n'
-      + '  延迟：' + (server.offline ? '测不到（离线）' : (server.ms == null ? '还没测到' : Math.round(server.ms) + ' ms（本机实测）')) + '\n'
+      + '  延迟：' + latLine + '\n'
       + '  版本：' + ((state.occupancy[server.id] || {}).app || '读不到') + (v > 0 ? '' : '（无版本，垫底处理）') + '\n'
       + '  评价：净分 ' + scoreOf(server.id) + '（大杯-小杯，含你自己这一票）';
   }
@@ -921,9 +971,10 @@
     var shown = 0;
     var order = sortedServers();
     var scale = versionScale(order);
+    var lscale = latencyScale(order);
     order.forEach(function (server) {
       var node = row(server);
-      node.title = weightText(server, scale);
+      node.title = weightText(server, scale, lscale);
       el.list.appendChild(node);
       shown += 1;
     });
