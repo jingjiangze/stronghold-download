@@ -1,1 +1,228 @@
-Ly8gUGFnZXMgRnVuY3Rpb246IFBPU1QgL2FwaS9zZXJ2ZXJzL3ZvdWNoCi8vIOWMv+WQjeWuoeaguO+8mueOqeWutuWvuSoq562+5ZCN5riF5Y2V6YeM5bey5pyJ55qE5LiA5p2h5pyN5Yqh5ZmoKirmipXjgIzmiJHmoLjpqozpgJrov4fjgI3miJbjgIzov5vkuI3ljrvjgI3jgIIyMDI2LTEwLTA2IOeUqOaIt+WumueahOOAggovLwovLyDkuLrku4DkuYjkuKTkuKrmlrnlkJHpg73opoHmnInvvJoKLy8gICAtIOWPquacieato+WQke+8muWIpOatu+mTvumHjOacgOS4peeahOS4gOadoeOAjOivu+S4jeWIsOeCueWIhueJiOacrOWPt+WNs+WIpOatu+OAje+8jOW4uOW4uOWPquaYr+mCo+WPsOi3keeahOaehOW7uuS4jeWbnuaKpQovLyAgICAgYXBwL3ZlcnNpb24g4oCU4oCUIOeOqeWutui/m+W+l+WOu+OAgeeOqeW+l+Wlve+8jOaIkeS7rOWNtOW9k+edgOaJgOacieS6uueahOmdouaKiuaVtOihjOiXj+aOie+8iHJpbmN5bmFyIC8gdHgtMTA2LTU177yJ44CCCi8vICAgLSDlj6rmnInotJ/lkJHkuI3lpJ/vvJrovrnnvJggNDAzL+i2heaXtuaMieeOsOaUv+etluS4gOW+i+aUvuihjOWxleekuu+8jOWPr+acieS6m+WcsOWdgOaYr+ecn+WPquacieWbveWGheafkOWHoOW8oOe9kei/m+W+l+WOu++8jAovLyAgICAg546p5a6254K56L+b5Y675piv5q276aG1IOKAlOKAlCDov5npnIDopoHmnInkurrku47ph4zpnaLlvoDlpJbor7TkuIDlj6Xor53jgIIKLy8KLy8g6Zeo5qeb5Yi75oSP5LiN5a+556ew77yI5LiN5piv5YGP5b+D77yM5pivIDEwLTA1IOWQg+i/h+eahOS6j++8ie+8mgovLyAgIOato+WQkSAxIOelqOWNs+aBouWkjeWxleekuu+8myoq6LSf5ZCR6KaBIDIg5Liq5LiN5ZCM5p2l5rqQKirmiY3pmpDol4/vvIzkuJTkuKTovrnmr5TlpJrmlbDjgIIKLy8gICDnkIbnlLHvvJrljZXmnaHjgIzmiJHov57kuI3kuIrjgI3lpJrljYrmmK/mnKzlnLDlmarlo7DvvIhhZGJsb2Nr44CB5YiH572R44CB6aG16Z2i5rKh5Yqg6L295a6M44CBaHR0cCDmnaHnm67lnKggaHR0cHMg6aG16Z2iCi8vICAg5qC55pys5LiN6K6p5Y+R77yJ77yM5pu+57uP5LiA5p2h6L+Z56eN5Zue5omn5bCx5oqK5b2T5aSp5pyA5aSn55qE5LiA5Y+w5pyN77yIODEg5oi/LzgzIOS6uu+8ieaVtOadoeiXj+aOie+8mwovLyAgIOWPjei/h+adpeOAjOWkmuaYvuekuuS4gOWPsOaaguaXtuWdj+eahOOAjeWPquaYr+eOqeWutueCueW8gOWPkeeOsOaJk+S4jeW8gO+8jOOAjOWwkeaYvuekuuS4gOWPsOWlveeahOOAjeaYr+eOqeWutuaJvuS4jeWIsOacjeWKoeWZqOOAggovLwovLyDov5nkuIDnpajlj6rnv7sqKuaYvuekuioq77yM57+75LiN5LqGKirlh4blhaUqKu+8mgovLyAgIC0g5Y+q5o6l5Y+X562+5ZCN5riF5Y2V6YeM5bey5a2Y5Zyo55qEIGlk77yM5Zyw5Z2AL+WQjeWtly/mjqLpkojkuIDlvovkuI3mjqXlj5forr/lrqLovpPlhaXvvIzmiYDku6XmuIXljZXnmoTnrb7lkI3kuI7mnaHmlbAKLy8gICAgIOS4jeS8muWboOS4uuelqOWPkeeUn+S7u+S9leWPmOWMlu+8iOaWsOWinuS7jemhu+i1sCAvYXBpL3NlcnZlcnMvc3VibWl0IOeahOaMh+e6uSArIOWFpeWPo+WPjOa1iyArIOetvuWQje+8ie+8mwovLyAgIC0gZW5hYmxlZD09PWZhbHNlIOacjeWKoeerr+ehrOaLkiA0MDMg4oCU4oCUIOWBnOeUqOaYr+e7tOaKpOiAhee7iOWuoe+8iOS7u+S9leaWueWQkeeahOelqOmDveS4jeiuuOe/u++8ie+8mwovLyAgIC0g5q2j5ZCR56Wo5Y+q5pS244CM5b2T5YmN6KKr5oiR5Lus6JeP6LW35p2l44CN55qE5p2h55uu77yINDA5IOaMoeaOieW3suWcqOaYvuekuueahO+8ie+8jOi0n+WQkeelqOWPjei/h+adpe+8iDQwOSDmjKHmjonlt7LpmpDol4/nmoTvvInvvIwKLy8gICAgIOWFjeW+l+aKiuaXoOaEj+S5ieeahOWGmeWFpeWghui/m+elqOaVsOOAggovLwovLyDpmLLliLfvvJrmjIkgc2hhMjU2KGlwfGlkfOW9k+WkqSkg6K6w5ZCN77yMKirlkIzkuIDmnaXmupDlkIzkuIDlpKnlkIzkuIDlj7Dlj6rog73mnInkuIDlvKDnpagqKu+8jOaUueaKleWPpuS4gOWktOWwseaKiuWOn+adpemCo+W8oOaSpOaOiQovLyDvvIjnv7vnpajmmK/lhYHorrjnmoTvvIzloIbnpajkuI3ooYzvvInjgILlj6rlrZjlk4jluIzvvIzkuI3lrZjmmI7mlocgSVDjgILlhpkgUjIg5Y2V5paH5Lu2IHNpdGUvdm91Y2hlcy5qc29u77yM5LiN55SoIEtWCi8vIO+8iOWFjei0uemineW6piAxMDAwIOWGmS/lpKnlt7LooqvliKvnmoTlv4Pot7PlkIPmjonkuIDljYrvvInjgIIKCmNvbnN0IExJU1RfS0VZID0gJ3NpdGUvc2VydmVycy5qc29uJzsKY29uc3QgVkVSSUZJRURfS0VZID0gJ3NpdGUvdmVyaWZpZWQuanNvbic7CmNvbnN0IFZPVUNIX0tFWSA9ICdzaXRlL3ZvdWNoZXMuanNvbic7CmNvbnN0IE1BWF9JRFMgPSAyMDA7ICAgICAgICAgIC8vIOa4heWNleacrOi6q+WwgemhtiA2NO+8jOi/memHjOWPquaYr+mYsuaWh+S7tuiiq+WOhuWPsiBpZCDmkpHlpKcKY29uc3QgTUFYX0lQU19QRVJfU0lERSA9IDY0OyAgLy8g5q+P6L655pyA5aSa6K6w5ZCNIDY0IOS4quadpea6kO+8jOi2heWHuuS4ouacgOaXp+eahAoKZnVuY3Rpb24ganNvbihkYXRhLCBzdGF0dXMpIHsKICByZXR1cm4gbmV3IFJlc3BvbnNlKEpTT04uc3RyaW5naWZ5KGRhdGEpLCB7CiAgICBzdGF0dXM6IHN0YXR1cyB8fCAyMDAsCiAgICBoZWFkZXJzOiB7ICdjb250ZW50LXR5cGUnOiAnYXBwbGljYXRpb24vanNvbjsgY2hhcnNldD11dGYtOCcsICdjYWNoZS1jb250cm9sJzogJ25vLXN0b3JlJyB9LAogIH0pOwp9Cgphc3luYyBmdW5jdGlvbiBpcFRhZyhpcCwgaWQsIGRheSkgewogIGNvbnN0IGJ5dGVzID0gYXdhaXQgY3J5cHRvLnN1YnRsZS5kaWdlc3QoJ1NIQS0yNTYnLAogICAgbmV3IFRleHRFbmNvZGVyKCkuZW5jb2RlKGlwICsgJ3wnICsgaWQgKyAnfCcgKyBkYXkpKTsKICByZXR1cm4gQXJyYXkuZnJvbShuZXcgVWludDhBcnJheShieXRlcykpLm1hcCgoYikgPT4gYi50b1N0cmluZygxNikucGFkU3RhcnQoMiwgJzAnKSkuam9pbignJykuc2xpY2UoMCwgMzIpOwp9CgovKiog5pen5paH5Lu25b2i54q25pivIHtpcHM6ey4uLn1977yI5Y+q5pyJ5q2j5ZCR77yJ77yM6L+B56e75oiQIHtvazp7Li4ufX3vvJvotJ/lkJHmmK/mlrDlop7nmoQgYmFk44CCICovCmZ1bmN0aW9uIHNpZGUocmVjLCB3aGljaCkgewogIGlmICh3aGljaCA9PT0gJ29rJyAmJiAoIXJlYy5vayB8fCB0eXBlb2YgcmVjLm9rICE9PSAnb2JqZWN0JykpIHsKICAgIHJlYy5vayA9IChyZWMuaXBzICYmIHR5cGVvZiByZWMuaXBzID09PSAnb2JqZWN0JykgPyByZWMuaXBzIDoge307CiAgfQogIGlmICghcmVjW3doaWNoXSB8fCB0eXBlb2YgcmVjW3doaWNoXSAhPT0gJ29iamVjdCcpIHJlY1t3aGljaF0gPSB7fTsKICByZXR1cm4gcmVjW3doaWNoXTsKfQoKZnVuY3Rpb24gdGFsbHkocmVjKSB7CiAgY29uc3Qgb2sgPSBzaWRlKHJlYywgJ29rJyk7CiAgY29uc3QgYmFkID0gc2lkZShyZWMsICdiYWQnKTsKICByZWMub2tDb3VudCA9IE9iamVjdC5rZXlzKG9rKS5sZW5ndGg7CiAgcmVjLmJhZENvdW50ID0gT2JqZWN0LmtleXMoYmFkKS5sZW5ndGg7CiAgcmVjLmNvdW50ID0gcmVjLm9rQ291bnQ7ICAgICAgICAgIC8vIOWFvOWuueaXp+ivu+azlQogIHJlYy5pcHMgPSB1bmRlZmluZWQ7ICAgICAgICAgICAgICAvLyDliKDmjonov4Hnp7vliY3nmoTliKvlkI3vvIzliKvorqnmlofku7bph4zlkIzkuIDku73npajlrZjkuKTpgY0KICByZXR1cm4gcmVjOwp9CgpmdW5jdGlvbiB0cmltKG9sZERvYykgewogIGNvbnN0IG91dCA9IHsgdXBkYXRlZDogbnVsbCwgdm91Y2hlczoge30gfTsKICBjb25zdCBzcmMgPSAob2xkRG9jICYmIHR5cGVvZiBvbGREb2Mudm91Y2hlcyA9PT0gJ29iamVjdCcgJiYgb2xkRG9jLnZvdWNoZXMpIHx8IHt9OwogIGNvbnN0IGlkcyA9IE9iamVjdC5rZXlzKHNyYyk7CiAgaWYgKGlkcy5sZW5ndGggPiBNQVhfSURTKSB7CiAgICBpZHMuc29ydCgoYSwgYikgPT4gU3RyaW5nKHNyY1tiXS5hdCB8fCAnJykubG9jYWxlQ29tcGFyZShTdHJpbmcoc3JjW2FdLmF0IHx8ICcnKSkpOwogICAgaWRzLnNsaWNlKE1BWF9JRFMpLmZvckVhY2goKGspID0+IGRlbGV0ZSBzcmNba10pOwogIH0KICBmb3IgKGNvbnN0IGlkIG9mIE9iamVjdC5rZXlzKHNyYykpIHsKICAgIGNvbnN0IHJlYyA9IHNyY1tpZF07CiAgICBpZiAoIXJlYyB8fCB0eXBlb2YgcmVjICE9PSAnb2JqZWN0JykgeyBkZWxldGUgc3JjW2lkXTsgY29udGludWU7IH0KICAgIGZvciAoY29uc3Qgd2hpY2ggb2YgWydvaycsICdiYWQnXSkgewogICAgICBjb25zdCBtYXAgPSBzaWRlKHJlYywgd2hpY2gpOwogICAgICBjb25zdCB0YWdzID0gT2JqZWN0LmtleXMobWFwKTsKICAgICAgaWYgKHRhZ3MubGVuZ3RoID4gTUFYX0lQU19QRVJfU0lERSkgewogICAgICAgIHRhZ3Muc29ydCgoYSwgYikgPT4gU3RyaW5nKG1hcFtiXS5hdCB8fCAnJykubG9jYWxlQ29tcGFyZShTdHJpbmcobWFwW2FdLmF0IHx8ICcnKSkpOwogICAgICAgIHRhZ3Muc2xpY2UoTUFYX0lQU19QRVJfU0lERSkuZm9yRWFjaCgodCkgPT4gZGVsZXRlIG1hcFt0XSk7CiAgICAgIH0KICAgIH0KICAgIHRhbGx5KHJlYyk7CiAgICBpZiAoIXJlYy5va0NvdW50ICYmICFyZWMuYmFkQ291bnQpIHsgZGVsZXRlIHNyY1tpZF07IGNvbnRpbnVlOyB9CiAgICBvdXQudm91Y2hlc1tpZF0gPSByZWM7CiAgfQogIHJldHVybiBvdXQ7Cn0KCmV4cG9ydCBhc3luYyBmdW5jdGlvbiBvblJlcXVlc3RQb3N0KGNvbnRleHQpIHsKICBjb25zdCB7IHJlcXVlc3QsIGVudiB9ID0gY29udGV4dDsKICBpZiAoIWVudi5SMkJVQ0tFVCkgcmV0dXJuIGpzb24oeyBvazogZmFsc2UsIGVycm9yOiAnUjIgYmluZGluZyBtaXNzaW5nJyB9LCA1MDApOwoKICBsZXQgYm9keTsKICB0cnkgeyBib2R5ID0gYXdhaXQgcmVxdWVzdC5qc29uKCk7IH0gY2F0Y2ggeyByZXR1cm4ganNvbih7IG9rOiBmYWxzZSwgZXJyb3I6ICdiYWQganNvbicgfSwgNDAwKTsgfQogIGNvbnN0IGlkID0gdHlwZW9mIGJvZHkuaWQgPT09ICdzdHJpbmcnID8gYm9keS5pZC5zbGljZSgwLCA0OCkgOiAnJzsKICBpZiAoIS9eW2EtekEtWjAtOV8tXXsxLDQ4fSQvLnRlc3QoaWQpKSByZXR1cm4ganNvbih7IG9rOiBmYWxzZSwgZXJyb3I6ICdiYWQgaWQnIH0sIDQwMCk7CiAgLy8g57y655yB5oyJ5q2j5ZCR77yI6ICB5a6i5oi356uv5Y+q5Y+RIHtpZH3vvInvvJtjbGVhciDmmK/jgIzmkqTlm57miJHku4rlpKnov5nlvKDnpajjgI3vvJtwdXJnZSDmmK/nu7TmiqTogIXmuIXnpajvvIjkuIvpnaLmn6Xouqvku73vvIkKICBjb25zdCB2ZXJkaWN0ID0gYm9keS52ZXJkaWN0ID09PSB1bmRlZmluZWQgfHwgYm9keS52ZXJkaWN0ID09PSAnb2snID8gJ29rJwogICAgOiAoYm9keS52ZXJkaWN0ID09PSAnYmFkJyB8fCBib2R5LnZlcmRpY3QgPT09ICdjbGVhcicgfHwgYm9keS52ZXJkaWN0ID09PSAncHVyZ2UnID8gYm9keS52ZXJkaWN0IDogbnVsbCk7CiAgaWYgKCF2ZXJkaWN0KSByZXR1cm4ganNvbih7IG9rOiBmYWxzZSwgZXJyb3I6ICJ2ZXJkaWN0IOWPquiDveaYryAnb2snIC8gJ2JhZCcgLyAnY2xlYXInIC8gJ3B1cmdlJyIgfSwgNDAwKTsKCiAgY29uc3QgaXNBZG1pbiA9ICEhZW52LlBVQkxJU0hfS0VZICYmIChyZXF1ZXN0LmhlYWRlcnMuZ2V0KCd4LWFkbWluLWtleScpIHx8ICcnKSA9PT0gZW52LlBVQkxJU0hfS0VZOwoKICAvLyDnu7TmiqTogIXmuIXnpajvvJrmipXnpajliLflsY/ml7bllK/kuIDmr5TjgIzlgZznlKjmlbTmnaHjgI3mm7TovbvnmoTmiYvmrrXvvIzkuZ/og73muIXmjonlt7Lku47muIXljZXnp7vpmaTnmoTmnaHnm67nlZnkuIvnmoTlraTlhL/npajjgIIKICAvLyDmlL7lnKjmuIXljZXmn6Xor6LkuYvliY0g4oCU4oCUIOato+aYr+imgeiDvea4hemCo+enjSLmnaHnm67lt7Lnu4/kuI3lnKjmuIXljZXph4zjgIHnpajov5jourrlnKjmlofku7bph4wi55qE5oOF5Ya144CCCiAgaWYgKHZlcmRpY3QgPT09ICdwdXJnZScpIHsKICAgIGlmICghaXNBZG1pbikgcmV0dXJuIGpzb24oeyBvazogZmFsc2UsIGVycm9yOiAncHVyZ2Ug6ZyA6KaBIHgtYWRtaW4ta2V5JyB9LCA0MDMpOwogICAgY29uc3Qgbm93MiA9IG5ldyBEYXRlKCk7CiAgICBsZXQgZG9jID0geyB1cGRhdGVkOiBudWxsLCB2b3VjaGVzOiB7fSB9OwogICAgY29uc3QgY3VyID0gYXdhaXQgZW52LlIyQlVDS0VULmdldChWT1VDSF9LRVkpOwogICAgaWYgKGN1cikgeyB0cnkgeyBkb2MgPSB0cmltKEpTT04ucGFyc2UoYXdhaXQgY3VyLnRleHQoKSkpOyB9IGNhdGNoIHsgZG9jID0geyB1cGRhdGVkOiBudWxsLCB2b3VjaGVzOiB7fSB9OyB9IH0KICAgIGNvbnN0IGhhZCA9IE9iamVjdC5rZXlzKGRvYy52b3VjaGVzKS5sZW5ndGg7CiAgICBpZiAoYm9keS5hbGwgPT09IHRydWUpIGRvYy52b3VjaGVzID0ge307CiAgICBlbHNlIGRlbGV0ZSBkb2Mudm91Y2hlc1tpZF07CiAgICBkb2MudXBkYXRlZCA9IG5vdzIudG9JU09TdHJpbmcoKTsKICAgIGF3YWl0IGVudi5SMkJVQ0tFVC5wdXQoVk9VQ0hfS0VZLCBKU09OLnN0cmluZ2lmeShkb2MsIG51bGwsIDEpICsgJ1xuJywgewogICAgICBodHRwTWV0YWRhdGE6IHsgY29udGVudFR5cGU6ICdhcHBsaWNhdGlvbi9qc29uJywgY2FjaGVDb250cm9sOiAncHJpdmF0ZSwgbm8tc3RvcmUnIH0sCiAgICB9KTsKICAgIHJldHVybiBqc29uKHsgb2s6IHRydWUsIHB1cmdlZDogYm9keS5hbGwgPT09IHRydWUgPyBoYWQgOiAoaGFkIC0gT2JqZWN0LmtleXMoZG9jLnZvdWNoZXMpLmxlbmd0aCksCiAgICAgICAgICAgICAgICAgIHNjb3BlOiBib2R5LmFsbCA9PT0gdHJ1ZSA/ICcqJyA6IGlkLCBpZHNfbGVmdDogT2JqZWN0LmtleXMoZG9jLnZvdWNoZXMpIH0pOwogIH0KCiAgY29uc3QgbGlzdFJlcyA9IGF3YWl0IGVudi5SMkJVQ0tFVC5nZXQoTElTVF9LRVkpOwogIGlmICghbGlzdFJlcykgcmV0dXJuIGpzb24oeyBvazogZmFsc2UsIGVycm9yOiAnbGlzdCBtaXNzaW5nJyB9LCA1MDApOwogIGxldCBlbnRyeTsKICB0cnkgewogICAgY29uc3QgZG9jID0gSlNPTi5wYXJzZShhd2FpdCBsaXN0UmVzLnRleHQoKSk7CiAgICBjb25zdCBzZXJ2ZXJzID0gQXJyYXkuaXNBcnJheShkb2Muc2VydmVycykgPyBkb2Muc2VydmVycyA6IFtdOwogICAgZW50cnkgPSBzZXJ2ZXJzLmZpbmQoKHMpID0+IHMgJiYgcy5pZCA9PT0gaWQpOwogIH0gY2F0Y2ggeyByZXR1cm4ganNvbih7IG9rOiBmYWxzZSwgZXJyb3I6ICdsaXN0IGNvcnJ1cHQnIH0sIDUwMCk7IH0KICBpZiAoIWVudHJ5KSByZXR1cm4ganNvbih7IG9rOiBmYWxzZSwgZXJyb3I6ICd1bmtub3duIGlkJyB9LCA0MDQpOwogIGlmIChlbnRyeS5lbmFibGVkID09PSBmYWxzZSkgewogICAgcmV0dXJuIGpzb24oeyBvazogZmFsc2UsIGVycm9yOiAn6L+Z5p2h5bey55Sx56uZ6ZW/5YGc55So77yM546p5a625a6h5qC45LiN6IO95oGi5aSN5bGV56S6JyB9LCA0MDMpOwogIH0KCiAgY29uc3Qgbm93ID0gbmV3IERhdGUoKTsKICBjb25zdCBkYXkgPSBub3cudG9JU09TdHJpbmcoKS5zbGljZSgwLCAxMCk7CiAgY29uc3QgdGFnID0gYXdhaXQgaXBUYWcocmVxdWVzdC5oZWFkZXJzLmdldCgnY2YtY29ubmVjdGluZy1pcCcpIHx8ICd1bmtub3duJywgaWQsIGRheSk7CgogIGxldCBkb2MgPSB7IHVwZGF0ZWQ6IG51bGwsIHZvdWNoZXM6IHt9IH07CiAgY29uc3QgdlJlcyA9IGF3YWl0IGVudi5SMkJVQ0tFVC5nZXQoVk9VQ0hfS0VZKTsKICBpZiAodlJlcykgeyB0cnkgeyBkb2MgPSB0cmltKEpTT04ucGFyc2UoYXdhaXQgdlJlcy50ZXh0KCkpKTsgfSBjYXRjaCB7IC8qIOimhueblumHjeadpSAqLyB9IH0KICBpZiAoIWRvYy52b3VjaGVzW2lkXSB8fCB0eXBlb2YgZG9jLnZvdWNoZXNbaWRdICE9PSAnb2JqZWN0JykgewogICAgZG9jLnZvdWNoZXNbaWRdID0geyBhdDogbnVsbCwgb2s6IHt9LCBiYWQ6IHt9IH07CiAgfQogIGNvbnN0IHJlYyA9IHRhbGx5KGRvYy52b3VjaGVzW2lkXSk7CiAgY29uc3QgZGF5T2YgPSAobWFwKSA9PiAobWFwW3RhZ10gJiYgU3RyaW5nKG1hcFt0YWddLmRheSB8fCAnJykgPT09IGRheSk7CiAgY29uc3QgaGFzTWluZVRvZGF5ID0gZGF5T2Yoc2lkZShyZWMsICdvaycpKSB8fCBkYXlPZihzaWRlKHJlYywgJ2JhZCcpKTsKCiAgLy8g5Y+q5ZyoIui/meS4gOelqOiDveaUueWPmOS7gOS5iCLml7bmlLbvvJrmraPlkJHnpajmlZHooqvmiJHku6zol4/otbfmnaXnmoTvvIzotJ/lkJHnpajpkojlr7nmraPlnKjmmL7npLrnmoTjgIIKICAvLyDkuKTkuKrkvovlpJbvvJrmkqTlm57vvIhjbGVhcu+8ieawuOi/nOWFgeiuuO+8jOeCuemUmeeahOS6uuW/hemhu+iDveWPjeaClO+8m+aJi+mHjOW3sue7j+acieelqOeahOS6uuaUueaKleWPpuS4gOWktOS5n+awuOi/nOWFgeiuuCDigJTigJQKICAvLyDlkKbliJnjgIzlhYjngrnkuobog73ov5vjgIHliIbljLrliLfmlrDlkI7lj4jmg7PmiqXlkYrov5vkuI3ljrvjgI3kvJrooqvov5nmnaEgNDA5IOaMoeaOie+8jOiAjOWIhuWMuuacrOi6q+WPr+iDvea7nuWQjiAxMjAgc+OAggogIGxldCBzaG93biA9IG51bGw7CiAgY29uc3QgcHJldlJlcyA9IGF3YWl0IGVudi5SMkJVQ0tFVC5nZXQoVkVSSUZJRURfS0VZKTsKICBpZiAocHJldlJlcykgewogICAgdHJ5IHsKICAgICAgY29uc3QgdiA9IEpTT04ucGFyc2UoYXdhaXQgcHJldlJlcy50ZXh0KCkpOwogICAgICBpZiAoQXJyYXkuaXNBcnJheSh2LnZhbGlkKSkgc2hvd24gPSB2LnZhbGlkLmluY2x1ZGVzKGlkKTsKICAgIH0gY2F0Y2ggeyAvKiDliIbljLror7vkuI3liLDlsLHnhafluLjmlLbnpaggKi8gfQogIH0KICBpZiAodmVyZGljdCA9PT0gJ2NsZWFyJykgewogICAgbGV0IGNsZWFyZWQgPSAwOwogICAgZm9yIChjb25zdCB3aGljaCBvZiBbJ29rJywgJ2JhZCddKSB7CiAgICAgIGNvbnN0IG1hcCA9IHNpZGUocmVjLCB3aGljaCk7CiAgICAgIGlmIChtYXBbdGFnXSkgeyBkZWxldGUgbWFwW3RhZ107IGNsZWFyZWQgKz0gMTsgfQogICAgfQogICAgdGFsbHkocmVjKTsKICAgIGlmICghY2xlYXJlZCkgewogICAgICByZXR1cm4ganNvbih7IG9rOiB0cnVlLCBpZCwgdmVyZGljdDogJ2NsZWFyJywgY2xlYXJlZDogZmFsc2UsCiAgICAgICAgICAgICAgICAgICAgY291bnRzOiB7IG9rOiByZWMub2tDb3VudCwgYmFkOiByZWMuYmFkQ291bnQgfSB9KTsKICAgIH0KICAgIHJlYy5hdCA9IG5vdy50b0lTT1N0cmluZygpOwogICAgZG9jID0gdHJpbShkb2MpOwogICAgZG9jLnVwZGF0ZWQgPSBub3cudG9JU09TdHJpbmcoKTsKICAgIGF3YWl0IGVudi5SMkJVQ0tFVC5wdXQoVk9VQ0hfS0VZLCBKU09OLnN0cmluZ2lmeShkb2MsIG51bGwsIDEpICsgJ1xuJywgewogICAgICBodHRwTWV0YWRhdGE6IHsgY29udGVudFR5cGU6ICdhcHBsaWNhdGlvbi9qc29uJywgY2FjaGVDb250cm9sOiAncHJpdmF0ZSwgbm8tc3RvcmUnIH0sCiAgICB9KTsKICAgIGNvbnN0IGFmdGVyID0gKGRvYy52b3VjaGVzW2lkXSB8fCB7fSk7CiAgICByZXR1cm4ganNvbih7IG9rOiB0cnVlLCBpZCwgbmFtZTogZW50cnkubmFtZSwgdmVyZGljdDogJ2NsZWFyJywgY2xlYXJlZDogdHJ1ZSwKICAgICAgICAgICAgICAgICAgY291bnRzOiB7IG9rOiBhZnRlci5va0NvdW50IHx8IDAsIGJhZDogYWZ0ZXIuYmFkQ291bnQgfHwgMCB9IH0pOwogIH0KICBpZiAoIWhhc01pbmVUb2RheSAmJiB2ZXJkaWN0ID09PSAnb2snICYmIHNob3duID09PSB0cnVlKSB7CiAgICByZXR1cm4ganNvbih7IG9rOiBmYWxzZSwgZXJyb3I6ICfov5nlj7DlvZPliY3lsLHlnKjmuIXljZXph4zmraPluLjmmL7npLrvvIzml6DpnIDmoLjpqownIH0sIDQwOSk7CiAgfQogIGlmICghaGFzTWluZVRvZGF5ICYmIHZlcmRpY3QgPT09ICdiYWQnICYmIHNob3duID09PSBmYWxzZSkgewogICAgcmV0dXJuIGpzb24oeyBvazogZmFsc2UsIGVycm9yOiAn6L+Z5Y+w5b2T5YmN5rKh5Zyo5riF5Y2V6YeM5pi+56S677yM5oql5ZGK44CM6L+b5LiN5Y6744CN5rKh5pyJ5L2c55So77yb6IO96L+e5LiK6K+354K544CM5oiR5qC46aqM6YCa6L+H44CNJyB9LCA0MDkpOwogIH0KCiAgY29uc3QgbWluZSA9IHNpZGUocmVjLCB2ZXJkaWN0KTsKICBjb25zdCBvdGhlciA9IHNpZGUocmVjLCB2ZXJkaWN0ID09PSAnb2snID8gJ2JhZCcgOiAnb2snKTsKICBjb25zdCBwcmlvciA9IG1pbmVbdGFnXTsKICBpZiAocHJpb3IgJiYgU3RyaW5nKHByaW9yLmRheSB8fCAnJykgPT09IGRheSkgewogICAgcmV0dXJuIGpzb24oeyBvazogZmFsc2UsIGVycm9yOiAn5L2g5LuK5aSp5bey57uP5a6h6L+H6L+Z5p2h5LqGJywgdmVyZGljdCwKICAgICAgICAgICAgICAgICAgY291bnRzOiB7IG9rOiByZWMub2tDb3VudCwgYmFkOiByZWMuYmFkQ291bnQgfSB9LCA0MjkpOwogIH0KICAvLyDlkIzkuIDmnaXmupDlkIzkuIDlpKnlj6rog73mnInkuIDlvKDnpajvvJrmlLnmipXlj6bkuIDlpLTlsLHmkqTmjonljp/mnaXpgqPlvKDvvIjlhYHorrjnv7vmoYjvvIzkuI3lhYHorrjloIbnpajvvIkKICBpZiAob3RoZXJbdGFnXSAmJiBTdHJpbmcob3RoZXJbdGFnXS5kYXkgfHwgJycpID09PSBkYXkpIGRlbGV0ZSBvdGhlclt0YWddOwogIG1pbmVbdGFnXSA9IHsgYXQ6IG5vdy50b0lTT1N0cmluZygpLCBkYXksIHY6IHZlcmRpY3QgfTsKICByZWMuYXQgPSBub3cudG9JU09TdHJpbmcoKTsKICBkb2MgPSB0cmltKGRvYyk7CiAgY29uc3Qgc2F2ZWQgPSBkb2Mudm91Y2hlc1tpZF07CiAgaWYgKCFzYXZlZCkgcmV0dXJuIGpzb24oeyBvazogZmFsc2UsIGVycm9yOiAn5YaZ5YWl6KKr6KOB5Ymq77yM6K+36YeN6K+VJyB9LCA1MDApOwogIGRvYy51cGRhdGVkID0gbm93LnRvSVNPU3RyaW5nKCk7CiAgYXdhaXQgZW52LlIyQlVDS0VULnB1dChWT1VDSF9LRVksIEpTT04uc3RyaW5naWZ5KGRvYywgbnVsbCwgMSkgKyAnXG4nLCB7CiAgICBodHRwTWV0YWRhdGE6IHsgY29udGVudFR5cGU6ICdhcHBsaWNhdGlvbi9qc29uJywgY2FjaGVDb250cm9sOiAncHJpdmF0ZSwgbm8tc3RvcmUnIH0sCiAgfSk7CiAgcmV0dXJuIGpzb24oeyBvazogdHJ1ZSwgaWQsIG5hbWU6IGVudHJ5Lm5hbWUsIHZlcmRpY3QsCiAgICAgICAgICAgICAgICBjb3VudHM6IHsgb2s6IHNhdmVkLm9rQ291bnQsIGJhZDogc2F2ZWQuYmFkQ291bnQgfSB9KTsKfQoKZXhwb3J0IGFzeW5jIGZ1bmN0aW9uIG9uUmVxdWVzdEdldChjb250ZXh0KSB7CiAgY29uc3QgeyByZXF1ZXN0LCBlbnYgfSA9IGNvbnRleHQ7CiAgLy8g5Ye656S6566h55CG5Y+j5Luk5pe25Y+v5Lul6K+756Wo5o2u5Y+w6LSm77yI5Y+q5pyJ5q+P5Y+w55qE6K6h5pWw5LiO5pyA5ZCO5pe26Ze077yM5LiN5ZCr5p2l5rqQ5ZOI5biM77yJ77yb5rKh5Y+j5Luk54Wn5penIDQwNe+8jAogIC8vIOS4jeWvueWkluWuo+W4g+i/memHjOaciee7tOaKpOiAheWPo+OAggogIGNvbnN0IGlzQWRtaW4gPSAhIWVudi5QVUJMSVNIX0tFWSAmJiAocmVxdWVzdC5oZWFkZXJzLmdldCgneC1hZG1pbi1rZXknKSB8fCAnJykgPT09IGVudi5QVUJMSVNIX0tFWTsKICBpZiAoIWlzQWRtaW4gfHwgIWVudi5SMkJVQ0tFVCkgcmV0dXJuIGpzb24oeyBvazogZmFsc2UsIGVycm9yOiAnUE9TVCBvbmx5JyB9LCA0MDUpOwogIGxldCBkb2MgPSB7IHZvdWNoZXM6IHt9IH07CiAgY29uc3QgcmVzID0gYXdhaXQgZW52LlIyQlVDS0VULmdldChWT1VDSF9LRVkpOwogIGlmIChyZXMpIHsgdHJ5IHsgZG9jID0gSlNPTi5wYXJzZShhd2FpdCByZXMudGV4dCgpKTsgfSBjYXRjaCB7IC8qIOepuuWPsOi0piAqLyB9IH0KICBjb25zdCB0YWxseU91dCA9IHt9OwogIGZvciAoY29uc3QgaWQgb2YgT2JqZWN0LmtleXMoZG9jLnZvdWNoZXMgfHwge30pKSB7CiAgICBjb25zdCByZWMgPSB0cmltKHsgdm91Y2hlczogZG9jLnZvdWNoZXMgfSkudm91Y2hlc1tpZF0gfHwge307CiAgICB0YWxseU91dFtpZF0gPSB7IG9rOiByZWMub2tDb3VudCB8fCAwLCBiYWQ6IHJlYy5iYWRDb3VudCB8fCAwLCBhdDogcmVjLmF0IHx8IG51bGwgfTsKICB9CiAgcmV0dXJuIGpzb24oeyBvazogdHJ1ZSwgdXBkYXRlZDogZG9jLnVwZGF0ZWQgfHwgbnVsbCwgaWRzOiB0YWxseU91dCB9KTsKfQo=
+// Pages Function: POST /api/servers/vouch
+// 匿名审核：玩家对**签名清单里已有的一条服务器**投「我核验通过」或「进不去」。2026-10-06 用户定的。
+//
+// 为什么两个方向都要有：
+//   - 只有正向：判死链里最严的一条「读不到点分版本号即判死」，常常只是那台跑的构建不回报
+//     app/version —— 玩家进得去、玩得好，我们却当着所有人的面把整行藏掉（rincynar / tx-106-55）。
+//   - 只有负向不够：边缘 403/超时按现政策一律放行展示，可有些地址是真只有国内某几张网进得去，
+//     玩家点进去是死页 —— 这需要有人从里面往外说一句话。
+//
+// 门槛刻意不对称（不是偏心，是 10-05 吃过的亏）：
+//   正向 1 票即恢复展示；**负向要 2 个不同来源**才隐藏，且两边比多数。
+//   理由：单条「我连不上」多半是本地噪声（adblock、切网、页面没加载完、http 条目在 https 页面
+//   根本不让发），曾经一条这种回执就把当天最大的一台服（81 房/83 人）整条藏掉；
+//   反过来「多显示一台暂时坏的」只是玩家点开发现打不开，「少显示一台好的」是玩家找不到服务器。
+//
+// 这一票只翻**显示**，翻不了**准入**：
+//   - 只接受签名清单里已存在的 id，地址/名字/探针一律不接受访客输入，所以清单的签名与条数
+//     不会因为票发生任何变化（新增仍须走 /api/servers/submit 的指纹 + 入口双测 + 签名）；
+//   - enabled===false 服务端硬拒 403 —— 停用是维护者终审（任何方向的票都不许翻）；
+//   - 正向票只收「当前被我们藏起来」的条目（409 挡掉已在显示的），负向票反过来（409 挡掉已隐藏的），
+//     免得把无意义的写入堆进票数。
+//
+// 防刷：按 sha256(ip|id|当天) 记名，**同一来源同一天同一台只能有一张票**，改投另一头就把原来那张撤掉
+// （翻票是允许的，堆票不行）。只存哈希，不存明文 IP。写 R2 单文件 site/vouches.json，不用 KV
+// （免费额度 1000 写/天已被别的心跳吃掉一半）。
+
+const LIST_KEY = 'site/servers.json';
+const VERIFIED_KEY = 'site/verified.json';
+const VOUCH_KEY = 'site/vouches.json';
+const MAX_IDS = 200;          // 清单本身封顶 64，这里只是防文件被历史 id 撑大
+const MAX_IPS_PER_SIDE = 64;  // 每边最多记名 64 个来源，超出丢最旧的
+
+function json(data, status) {
+  return new Response(JSON.stringify(data), {
+    status: status || 200,
+    headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
+  });
+}
+
+async function ipTag(ip, id, day) {
+  const bytes = await crypto.subtle.digest('SHA-256',
+    new TextEncoder().encode(ip + '|' + id + '|' + day));
+  return Array.from(new Uint8Array(bytes)).map((b) => b.toString(16).padStart(2, '0')).join('').slice(0, 32);
+}
+
+/** 旧文件形状是 {ips:{...}}（只有正向），迁移成 {ok:{...}}；负向是新增的 bad。 */
+function side(rec, which) {
+  if (which === 'ok' && (!rec.ok || typeof rec.ok !== 'object')) {
+    rec.ok = (rec.ips && typeof rec.ips === 'object') ? rec.ips : {};
+  }
+  if (!rec[which] || typeof rec[which] !== 'object') rec[which] = {};
+  return rec[which];
+}
+
+function tally(rec) {
+  const ok = side(rec, 'ok');
+  const bad = side(rec, 'bad');
+  rec.okCount = Object.keys(ok).length;
+  rec.badCount = Object.keys(bad).length;
+  rec.count = rec.okCount;          // 兼容旧读法
+  rec.ips = undefined;              // 删掉迁移前的别名，别让文件里同一份票存两遍
+  return rec;
+}
+
+function trim(oldDoc) {
+  const out = { updated: null, vouches: {} };
+  const src = (oldDoc && typeof oldDoc.vouches === 'object' && oldDoc.vouches) || {};
+  const ids = Object.keys(src);
+  if (ids.length > MAX_IDS) {
+    ids.sort((a, b) => String(src[b].at || '').localeCompare(String(src[a].at || '')));
+    ids.slice(MAX_IDS).forEach((k) => delete src[k]);
+  }
+  for (const id of Object.keys(src)) {
+    const rec = src[id];
+    if (!rec || typeof rec !== 'object') { delete src[id]; continue; }
+    for (const which of ['ok', 'bad']) {
+      const map = side(rec, which);
+      const tags = Object.keys(map);
+      if (tags.length > MAX_IPS_PER_SIDE) {
+        tags.sort((a, b) => String(map[b].at || '').localeCompare(String(map[a].at || '')));
+        tags.slice(MAX_IPS_PER_SIDE).forEach((t) => delete map[t]);
+      }
+    }
+    tally(rec);
+    if (!rec.okCount && !rec.badCount) { delete src[id]; continue; }
+    out.vouches[id] = rec;
+  }
+  return out;
+}
+
+export async function onRequestPost(context) {
+  const { request, env } = context;
+  if (!env.R2BUCKET) return json({ ok: false, error: 'R2 binding missing' }, 500);
+
+  let body;
+  try { body = await request.json(); } catch { return json({ ok: false, error: 'bad json' }, 400); }
+  const id = typeof body.id === 'string' ? body.id.slice(0, 48) : '';
+  if (!/^[a-zA-Z0-9_-]{1,48}$/.test(id)) return json({ ok: false, error: 'bad id' }, 400);
+  // 缺省按正向（老客户端只发 {id}）；clear 是「撤回我今天这张票」；purge 是维护者清票（下面查身份）
+  const verdict = body.verdict === undefined || body.verdict === 'ok' ? 'ok'
+    : (body.verdict === 'bad' || body.verdict === 'clear' || body.verdict === 'purge' ? body.verdict : null);
+  if (!verdict) return json({ ok: false, error: "verdict 只能是 'ok' / 'bad' / 'clear' / 'purge'" }, 400);
+
+  const isAdmin = !!env.PUBLISH_KEY && (request.headers.get('x-admin-key') || '') === env.PUBLISH_KEY;
+
+  // 维护者清票：投票刷屏时唯一比「停用整条」更轻的手段，也能清掉已从清单移除的条目留下的孤儿票。
+  // 放在清单查询之前 —— 正是要能清那种"条目已经不在清单里、票还躺在文件里"的情况。
+  if (verdict === 'purge') {
+    if (!isAdmin) return json({ ok: false, error: 'purge 需要 x-admin-key' }, 403);
+    const now2 = new Date();
+    let doc = { updated: null, vouches: {} };
+    const cur = await env.R2BUCKET.get(VOUCH_KEY);
+    if (cur) { try { doc = trim(JSON.parse(await cur.text())); } catch { doc = { updated: null, vouches: {} }; } }
+    const had = Object.keys(doc.vouches).length;
+    if (body.all === true) doc.vouches = {};
+    else delete doc.vouches[id];
+    doc.updated = now2.toISOString();
+    await env.R2BUCKET.put(VOUCH_KEY, JSON.stringify(doc, null, 1) + '\n', {
+      httpMetadata: { contentType: 'application/json', cacheControl: 'private, no-store' },
+    });
+    return json({ ok: true, purged: body.all === true ? had : (had - Object.keys(doc.vouches).length),
+                  scope: body.all === true ? '*' : id, ids_left: Object.keys(doc.vouches) });
+  }
+
+  const listRes = await env.R2BUCKET.get(LIST_KEY);
+  if (!listRes) return json({ ok: false, error: 'list missing' }, 500);
+  let entry;
+  try {
+    const doc = JSON.parse(await listRes.text());
+    const servers = Array.isArray(doc.servers) ? doc.servers : [];
+    entry = servers.find((s) => s && s.id === id);
+  } catch { return json({ ok: false, error: 'list corrupt' }, 500); }
+  if (!entry) return json({ ok: false, error: 'unknown id' }, 404);
+  if (entry.enabled === false) {
+    return json({ ok: false, error: '这条已由站长停用，玩家审核不能恢复展示' }, 403);
+  }
+
+  const now = new Date();
+  const day = now.toISOString().slice(0, 10);
+  const tag = await ipTag(request.headers.get('cf-connecting-ip') || 'unknown', id, day);
+
+  let doc = { updated: null, vouches: {} };
+  const vRes = await env.R2BUCKET.get(VOUCH_KEY);
+  if (vRes) { try { doc = trim(JSON.parse(await vRes.text())); } catch { /* 覆盖重来 */ } }
+  if (!doc.vouches[id] || typeof doc.vouches[id] !== 'object') {
+    doc.vouches[id] = { at: null, ok: {}, bad: {} };
+  }
+  const rec = tally(doc.vouches[id]);
+  const dayOf = (map) => (map[tag] && String(map[tag].day || '') === day);
+  const hasMineToday = dayOf(side(rec, 'ok')) || dayOf(side(rec, 'bad'));
+
+  // 只在"这一票能改变什么"时收：正向票救被我们藏起来的，负向票针对正在显示的。
+  // 两个例外：撤回（clear）永远允许，点错的人必须能反悔；手里已经有票的人改投另一头也永远允许 ——
+  // 否则「先点了能进、分区刷新后又想报告进不去」会被这条 409 挡掉，而分区本身可能滞后 120 s。
+  let shown = null;
+  const prevRes = await env.R2BUCKET.get(VERIFIED_KEY);
+  if (prevRes) {
+    try {
+      const v = JSON.parse(await prevRes.text());
+      if (Array.isArray(v.valid)) shown = v.valid.includes(id);
+    } catch { /* 分区读不到就照常收票 */ }
+  }
+  if (verdict === 'clear') {
+    let cleared = 0;
+    for (const which of ['ok', 'bad']) {
+      const map = side(rec, which);
+      if (map[tag]) { delete map[tag]; cleared += 1; }
+    }
+    tally(rec);
+    if (!cleared) {
+      return json({ ok: true, id, verdict: 'clear', cleared: false,
+                    counts: { ok: rec.okCount, bad: rec.badCount } });
+    }
+    rec.at = now.toISOString();
+    doc = trim(doc);
+    doc.updated = now.toISOString();
+    await env.R2BUCKET.put(VOUCH_KEY, JSON.stringify(doc, null, 1) + '\n', {
+      httpMetadata: { contentType: 'application/json', cacheControl: 'private, no-store' },
+    });
+    const after = (doc.vouches[id] || {});
+    return json({ ok: true, id, name: entry.name, verdict: 'clear', cleared: true,
+                  counts: { ok: after.okCount || 0, bad: after.badCount || 0 } });
+  }
+  if (!hasMineToday && verdict === 'ok' && shown === true) {
+    return json({ ok: false, error: '这台当前就在清单里正常显示，无需核验' }, 409);
+  }
+  if (!hasMineToday && verdict === 'bad' && shown === false) {
+    return json({ ok: false, error: '这台当前没在清单里显示，报告「进不去」没有作用；能连上请点「我核验通过」' }, 409);
+  }
+
+  const mine = side(rec, verdict);
+  const other = side(rec, verdict === 'ok' ? 'bad' : 'ok');
+  const prior = mine[tag];
+  if (prior && String(prior.day || '') === day) {
+    return json({ ok: false, error: '你今天已经审过这条了', verdict,
+                  counts: { ok: rec.okCount, bad: rec.badCount } }, 429);
+  }
+  // 同一来源同一天只能有一张票：改投另一头就撤掉原来那张（允许翻案，不允许堆票）
+  if (other[tag] && String(other[tag].day || '') === day) delete other[tag];
+  mine[tag] = { at: now.toISOString(), day, v: verdict };
+  rec.at = now.toISOString();
+  doc = trim(doc);
+  const saved = doc.vouches[id];
+  if (!saved) return json({ ok: false, error: '写入被裁剪，请重试' }, 500);
+  doc.updated = now.toISOString();
+  await env.R2BUCKET.put(VOUCH_KEY, JSON.stringify(doc, null, 1) + '\n', {
+    httpMetadata: { contentType: 'application/json', cacheControl: 'private, no-store' },
+  });
+  return json({ ok: true, id, name: entry.name, verdict,
+                counts: { ok: saved.okCount, bad: saved.badCount } });
+}
+
+export async function onRequestGet(context) {
+  const { request, env } = context;
+  // 出示管理口令时可以读票据台账（只有每台的计数与最后时间，不含来源哈希）；没口令照旧 405，
+  // 不对外宣布这里有维护者口。
+  const isAdmin = !!env.PUBLISH_KEY && (request.headers.get('x-admin-key') || '') === env.PUBLISH_KEY;
+  if (!isAdmin || !env.R2BUCKET) return json({ ok: false, error: 'POST only' }, 405);
+  let doc = { vouches: {} };
+  const res = await env.R2BUCKET.get(VOUCH_KEY);
+  if (res) { try { doc = JSON.parse(await res.text()); } catch { /* 空台账 */ } }
+  const tallyOut = {};
+  for (const id of Object.keys(doc.vouches || {})) {
+    const rec = trim({ vouches: doc.vouches }).vouches[id] || {};
+    tallyOut[id] = { ok: rec.okCount || 0, bad: rec.badCount || 0, at: rec.at || null };
+  }
+  return json({ ok: true, updated: doc.updated || null, ids: tallyOut });
+}
