@@ -690,8 +690,9 @@
     var bl = document.createElement('span');
     bl.className = 'btn__label';
     if (reportedBad(server.id)) {
-      bl.textContent = '已报告 · 点撤回';
-      bad.title = '撤回自己这张「进不去」（撤回后这一行立刻回到清单）';
+      // 文案只写「已报告」，撤回这个动作挂在悬浮提示上：按钮上写"点撤回"会让人以为还能再点出别的什么
+      bl.textContent = '已报告';
+      bad.title = '你已经报告过这一行。点一下撤回这张「进不去」（撤回后它立刻回到清单）';
       bad.addEventListener('click', function () { postVouch(server, 'clear', bad, bl); });
     } else {
       bl.textContent = '进不去';
@@ -778,11 +779,27 @@
     });
   }
 
+  /**
+   * 版本号排序键：`0.1.3` → 数值。**读不到版本号的按 -1 排在最后**（"版本低的放到后面"，
+   * 而"我们不知道它是什么版本"本质上比"它是旧版"更该往后放 —— 玩家先看能玩的）。
+   * 数据来自 occupancy.app（边缘真探 / 盒子国内探测 / 玩家 CORS 回执三条路），
+   * 所以同一台在不同轮次可能换档，这是排序跟着事实走，不是抖动。
+   */
+  function versionRank(server) {
+    var occ = state.occupancy[server.id] || {};
+    var m = /^v?(\d{1,4})\.(\d{1,4})(?:\.(\d{1,4}))?(?:\.(\d{1,4}))?/.exec(String(occ.app || ''));
+    if (!m) return -1;
+    return Number(m[1]) * 1e12 + Number(m[2]) * 1e8 + Number(m[3] || 0) * 1e4 + Number(m[4] || 0);
+  }
+
   function render() {
     if (!el.list) return;
     el.list.textContent = '';
     var shown = 0;
-    state.servers.forEach(function (server) {
+    // Array.prototype.sort 稳定：同版本（含都读不到版本）的保持清单原顺序
+    state.servers.slice().sort(function (a, b) {
+      return versionRank(b) - versionRank(a);
+    }).forEach(function (server) {
       if (server.quarantined) return; // failed server-side verification: hidden from the page
       el.list.appendChild(row(server));
       shown += 1;
