@@ -83,6 +83,10 @@ curl -X POST https://dl.jiangjiangze.icu/api/servers/vouch -H 'content-type: app
   （旧文件里只有 `ips` 的形状会自动当正向票读）；
 - 页面上行内标「N 人能进 · M 人进不去」，自己投过的按钮变撤回态；管理页暂存区显示同样票数，
   觉得不对点停用即可压票。
+- **维护者口**（都要求 `x-admin-key: $PUBLISH_KEY`）：`POST {"id":"<id>","verdict":"purge"}` 清掉某一条的
+  全部票（清单里已经没这个 id 的孤儿票也清得掉），加 `"all":true` 清整本；`GET /api/servers/vouch`
+  读计数台账（只有每台的 ok/bad 与最后时间，**不含来源哈希**）。匿名调用一律 403，不带口令的 GET 照旧 405。
+  这是投票刷屏时比「停用整条」轻一档的手段。
 
 ## 公开房间中转 `GET /api/rooms`
 

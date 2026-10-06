@@ -96,10 +96,31 @@ export async function onRequestPost(context) {
   try { body = await request.json(); } catch { return json({ ok: false, error: 'bad json' }, 400); }
   const id = typeof body.id === 'string' ? body.id.slice(0, 48) : '';
   if (!/^[a-zA-Z0-9_-]{1,48}$/.test(id)) return json({ ok: false, error: 'bad id' }, 400);
-  // 缺省按正向（老客户端只发 {id}）；clear 是「撤回我今天这张票」，第三个取值一律拒绝
+  // 缺省按正向（老客户端只发 {id}）；clear 是「撤回我今天这张票」；purge 是维护者清票（下面查身份）
   const verdict = body.verdict === undefined || body.verdict === 'ok' ? 'ok'
-    : (body.verdict === 'bad' || body.verdict === 'clear' ? body.verdict : null);
-  if (!verdict) return json({ ok: false, error: "verdict 只能是 'ok' / 'bad' / 'clear'" }, 400);
+    : (body.verdict === 'bad' || body.verdict === 'clear' || body.verdict === 'purge' ? body.verdict : null);
+  if (!verdict) return json({ ok: false, error: "verdict 只能是 'ok' / 'bad' / 'clear' / 'purge'" }, 400);
+
+  const isAdmin = !!env.PUBLISH_KEY && (request.headers.get('x-admin-key') || '') === env.PUBLISH_KEY;
+
+  // 维护者清票：投票刷屏时唯一比「停用整条」更轻的手段，也能清掉已从清单移除的条目留下的孤儿票。
+  // 放在清单查询之前 —— 正是要能清那种"条目已经不在清单里、票还躺在文件里"的情况。
+  if (verdict === 'purge') {
+    if (!isAdmin) return json({ ok: false, error: 'purge 需要 x-admin-key' }, 403);
+    const now2 = new Date();
+    let doc = { updated: null, vouches: {} };
+    const cur = await env.R2BUCKET.get(VOUCH_KEY);
+    if (cur) { try { doc = trim(JSON.parse(await cur.text())); } catch { doc = { updated: null, vouches: {} }; } }
+    const had = Object.keys(doc.vouches).length;
+    if (body.all === true) doc.vouches = {};
+    else delete doc.vouches[id];
+    doc.updated = now2.toISOString();
+    await env.R2BUCKET.put(VOUCH_KEY, JSON.stringify(doc, null, 1) + '\n', {
+      httpMetadata: { contentType: 'application/json', cacheControl: 'private, no-store' },
+    });
+    return json({ ok: true, purged: body.all === true ? had : (had - Object.keys(doc.vouches).length),
+                  scope: body.all === true ? '*' : id, ids_left: Object.keys(doc.vouches) });
+  }
 
   const listRes = await env.R2BUCKET.get(LIST_KEY);
   if (!listRes) return json({ ok: false, error: 'list missing' }, 500);
@@ -189,6 +210,19 @@ export async function onRequestPost(context) {
                 counts: { ok: saved.okCount, bad: saved.badCount } });
 }
 
-export async function onRequestGet() {
-  return json({ ok: false, error: 'POST only' }, 405);
+export async function onRequestGet(context) {
+  const { request, env } = context;
+  // 出示管理口令时可以读票据台账（只有每台的计数与最后时间，不含来源哈希）；没口令照旧 405，
+  // 不对外宣布这里有维护者口。
+  const isAdmin = !!env.PUBLISH_KEY && (request.headers.get('x-admin-key') || '') === env.PUBLISH_KEY;
+  if (!isAdmin || !env.R2BUCKET) return json({ ok: false, error: 'POST only' }, 405);
+  let doc = { vouches: {} };
+  const res = await env.R2BUCKET.get(VOUCH_KEY);
+  if (res) { try { doc = JSON.parse(await res.text()); } catch { /* 空台账 */ } }
+  const tallyOut = {};
+  for (const id of Object.keys(doc.vouches || {})) {
+    const rec = trim({ vouches: doc.vouches }).vouches[id] || {};
+    tallyOut[id] = { ok: rec.okCount || 0, bad: rec.badCount || 0, at: rec.at || null };
+  }
+  return json({ ok: true, updated: doc.updated || null, ids: tallyOut });
 }
