@@ -212,30 +212,27 @@
 .sv-modal__card .admin-grid { grid-template-columns: 1fr 1.4fr; }
 .sv-modal[hidden] { display: none; }
 
-/* ---- 待玩家核验：服务端判死（多是读不到版本号）但玩家进得去的服务器 ----------------- */
-.sv-unverified {
-  margin-top: .14rem;
-  padding: .1rem .12rem;
-  border: 1px dashed rgba(240, 178, 74, .45);
-  background: rgba(240, 178, 74, .05);
-}
-.sv-unverified[hidden] { display: none !important; }
-.sv-unverified__head { color: var(--gold-2); line-height: 1.5; margin-bottom: .08rem; }
-.sv-row.is-unverified { border-style: dashed; border-color: rgba(240, 178, 74, .35); background: rgba(12, 15, 14, .35); }
-.sv-row.is-unverified .sv-dot { background: var(--text-dim); color: var(--text-dim); box-shadow: none; }
-.sv-row.is-unverified .sv-name { color: var(--text-md); }
+/* ---- 玩家匿名举报「进不去」的票数与打开点击数 --------------------------------------- */
 .sv-vouchbadge {
   flex: 0 0 auto;
   margin-left: .06rem;
   padding: 0 .05rem;
-  border: 1px solid var(--mint-a35);
+  border: 1px solid rgba(246, 163, 41, .55);
   border-radius: .04rem;
-  color: var(--mint-500);
+  color: var(--amber);
   font-size: .11rem;
   white-space: nowrap;
 }
-.sv-vouchbadge.is-bad { border-color: rgba(246, 163, 41, .55); color: var(--amber); }
-/* 反向按钮刻意比「打开」弱一档：一次误点不该和主操作长一个样 */
+.sv-opencount {
+  flex: 0 1 auto;
+  margin-left: .06rem;
+  color: var(--text-dim);
+  font-size: .11rem;
+  letter-spacing: .02em;
+  white-space: nowrap;
+}
+.sv-opencount[hidden] { display: none; }
+/* 「进不去」刻意比「打开」弱一档：一次误点不该和主操作长一个样 */
 .sv-votebad { opacity: .62; }
 .sv-votebad:hover { opacity: 1; }
 

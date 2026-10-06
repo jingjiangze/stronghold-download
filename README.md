@@ -54,39 +54,59 @@ node tools/sign-servers.mjs --sign --publish     # 重签并发布，发布后�
 对象键递归按字典序、数组顺序不变、无多余空白；**`updated` 参与签名**，所以手改时间戳必然验不过。
 `review` 的响应里带 `canonicalSha256`，和本机签名器打印的 sha 一致就说明签的是同一份。
 
-## 未核服务器的匿名审核（正反两向，2026-10-06 加）
+## 玩家匿名举报「进不去」与打开点击数（2026-10-06）
 
-`/api/servers/verify` 判死的条目以前在公开页是**整行隐藏**的，玩家连提供证词的入口都没有；
-而判死链里最严的一条「读不到点分版本号即判死」常常只是那台跑的构建不回报 `app/version`。
-现在这些条目落在 `servers.html` 的「待玩家核验」区，**点一下「我核验通过」即代表过了核验**；
-反过来，正在显示的那一行也给了「进不去」按钮：
+同一天先加了"未核服务器的匿名核验"，**同日又取消了正向票**（站长的决定）：一个没有事实核验的
+点击去推翻判据，迟早变成"谁点得勤谁上线"。现在只剩两件事：
 
 ```bash
-curl -X POST https://dl.jiangjiangze.icu/api/servers/vouch -H 'content-type: application/json' -d '{"id":"rincynar","verdict":"ok"}'    # 我能进
-curl -X POST https://dl.jiangjiangze.icu/api/servers/vouch -H 'content-type: application/json' -d '{"id":"some-id","verdict":"bad"}'   # 我进不去
-curl -X POST https://dl.jiangjiangze.icu/api/servers/vouch -H 'content-type: application/json' -d '{"id":"some-id","verdict":"clear"}' # 撤回自己今天这张
+curl -X POST https://dl.jiangjiangze.icu/api/servers/vouch -H 'content-type: application/json' -d '{"id":"<清单id>","verdict":"bad"}'    # 报告进不去
+curl -X POST https://dl.jiangjiangze.icu/api/servers/vouch -H 'content-type: application/json' -d '{"id":"<清单id>","verdict":"clear"}'  # 撤回自己那张
+curl -X POST https://dl.jiangjiangze.icu/api/servers/open  -H 'content-type: application/json' -d '{"id":"<清单id>"}'                   # 记一次「打开」跳转
 ```
 
-口径与边界（都写在 `functions/api/servers/vouch.js` 与 `verify.js` 的注释里）：
+**负向票**（`vouch.js` + `verify.js`）：
 
-- **门槛刻意不对称**：正向 **1 票**即恢复展示；负向要 **2 个不同来源**才隐藏，并且两边比净多数
-  （1 正 3 负捞不回来，2 正 2 负平票则维持原判据）。理由不是偏心 —— 单条「我连不上」多半是本地
-  噪声（adblock、切网、页面没加载完、https 页面不让发 http 请求），10-05 就有一条这种回执把当天
-  最大的那台服（81 房/83 人）整条藏掉过；而「多显示一台暂时坏的」只让玩家点开发现打不开。
-- 票 **7 天**内有效，过期自动退回原判据（要留前台就得有人续点）；
-- 只翻**显示**，不翻**准入**：只接受签名清单里已存在的 id，地址/探针不接受访客输入，
-  所以清单的签名与条数不会因为票发生任何变化（`node tools/sign-servers.mjs` 可复验）；
-- `enabled === false`（管理页停用）服务端硬拒 403 —— 停用是维护者终审，正反两向都翻不动；
-  这一票改变不了什么的（正在显示的收正向、已隐藏的收负向）拒 409，**例外**是撤回和自己改票；
-  同一来源同一天同一台只能有一张票，重复投拒 429；
-- 按 `sha256(ip|id|当天)` 记名，**不存明文 IP**；票写 R2 `site/vouches.json`，不占 KV 写额度
-  （旧文件里只有 `ips` 的形状会自动当正向票读）；
-- 页面上行内标「N 人能进 · M 人进不去」，自己投过的按钮变撤回态；管理页暂存区显示同样票数，
-  觉得不对点停用即可压票。
-- **维护者口**（都要求 `x-admin-key: $PUBLISH_KEY`）：`POST {"id":"<id>","verdict":"purge"}` 清掉某一条的
-  全部票（清单里已经没这个 id 的孤儿票也清得掉），加 `"all":true` 清整本；`GET /api/servers/vouch`
-  读计数台账（只有每台的 ok/bad 与最后时间，**不含来源哈希**）。匿名调用一律 403，不带口令的 GET 照旧 405。
-  这是投票刷屏时比「停用整条」轻一档的手段。
+- 门槛是 **2 个不同来源**才隐藏一行。不是不信任玩家 —— 单条「我连不上」多半是本地噪声
+  （adblock、切网、页面没加载完、https 页面不让发 http 请求），10-05 就有一条这种回执把当天最大
+  的那台服（81 房/83 人）整条藏掉过。投完按钮会明确说"还差几个"。
+- 只翻**显示**，不翻**准入**：只接受签名清单里已存在的 id，地址/探针不接受访客输入，所以清单的
+  签名与条数不受任何影响（`node tools/sign-servers.mjs` 可复验）。
+- `enabled === false`（站长停用）硬拒 403 —— 停用是终审；当前已不显示的拒 409（这一票改变不了
+  什么），但**自己今天已有票的人改投/撤回永远允许**（分区快照可能滞后 120 s，不能拿它挡人）；
+  同一来源同一天同一台只有一张票，重复投 429。
+- 票 **7 天**过期；`verify.js` 把靠票隐藏的条目记进 `verified.json` 的 `player_state`，所以
+  撤回 / 管理页 purge / 过期都能**当场**回前台，不用等下一轮真探（那是 30 分钟）。
+- 按 `sha256(ip|id|当天)` 记名，**不存明文 IP**；写 R2 `site/vouches.json`，不占 KV 写额度
+  （旧文件里的正向 `ok`/`ips` 桶在任何一次写入时被裁掉）。
+- **维护者口**（要 `x-admin-key: $PUBLISH_KEY`）：`{"id":"<id>","verdict":"purge"}` 清某一条的票
+  （清单里已不存在的孤儿票也清得掉，所以这一步走在清单查询之前），`"all":true` 清整本；
+  `GET /api/servers/vouch` 读计数台账（只有票数与最后时间，不含来源哈希）。匿名 purge 一律 403，
+  不带口令的 GET 照旧 405。
+  **注意**：撤回只能撤"同一来源算出来的那一张"，而出口 IP 会漂（本机走代理就是这样），
+  所以要清别人或自己漂掉的票只能走 purge。
+
+**打开点击数**（`open.js`）：只统计次数、不当任何闸门。同一来源同一台 **10 秒内只算一次**（挡双击），
+同样不存明文 IP（16 位哈希只当时间窗键）。数字由 `verify.js` 并进 `site/verified.json` 的 `opens`，
+页面显示成「目前已点击 N 次」—— 少一个接口就少一次往返，在这条链路上很值钱。
+
+## 清单页的缓存口径（2026-10-06 定，别再改回 5 分钟）
+
+`_headers` 里 `/js/*`、`/css/*` 是 `max-age=31536000, immutable`，因为**页面引用一律带 `?v=`**
+（`servers.html` / `admin.html` 里那几个数字）—— 改了内容必须同时 bump 版本号，否则玩家拿的还是旧脚本。
+以前是 `max-age=300, must-revalidate`，等于让每个访客每隔几分钟重拉 43 KB 的 `servers.js`，而实测
+这条链路单次要 2–26 秒（本机走代理），这就是"清单加载很慢"的最大一项。
+
+另外两条实测事实别指望：边缘缓存拿不到（`weishucdn…/site/*.json` 与同源 `/data/*.json` 连打都是
+`cf-cache-status: DYNAMIC`，且没有 zone 写权限）；R2 域名带 query 会废掉 Range。所以首屏改成
+**先用打包快照 `data/servers.json` 立刻渲染、后台再取 R2 现网值**，浏览器测速也限到 4 路并发
+（原来一次把 29 台全铺开 ≈116 个请求，和页面自己的资源抢同一条隧道）。
+`data/servers.json` 只是兜底，**要定期从现网原样覆盖**（保留签名字节）：
+
+```bash
+curl -s https://weishucdn.jiangjiangze.icu/site/servers.json -o data/servers.json && node tools/sign-servers.mjs
+```
+
 
 ## 公开房间中转 `GET /api/rooms`
 

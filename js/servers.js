@@ -36,15 +36,17 @@
   // user hits 立即测速.
   var CACHE_KEY = 'sp.serverProbeCache.v1';
   var CACHE_TTL_MS = 24 * 60 * 60 * 1000;
-  // 玩家自己点过的「我核验通过」记在本地：服务端档位缓存最长 120s 才刷新，
-  // 不本地先放行会让人以为按钮没反应。24 小时后本地标记自动失效，以服务端结论为准。
+  // 玩家自己的「进不去」举报记在本地（按钮要变成可撤回态）。正向票已取消。
   var VOUCH_KEY = 'sp.vouchMine.v2';
-  var VOUCH_OLD_KEY = 'sp.vouchMine.v1';
   var VOUCH_LOCAL_TTL_MS = 24 * 60 * 60 * 1000;
   var VOUCH_URL = '/api/servers/vouch';
+  var OPEN_URL = '/api/servers/open';
   var VOUCH_BAD_MIN = 2; // 与 verify.js 一致：负向要 2 个不同来源才隐藏，按钮提示要说实话
+  var OPEN_LOCAL_KEY = 'sp.openLocal.v1';
+  var PROBE_CONCURRENCY = 4; // 一次打满 29 台会把本机代理隧道挤死（页面自己的资源也走那条路）
 
-  var state = { servers: [], updated: null, running: false, lastRun: 0, nextRun: 0, timer: null, fromCache: false, occupancy: {}, quarantine: [], mine: {}, voteCounts: {} };
+  var state = { servers: [], updated: null, running: false, lastRun: 0, nextRun: 0, timer: null,
+                fromCache: false, occupancy: {}, mine: {}, voteCounts: {}, opens: {}, openLocal: {} };
 
   var el = {
     list: document.getElementById('sv-list'),
@@ -53,8 +55,6 @@
     refresh: document.getElementById('sv-refresh'),
     note: document.getElementById('sv-note'),
     add: document.getElementById('sv-add'),
-    unverified: document.getElementById('sv-unverified'),
-    unverifiedList: document.getElementById('sv-unverified-list'),
     modal: document.getElementById('sv-modal'),
     modalForm: document.getElementById('sv-modal-form'),
     addName: document.getElementById('sv-add-name'),
@@ -109,10 +109,18 @@
             function (err) { clearTimeout(timer); throw err; });
   }
 
-  function loadList(index) {
-    index = index || 0;
-    if (index >= LIST_SOURCES.length) return Promise.resolve(null);
-    return fetchJson(LIST_SOURCES[index]).catch(function () { return loadList(index + 1); });
+  /**
+   * 清单取数：先让**打包快照**（同源、可被浏览器/边缘缓存）立刻把页面渲染出来，
+   * 后台再取 R2 现网值并替换。以前是"先等 R2，失败才退回快照"，而这条链路的首字节实测
+   * 2–26 秒（本机走代理），整页就跟着空在那儿 —— 清单"加载很慢"的主因不是数据量（7 KB），
+   * 是把首屏挂在了一个跨源请求上。
+   */
+  function loadList() {
+    var snap = fetchJson(LIST_SOURCES[1]).catch(function () { return null; });
+    var live = fetchJson(LIST_SOURCES[0]).catch(function () { return null; });
+    snap.then(function (data) { if (data) { prepare(data); render(); } }); // 先到先画，通常命中缓存
+    // 返回值仍是"现网优先、快照兜底"，boot 拿到它再做后续（测速/取分区结论）
+    return Promise.all([snap, live]).then(function (r) { return r[1] || r[0] || null; });
   }
 
   function prepare(data) {
@@ -160,69 +168,87 @@
     return false;
   }
 
-  /* ---- 玩家匿名审核（正反两个方向）---------------------------------------------------- */
+  /* ---- 玩家匿名举报「进不去」+ 打开点击数 -------------------------------------------- */
 
-  /** {id:{v:'ok'|'bad',at:ms}}，丢掉 24 小时前的；兼容 v1 形状（值直接是时间戳＝正向票）。 */
+  /** {id:{at:ms}} —— 只记自己报过「进不去」的条目（正向票已取消）。 */
   function loadMine() {
     var out = {};
     var cut = Date.now() - VOUCH_LOCAL_TTL_MS;
-    [VOUCH_KEY, VOUCH_OLD_KEY].forEach(function (key) {
-      try {
-        var raw = localStorage.getItem(key);
-        if (!raw) return;
-        var doc = JSON.parse(raw);
-        if (!doc || typeof doc !== 'object') return;
+    try {
+      var doc = JSON.parse(localStorage.getItem(VOUCH_KEY) || '{}');
+      if (doc && typeof doc === 'object') {
         Object.keys(doc).forEach(function (k) {
-          var rec = doc[k];
-          var v = (typeof rec === 'object' && rec) ? rec.v : 'ok';
-          var at = (typeof rec === 'object' && rec) ? Number(rec.at) : Number(rec);
-          if (at < cut || (v !== 'ok' && v !== 'bad')) return;
-          if (out[k] && out[k].at >= at) return;
-          out[k] = { v: v, at: at };
+          var at = Number((doc[k] || {}).at);
+          if (at >= cut) out[k] = { at: at };
         });
-      } catch (err) { /* 隐私模式 / 坏数据：当没投过 */ }
-    });
+      }
+    } catch (err) { /* 隐私模式 / 坏数据：当没投过 */ }
     return out;
   }
 
-  function markMine(id, verdict) {
-    state.mine[id] = { v: verdict, at: Date.now() };
-    try {
-      localStorage.setItem(VOUCH_KEY, JSON.stringify(state.mine));
-      localStorage.removeItem(VOUCH_OLD_KEY); // 迁到 v2 就不留旧键，免得下次启动又把旧取向读回来
-    } catch (err) { /* 隐私模式：只在本次会话内记住 */ }
+  function markMine(id, on) {
+    if (on) state.mine[id] = { at: Date.now() };
+    else delete state.mine[id];
+    try { localStorage.setItem(VOUCH_KEY, JSON.stringify(state.mine)); } catch (err) { /* 本次会话内记住 */ }
   }
 
-  function myVerdict(id) { return (state.mine[id] || {}).v || null; }
+  function reportedBad(id) { return !!state.mine[id]; }
 
-  /** verified.json 的 vouches 快照 → {id:{ok,bad}}（旧形状只有 count 时按正向读）。 */
   function applyVoteCounts(doc) {
     var out = {};
     var src = (doc && doc.vouches && typeof doc.vouches === 'object') ? doc.vouches : {};
-    Object.keys(src).forEach(function (k) {
-      var v = src[k] || {};
-      out[k] = { ok: Number(v.ok != null ? v.ok : v.count) || 0, bad: Number(v.bad) || 0 };
-    });
+    Object.keys(src).forEach(function (k) { out[k] = { bad: Number((src[k] || {}).bad) || 0 }; });
     state.voteCounts = out;
+  }
+
+  /** 打开点击数：服务端快照（verified.json 里的 opens）+ 本机自己刚点过的增量。 */
+  function applyOpens(doc) {
+    var src = (doc && doc.opens && typeof doc.opens === 'object') ? doc.opens : {};
+    var out = {};
+    Object.keys(src).forEach(function (k) {
+      out[k] = { total: Number(src[k].total) || 0, today: Number(src[k].today) || 0 };
+    });
+    state.opens = out;
+    var local = {};
+    try {
+      var cut = Date.now() - VOUCH_LOCAL_TTL_MS;
+      var doc2 = JSON.parse(localStorage.getItem(OPEN_LOCAL_KEY) || '{}');
+      Object.keys(doc2 || {}).forEach(function (k) {
+        var rec = doc2[k] || {};
+        if (Number(rec.at) >= cut) local[k] = { n: Number(rec.n) || 0, at: Number(rec.at) };
+      });
+    } catch (err) { /* 没本地增量就用服务端值 */ }
+    state.openLocal = local;
+  }
+
+  function openCount(id) {
+    var s = state.opens[id] || { total: 0, today: 0 };
+    var l = state.openLocal[id];
+    return { total: s.total + (l ? l.n : 0), today: s.today + (l ? l.n : 0) };
+  }
+
+  function bumpOpenLocal(id) {
+    var l = state.openLocal[id] || { n: 0, at: Date.now() };
+    l.n += 1; l.at = Date.now();
+    state.openLocal[id] = l;
+    try { localStorage.setItem(OPEN_LOCAL_KEY, JSON.stringify(state.openLocal)); } catch (err) { /* ignore */ }
   }
 
   function applyVerified(doc) {
     if (!doc) return 0;
     applyOccupancy(doc);
     applyVoteCounts(doc);
+    applyOpens(doc);
     if (!Array.isArray(doc.valid) || !Array.isArray(doc.invalid)) return 0;
     var okIds = {};
     doc.valid.forEach(function (id) { okIds[id] = true; });
     var reasons = {};
     doc.invalid.forEach(function (item) { reasons[item.id] = item.reason || '校验未通过'; });
     var hidden = 0;
-    var pool = [];
-    var seen = {};
     state.servers.forEach(function (server) {
       // A published id must be in `valid` to stay visible; anything else quarantines.
-      // 玩家点过「我核验通过」的条目本地先放行（服务端最迟 30 分钟内会把票认下来并写进 valid）；
-      // 反过来「进不去」一票**不**在本地隐藏 —— 门槛是两个不同来源，一个人说了不算。
-      if (okIds[server.id] || myVerdict(server.id) === 'ok') {
+      // 「进不去」一票**不**在本地隐藏 —— 门槛是两个不同来源，一个人说了不算。
+      if (okIds[server.id]) {
         server.quarantined = false;
         // 靠玩家证据活着的条目必须继续回执，否则 24 小时后证据过期会被重新隐藏，来回抖
         server.viaBrowser = !!(doc.evidence && doc.evidence[server.id]);
@@ -234,16 +260,7 @@
       // 已经有成绩、这一轮才发现它被隐藏：立刻回执，不等 30 分钟后的下一轮测速
       if (server.ms != null && !server.offline) reportPing(server);
       hidden += 1;
-      // 停用项不进可投票的池子：那是站长的终审（服务端同样硬拒）
-      if (/停用/.test(server.quarantineReason) || !server.name) return;
-      var occ = state.occupancy[server.id] || {};
-      var v = state.voteCounts[server.id] || {};
-      pool.push({ id: server.id, name: server.name, host: server.url ? server.url.host : '',
-                  url: server.url ? server.url.href : '', reason: server.quarantineReason,
-                  ms: server.ms, ok: v.ok || occ.player_vouched || 0, bad: v.bad || occ.player_bad || 0 });
-      seen[server.id] = true;
     });
-    state.quarantine = pool;
     state.hiddenCount = hidden;
     return hidden;
   }
@@ -257,7 +274,7 @@
       // 探不到版本号的判死已经挪到服务端（verify.js 直接进 invalid），所以这里只报一个数：
       // 页面各自再判一次会出现"同一台在网页藏着、在客户端还亮着"两种口径，维护者复核时看不出差别
       if (hidden) {
-        setText(el.note, hidden + ' 台服务器因服务端校验未通过被挪到下方「待玩家核验」，你能连上就点一下恢复展示。');
+        setText(el.note, hidden + ' 台服务器因服务端校验未通过已暂时隐藏（可在恢复后自动重新展示）。');
       }
       render();
       return hidden;
@@ -478,15 +495,28 @@
     if (document.body) document.body.setAttribute('data-probe', 'running');
     setText(el.note, force ? '手动测速进行中…' : '正在补测新服务器…');
     var targets = force ? state.servers : missing;
-    // Measure servers in parallel: each runs its own warm-up + samples, and the UI row
-    // updates as soon as that server finishes instead of after the whole round.
-    var done = Promise.all(targets.map(function (server) {
-      if (!server.probeable) { server.level = 'na'; return undefined; }
-      return pickPath(server).then(function (url) {
-        if (!url) { server.level = 'bad'; server.offline = true; server.ms = null; return undefined; }
-        return sample(server, url).then(function () { render(); });
-      });
-    }));
+    // 限并发：以前一次把 29 台全铺开（每台预热 + 3 次采样 ≈116 个请求），走代理的机器上
+    // 这条隧道同时也在拉页面自己的 JS/CSS/清单 —— 结果就是"清单加载很慢"。4 路一组，
+    // 每台测完立刻刷那一行，观感比一把梭更快。
+    var queue = targets.slice();
+    function worker() {
+      var server = queue.shift();
+      if (!server) return Promise.resolve();
+      var step;
+      if (!server.probeable) {
+        server.level = 'na';
+        step = Promise.resolve();
+      } else {
+        step = pickPath(server).then(function (url) {
+          if (!url) { server.level = 'bad'; server.offline = true; server.ms = null; return undefined; }
+          return sample(server, url).then(function () { render(); });
+        }).catch(function () { /* 单台异常不拖垮整轮 */ });
+      }
+      return step.then(worker);
+    }
+    var lanes = [];
+    for (var w = 0; w < PROBE_CONCURRENCY; w += 1) lanes.push(worker());
+    var done = Promise.all(lanes);
     return done.then(function () {
       state.running = false;
       state.lastRun = Date.now();
@@ -610,6 +640,43 @@
       : '';
     div.appendChild(ms);
 
+    // 「进不去」排在「打开」前面：先给判断再给跳转。报进不去的人多半就是刚点开过的那个，
+    // 按钮放在跳转后面等于让他先做动作再回头找入口。
+    var c = state.voteCounts[server.id] || {};
+    if (c.bad) {
+      var vb = document.createElement('span');
+      vb.className = 'sv-vouchbadge is-bad';
+      vb.textContent = c.bad + ' 人进不去';
+      vb.title = '同一台要 ' + VOUCH_BAD_MIN + ' 个不同来源报告进不去才隐藏这一行（当前 ' + c.bad + ' 个）';
+      main.appendChild(vb);
+    }
+    // 打开跳转的点击数：服务端快照 + 本机刚点过的增量（数字要立刻动，不等 120s 缓存）
+    var oc = document.createElement('span');
+    var on = openCount(server.id);
+    oc.className = 'sv-opencount';
+    oc.hidden = !on.total;
+    oc.textContent = '目前已点击 ' + on.total + ' 次';
+    oc.title = openTitle(on);
+    main.appendChild(oc);
+
+    var bad = document.createElement('button');
+    bad.type = 'button';
+    bad.className = 'btn btn--ghost btn--sm sv-votebad';
+    var bl = document.createElement('span');
+    bl.className = 'btn__label';
+    if (reportedBad(server.id)) {
+      bl.textContent = '已报告 · 点撤回';
+      bad.title = '撤回自己这张「进不去」（撤回后这一行立刻回到清单）';
+      bad.addEventListener('click', function () { postVouch(server, 'clear', bad, bl); });
+    } else {
+      bl.textContent = '进不去';
+      bad.title = '只在「页面打得开、进不了游戏」时点。' + VOUCH_BAD_MIN
+        + ' 个不同来源报告进不去才会隐藏这一行（单条报告多半是本地网络噪声）';
+      bad.addEventListener('click', function () { postVouch(server, 'bad', bad, bl); });
+    }
+    bad.appendChild(bl);
+    div.appendChild(bad);
+
     if (server.url) {
       var open = document.createElement('a');
       open.className = 'btn btn--secondary btn--sm';
@@ -620,118 +687,39 @@
       label.className = 'btn__label';
       label.textContent = '打开';
       open.appendChild(label);
+      open.addEventListener('click', function () { countOpen(server, oc); });
       div.appendChild(open);
     }
-
-    // 反向按钮：一票只记账，攒够 VOUCH_BAD_MIN 个不同来源才隐藏（门槛比正向高，理由见 verify.js 注释）
-    var c = state.voteCounts[server.id] || {};
-    if (c.ok) {
-      // 这一行上有玩家票就说出来：负向有徽章、正向没有，等于只报坏不报好
-      var vo = document.createElement('span');
-      vo.className = 'sv-vouchbadge';
-      vo.textContent = c.ok + ' 人能进';
-      vo.title = c.ok + ' 位玩家点了「我核验通过」（7 天内有效）' + (c.bad ? '，' + c.bad + ' 人点了进不去' : '');
-      main.appendChild(vo);
-    }
-    if (c.bad) {
-      var vb = document.createElement('span');
-      vb.className = 'sv-vouchbadge is-bad';
-      vb.textContent = c.bad + ' 人进不去';
-      vb.title = c.ok ? ('另有 ' + c.ok + ' 人报告能进') : '还没有人报告能进';
-      main.appendChild(vb);
-    }
-    var bad = document.createElement('button');
-    bad.type = 'button';
-    bad.className = 'btn btn--ghost btn--sm sv-votebad';
-    var bl = document.createElement('span');
-    bl.className = 'btn__label';
-    var mine = myVerdict(server.id);
-    if (mine === 'bad') {
-      bl.textContent = '已报告 · 点撤回';
-      bad.title = '撤回这张「进不去」。你其实进得去的话，等它掉进下方「待核验」再点「我核验通过」';
-      bad.addEventListener('click', function () { postVouch(server, 'clear', bad, bl); });
-    } else {
-      bl.textContent = '进不去';
-      bad.title = '只在「页面打得开、进不了游戏」时点。' + VOUCH_BAD_MIN
-        + ' 个不同来源报告进不去才会隐藏这一行（单条报告多半是本地网络噪声）';
-      bad.addEventListener('click', function () { postVouch(server, 'bad', bad, bl); });
-    }
-    bad.appendChild(bl);
-    div.appendChild(bad);
     return div;
+  }
+
+  function openTitle(on) {
+    return '统计玩家点「打开」跳转的次数（同一来源 10 秒内只算一次，不去重到人）'
+      + (on.today ? '；今日 ' + on.today + ' 次' : '');
+  }
+
+  /** 点了就本地加一 + 后台记账：不拦跳转，也不因为网络失败而回退数字（这只是一个粗信号）。 */
+  function countOpen(server, node) {
+    bumpOpenLocal(server.id);
+    var on = openCount(server.id);
+    if (node) {
+      node.hidden = false;
+      node.textContent = '目前已点击 ' + on.total + ' 次';
+      node.title = openTitle(on);
+    }
+    fetch(OPEN_URL, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ id: server.id }),
+      keepalive: true,
+    }).catch(function () { /* 记账失败不打扰玩家 */ });
   }
 
   /**
-   * 「待玩家核验」区：被服务端判死、但玩家进得去的那些服务器。
-   * 存在的理由：判据里最严的一条是「读不到版本号即判死」，而读不到版本号常常只是那台跑的构建
-   * 不回报 app/version —— 服务器活着，玩家却完全看不到它（这一版之前整行是隐藏的）。
-   * 点一下「我核验通过」= 这台过了核验（服务端认票，见 functions/api/servers/vouch.js）。
+   * 投「进不去」或撤回自己那张。门槛是 2 个不同来源（见 verify.js 的注释：单条"我连不上"
+   * 多半是本地噪声，10-05 就因此误藏过当天最大的一台服），所以投完要明确说还差几个。
    */
-  function unrow(item) {
-    var div = document.createElement('div');
-    div.className = 'sv-row is-unverified';
-    var dot = document.createElement('span');
-    dot.className = 'sv-dot';
-    div.appendChild(dot);
-
-    var main = document.createElement('div');
-    main.className = 'sv-main';
-    var name = document.createElement('span');
-    name.className = 'sv-name';
-    name.textContent = item.name;
-    var host = document.createElement('span');
-    host.className = 'sv-host';
-    host.textContent = (item.host || '') + ' · ' + item.reason;
-    main.appendChild(name);
-    main.appendChild(host);
-    if (item.ok || item.bad) {
-      var badge = document.createElement('span');
-      badge.className = 'sv-vouchbadge';
-      badge.textContent = (item.ok ? item.ok + ' 人能进' : '')
-        + (item.ok && item.bad ? ' · ' : '') + (item.bad ? item.bad + ' 人进不去' : '');
-      badge.title = '玩家匿名审核：正向 1 票即恢复展示，负向要 ' + VOUCH_BAD_MIN + ' 个不同来源才隐藏';
-      main.appendChild(badge);
-    }
-    div.appendChild(main);
-
-    var ms = document.createElement('span');
-    ms.className = 'sv-ms';
-    ms.textContent = item.ms == null ? '—' : Math.round(item.ms) + ' ms';
-    div.appendChild(ms);
-
-    if (item.url) {
-      var open = document.createElement('a');
-      open.className = 'btn btn--secondary btn--sm';
-      open.href = item.url;
-      open.target = '_blank';
-      open.rel = 'noopener noreferrer';
-      var ol = document.createElement('span');
-      ol.className = 'btn__label';
-      ol.textContent = '打开';
-      open.appendChild(ol);
-      div.appendChild(open);
-    }
-
-    var go = document.createElement('button');
-    go.type = 'button';
-    go.className = 'btn btn--primary btn--sm';
-    var label = document.createElement('span');
-    label.className = 'btn__label';
-    if (myVerdict(item.id) === 'ok') {
-      label.textContent = '你已核验 · 点撤回';
-      go.title = '撤回之后这一行会重新回到「待核验」，除非还有别人投了能进';
-      go.addEventListener('click', function () { postVouch(item, 'clear', go, label); });
-    } else {
-      label.textContent = '我核验通过';
-      go.addEventListener('click', function () { postVouch(item, 'ok', go, label); });
-    }
-    go.appendChild(label);
-    div.appendChild(go);
-    return div;
-  }
-
-  /** verdict: 'ok' 能进 / 'bad' 进不去 / 'clear' 撤回自己那张 */
-  function postVouch(item, verdict, btn, label) {
+  function postVouch(server, verdict, btn, label) {
     if (!btn || btn.disabled) return;
     var old = label ? label.textContent : '';
     btn.disabled = true;
@@ -739,53 +727,30 @@
     fetch(VOUCH_URL, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ id: item.id, verdict: verdict }),
+      body: JSON.stringify({ id: server.id, verdict: verdict }),
     }).then(function (res) {
       return res.json().catch(function () { return {}; }).then(function (data) { return { status: res.status, data: data }; });
     }).then(function (outcome) {
       var c = (outcome.data && outcome.data.counts) || {};
       // 429 = 今天这台你已经投过了：本地同样按已投处理，别继续摆着让人重复点
-      if (outcome.status === 429) { markMine(item.id, verdict); render(); return; }
+      if (outcome.status === 429) { markMine(server.id, true); render(); return; }
       if (!outcome.data.ok) throw new Error(outcome.data.error || ('HTTP ' + outcome.status));
+      markMine(server.id, verdict !== 'clear');
       if (verdict === 'clear') {
-        delete state.mine[item.id];
-        try { localStorage.setItem(VOUCH_KEY, JSON.stringify(state.mine)); } catch (err) { /* ignore */ }
-        setText(el.note, '已撤回你对「' + item.name + '」的审核（现在 '
-          + (c.ok || 0) + ' 人能进 / ' + (c.bad || 0) + ' 人进不去）。');
-        render();
-        triggerVerify();
-        return;
-      }
-      markMine(item.id, verdict);
-      if (verdict === 'ok') {
-        setText(el.note, '已记下「' + item.name + '」能进（' + (c.ok || 1) + ' 人能进'
-          + (c.bad ? ' / ' + c.bad + ' 人进不去' : '') + '），已恢复展示。');
+        setText(el.note, '已撤回你对「' + server.name + '」的「进不去」（现在 '
+          + (c.bad || 0) + ' 人报告进不去）。');
       } else {
         var left = Math.max(0, VOUCH_BAD_MIN - (Number(c.bad) || 0));
-        setText(el.note, '已报告「' + item.name + '」进不去（' + (c.bad || 1) + ' 人报告'
-          + (left ? '，还差 ' + left + ' 个不同来源才会隐藏这一行；单条报告多半是本地网络噪声' : '，已达隐藏门槛') + '）。');
+        setText(el.note, '已报告「' + server.name + '」进不去（' + (c.bad || 1) + ' 个来源报告'
+          + (left ? '，还差 ' + left + ' 个才会隐藏这一行；单条报告多半是本地网络噪声' : '，已达隐藏门槛') + '）。');
       }
       render();
       triggerVerify(); // 请服务端把票认进分区（档位内走缓存直返分支，也会立刻补这一层）
     }).catch(function (err) {
       btn.disabled = false;
       if (label) label.textContent = old;
-      setText(el.note, '审核没提交上去：' + (err && err.message ? err.message : '网络'));
+      setText(el.note, '举报没提交上去：' + (err && err.message ? err.message : '网络'));
     });
-  }
-
-  function renderUnverified() {
-    if (!el.unverified || !el.unverifiedList) return;
-    var pool = (state.quarantine || []).filter(function (it) { return myVerdict(it.id) !== 'ok'; });
-    if (!pool.length) { el.unverified.hidden = true; el.unverifiedList.textContent = ''; return; }
-    // 能进票多的排前面：那说明大家想看见它，最该被补一票
-    pool.sort(function (a, b) { return (b.ok || 0) - (a.ok || 0) || (a.bad || 0) - (b.bad || 0); });
-    el.unverified.hidden = false;
-    el.unverifiedList.textContent = '';
-    pool.forEach(function (it) { el.unverifiedList.appendChild(unrow(it)); });
-    var head = document.getElementById('sv-unverified-head');
-    if (head) setText(head, '以下 ' + pool.length + ' 台现在没在清单里显示：我们读不到它的版本号/状态，或者有玩家报告进不去。'
-      + '你要是能连上、进得去游戏，点「我核验通过」就恢复展示（一票即算，7 天内有效）。');
   }
 
   function render() {
@@ -793,11 +758,10 @@
     el.list.textContent = '';
     var shown = 0;
     state.servers.forEach(function (server) {
-      if (server.quarantined) return; // 未核的条目挪到下面的「待玩家核验」区，不在主清单里重复
+      if (server.quarantined) return; // failed server-side verification: hidden from the page
       el.list.appendChild(row(server));
       shown += 1;
     });
-    renderUnverified();
     if (state.updated) {
       var stamp = new Date(state.updated);
       setText(el.updated, '清单更新 ' + (isNaN(stamp.getTime())

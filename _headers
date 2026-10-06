@@ -1,16 +1,22 @@
 /fonts/*
   Cache-Control: public, max-age=604800, immutable
 
-# Scripts and stylesheets change with each deploy; keep the edge/browser TTL short so a
-# release is picked up promptly (references are also versioned with ?v= for instant bumps).
+# 页面引用的 js/css 都带 ?v= 版本号（改内容就 bump 一次，见 servers.html / admin.html），
+# 所以可以放心长期 immutable：max-age=300 那版等于让每个访客每隔几分钟重新拉一次 43 KB 的
+# servers.js，而本机这类走代理的链路单次要 2–26 秒 —— 这就是"清单加载很慢"的最大一项。
 /css/*
-  Cache-Control: public, max-age=300, must-revalidate
+  Cache-Control: public, max-age=31536000, immutable
 
 /js/*
-  Cache-Control: public, max-age=300, must-revalidate
+  Cache-Control: public, max-age=31536000, immutable
 
+# 打包快照只是首屏兜底（真值走 R2），5 分钟足够
 /data/*
-  Cache-Control: public, max-age=60
+  Cache-Control: public, max-age=300, stale-while-revalidate=3600
+
+# HTML 给一个短 TTL + SWR：清单页的按钮/文案改动靠 ?v= 生效，不需要每次都回源
+/*.html
+  Cache-Control: public, max-age=120, stale-while-revalidate=600
 
 /
-  Cache-Control: public, max-age=120
+  Cache-Control: public, max-age=120, stale-while-revalidate=600

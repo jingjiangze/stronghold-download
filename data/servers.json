@@ -1,5 +1,5 @@
 {
-  "updated": "2026-10-05T15:57:57.788Z",
+  "updated": "2026-10-06T08:47:17.352Z",
   "servers": [
     {
       "id": "xiaolubao",
@@ -194,9 +194,47 @@
       "url": "https://map.u712507.nyat.app:38916",
       "probe": "/healthz",
       "enabled": true
+    },
+    {
+      "id": "muviw5hk6e64ef73",
+      "name": "game.lingluotoki.dpdns.org（待核）",
+      "url": "https://game.lingluotoki.dpdns.org",
+      "probe": "/healthz",
+      "enabled": true,
+      "note": "自动发现 · 评论区 泠泺TOKI"
+    },
+    {
+      "id": "muvrgmun502e8a3f",
+      "name": "game.kafuno.cn（待核）",
+      "url": "https://game.kafuno.cn",
+      "probe": "/healthz",
+      "enabled": true,
+      "note": "自动发现 · 评论区 Auffo"
+    },
+    {
+      "id": "muw6h36z59688ca7",
+      "name": "ark.chiruno.com（待核）",
+      "url": "https://ark.chiruno.com",
+      "probe": "/healthz",
+      "enabled": true,
+      "note": "自动发现 · 评论区 Yushun_Zero"
+    },
+    {
+      "id": "muw6ynk2be0243fa",
+      "name": "play.simpfun.cn",
+      "url": "http://play.simpfun.cn:22303",
+      "probe": "/healthz",
+      "enabled": true
+    },
+    {
+      "id": "muwfqnz1ef76bce8",
+      "name": "play.simpfun.cn",
+      "url": "http://play.simpfun.cn:39928",
+      "probe": "/healthz",
+      "enabled": true
     }
   ],
   "keyId": "sp-2026-10",
   "v": 1,
-  "sig": "NoZ1K2BPxAeYttfsx0MtUjsDBnlruL6uuWmZBLxcXO0N7Hlu8wPljHZnNXloyjfdP0K1757dPEMNQZuiaBQbCA=="
+  "sig": "xrsDQvSrsT/iSq2BMf+SYqPqSlpA5xfTt82Y16MfJy2e9Ux+ujt7YMuWipSFqprjnmjzZ8Uo1fJhyDzpWzi2Dw=="
 }

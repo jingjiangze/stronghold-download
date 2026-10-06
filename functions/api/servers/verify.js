@@ -15,8 +15,9 @@
 // but the download page hides invalid entries until they pass again.
 //
 // 证据分层（从弱到强）：边缘指纹 > 盒子国内服务端探测（看得见状态码）> 玩家浏览器 no-cors 回执
-// > **玩家匿名审核**（/api/servers/vouch，正反两向：1 票救回"探不到版本号/边缘 5xx"，
-// 2 个不同来源才能把正在显示的判成"玩家实测进不去"）> 站长停用（终审，任何票都翻不动）。
+// > **玩家匿名举报「进不去」**（/api/servers/vouch，2 个不同来源才隐藏一行，7 天内有效）
+// > 站长停用（终审，任何票都翻不动）。
+// 玩家的「我核验通过」曾经能捞回被判死的条目，2026-10-06 同日取消 —— 恢复展示只认探测与维护者。
 
 import { verifyServerHealth, checkEntryUrl } from '../_verify.js';
 
@@ -24,6 +25,7 @@ const LIST_KEY = 'site/servers.json';
 const VERIFIED_KEY = 'site/verified.json';
 const PINGS_KEY = 'site/pings.json';
 const VOUCH_KEY = 'site/vouches.json';
+const OPEN_KEY = 'site/opens.json';
 
 function json(data, status) {
   return new Response(JSON.stringify(data), {
@@ -84,72 +86,35 @@ export async function onRequestGet(context) {
     const age = Date.now() - Date.parse(p.at || '');
     return Number.isFinite(age) && age < 2 * 3600e3 ? p : null;
   };
-  // 玩家匿名审核（写口 POST /api/servers/vouch，正反两个方向）。2026-10-06 定的口径：
-  // **正向 1 票即恢复展示，负向要 2 个不同来源**，两边比多数，7 天内有效、过期自动退回原判据。
-  // 为什么给它这么高的权重：这是全套判据里唯一一条「人眼看过游戏真能进 / 真进不去」的证据。
-  // 浏览器回执是 no-cors，502 的页面也算"连上了"，表达不了健康与否；玩家的点击没有这个盲区，
-  // 所以正向票连边缘看见的 5xx 也能翻案。但仍翻不动 已停用 —— 那是维护者的终审（见 disabledIds）。
-  // 负向门槛比正向高不是因为不信任它，而是 10-05 吃过两次亏：单条「我连不上」多半是本地噪声
-  // （adblock、切网、页面没加载完），曾把当天最大的一台服（81 房/83 人）整条藏掉。
+  // 玩家匿名举报「进不去」（写口 POST /api/servers/vouch）。2026-10-06 加过正向票，同日又
+  // **取消**了：一个没有事实核验的点击去推翻判据，迟早变成"谁点得勤谁上线"。现在只剩负向，
+  // 门槛是 **2 个不同来源**才隐藏一行，7 天内有效，票被撤回/清掉/过期就当场恢复原判据。
+  // 为什么门槛不是 1：单条「我连不上」多半是本地噪声（adblock、切网、页面没加载完、https 页面
+  // 不让发 http 请求），10-05 就有一条这种回执把当天最大的一台服（81 房/83 人）整条藏掉过。
   let vouches = {};
   const vouchRes = await env.R2BUCKET.get(VOUCH_KEY);
   if (vouchRes) { try { vouches = (JSON.parse(await vouchRes.text()) || {}).vouches || {}; } catch { /* 没人投过 */ } }
   const VOUCH_TTL_MS = 7 * 24 * 3600e3;
   const VOUCH_BAD_MIN = 2;
-  const vCounts = (id) => {
+  const badCount = (id) => {
     const v = vouches[id];
-    if (!v || typeof v !== 'object') return null;
+    if (!v || typeof v !== 'object') return 0;
     const age = Date.now() - Date.parse(v.at || '');
-    if (!Number.isFinite(age) || age >= VOUCH_TTL_MS) return null;
-    const okMap = (v.ok && typeof v.ok === 'object') ? v.ok
-      : ((v.ips && typeof v.ips === 'object') ? v.ips : {});   // 旧文件只有正向，键名是 ips
-    const badMap = (v.bad && typeof v.bad === 'object') ? v.bad : {};
-    return { ok: Object.keys(okMap).length, bad: Object.keys(badMap).length, at: v.at || null };
+    if (!Number.isFinite(age) || age >= VOUCH_TTL_MS) return 0;
+    const map = (v.bad && typeof v.bad === 'object') ? v.bad : {};
+    return Object.keys(map).length;
   };
-  const vouchOk = (id) => {
-    const c = vCounts(id);
-    return c && c.ok >= 1 && c.ok > c.bad ? c : null;
-  };
-  const vouchBad = (id) => {
-    const c = vCounts(id);
-    return c && c.bad >= VOUCH_BAD_MIN && c.bad > c.ok ? c : null;
-  };
+  const vouchBad = (id) => (badCount(id) >= VOUCH_BAD_MIN
+    ? { bad: badCount(id), at: (vouches[id] || {}).at || null } : null);
   const disabledIds = new Set(servers.filter((s) => s && s.enabled === false).map((s) => s.id));
   const entryOf = new Map(servers.map((s) => [s.id, s]));
   /**
-   * 把玩家票应用到一份分区上（valid / invalid / occupancy 就地改），返回 {promoted, demoted}。
-   * 正向：判死链的每一支都认 —— 冷却沿用、边缘超时、5xx、探不到版本号，一律捞回；
-   * 负向：正在显示的条目只要攒够 2 个不同来源就挪进暂存区（不写退避，下一轮照探，
-   * 票数被正向翻回去就自动回前台）。两边的终审都是 已停用（站长关的东西玩家票翻不动）。
+   * 负向票应用到一份分区上（valid / invalid / occupancy 就地改），返回 {demoted}。
+   * 不写退避：下一轮照探。marks 记下"这行是靠票隐藏的"，票一撤就知道该恢复谁。
+   * 终审仍是 已停用 —— 站长关的东西玩家票翻不动（正反都一样）。
    */
-  const applyVouches = function (validArr, invalidArr, occ) {
-    let promoted = 0;
+  const applyVouches = function (validArr, invalidArr, occ, marks) {
     let demoted = 0;
-    const stamp = function (id, c) {
-      const p = pings[id] || {};
-      const base = occ[id] || {};
-      occ[id] = {
-        rooms: base.rooms != null ? base.rooms : (p.rooms != null ? p.rooms : null),
-        humans: base.humans != null ? base.humans : (p.humans != null ? p.humans : null),
-        app: base.app || p.app || null,
-        build: base.build || p.build || null,
-        variant: base.variant || p.variant || 'player',
-        entry_status: base.entry_status || null,
-        player_vouched: c.ok,
-        player_bad: c.bad,
-        vouched_at: c.at,
-      };
-    };
-    for (let i = invalidArr.length - 1; i >= 0; i -= 1) {
-      const it = invalidArr[i];
-      if (!it || !it.id || disabledIds.has(it.id)) continue;
-      const c = vouchOk(it.id);
-      if (!c) continue;
-      invalidArr.splice(i, 1);
-      validArr.push(it.id);
-      stamp(it.id, c);
-      promoted += 1;
-    }
     for (let i = validArr.length - 1; i >= 0; i -= 1) {
       const id = validArr[i];
       if (disabledIds.has(id)) continue;
@@ -158,18 +123,33 @@ export async function onRequestGet(context) {
       validArr.splice(i, 1);
       const e = entryOf.get(id) || {};
       invalidArr.push({ id, name: e.name || id, url: e.url || null,
-        reason: '玩家实测进不去（' + c.bad + ' 人报告进不去，' + c.ok + ' 人报告能进）' });
-      stamp(id, c);
+        reason: '玩家实测进不去（' + c.bad + ' 个不同来源报告进不去）' });
+      occ[id] = Object.assign({}, occ[id] || {}, { player_bad: c.bad, vouched_at: c.at });
+      marks[id] = { dir: 'down', at: c.at };
       demoted += 1;
     }
-    return { promoted, demoted };
+    return { demoted };
+  };
+  /** 票被撤回 / 管理页 purge / 7 天过期 → 当场回前台，不等下一轮真探（那一等就是 30 分钟）。 */
+  const revokeVouches = function (validArr, invalidArr, marks) {
+    let revoked = 0;
+    for (const id of Object.keys(marks || {})) {
+      if (vouchBad(id)) continue;
+      delete marks[id];
+      const i = invalidArr.findIndex((x) => x && x.id === id);
+      if (i < 0) continue;
+      invalidArr.splice(i, 1);
+      validArr.push(id);
+      revoked += 1;
+    }
+    return revoked;
   };
   /** 给页面与管理页看的票数快照（只含还没过期的票）。 */
   const vouchSnapshot = function () {
     const out = {};
     for (const id of Object.keys(vouches)) {
-      const c = vCounts(id);
-      if (c && (c.ok || c.bad)) out[id] = { ok: c.ok, bad: c.bad, count: c.ok, at: c.at };
+      const n = badCount(id);
+      if (n) out[id] = { bad: n, at: (vouches[id] || {}).at || null };
     }
     return out;
   };
@@ -190,25 +170,26 @@ export async function onRequestGet(context) {
   const prevAt = Date.parse(previous.updated || '');
   const listUnchanged = previous.listUpdated && previous.listUpdated === doc.updated;
   if (!force && prevAt && listUnchanged && Date.now() - prevAt < FLOOR_MS) {
-    // 档位内也不许把玩家已经核验过的服务器藏著：点一下按钮要立刻见到效果，
-    // 而这一分支根本不会重新探测，所以直接在上一轮结论上补这一层。
+    // 档位内也要处理票：玩家点「进不去」要立刻攒数、够了立刻隐藏，撤回/purge 要立刻恢复 ——
+    // 这一分支根本不重新探测，所以直接在上一轮结论上补这一层。
     // 回写时**保持 updated 不变** —— 否则每次读都会把档位起点往后推，真探永远轮不到。
     const occ = (previous.occupancy && typeof previous.occupancy === 'object') ? previous.occupancy : {};
-    const mv = applyVouches(
-      Array.isArray(previous.valid) ? previous.valid : [],
-      Array.isArray(previous.invalid) ? previous.invalid : [],
-      occ,
-    );
+    const validArr = Array.isArray(previous.valid) ? previous.valid : [];
+    const invalidArr = Array.isArray(previous.invalid) ? previous.invalid : [];
+    const marks = (previous.player_state && typeof previous.player_state === 'object') ? previous.player_state : {};
+    const revoked = revokeVouches(validArr, invalidArr, marks);
+    const mv = applyVouches(validArr, invalidArr, occ, marks);
     const vshot = vouchSnapshot();
     // 票数变了也要回写：管理页 purge 掉一张票之后，不该再挂着「1 人进不去」的徽章等下一轮真探。
     // 比较用 JSON 串，一次写就收敛，不会每次都写。
     const staleShot = JSON.stringify(previous.vouches || {}) !== JSON.stringify(vshot);
-    if (mv.promoted || mv.demoted || staleShot) {
+    if (revoked || mv.demoted || staleShot) {
       await env.R2BUCKET.put(VERIFIED_KEY, JSON.stringify({
         updated: previous.updated, listUpdated: previous.listUpdated,
-        valid: previous.valid, invalid: previous.invalid, occupancy: occ,
+        valid: validArr, invalid: invalidArr, occupancy: occ,
         backoff: previous.backoff || {}, evidence: previous.evidence || {},
-        vouches: vshot,
+        vouches: vshot, player_state: marks,
+        opens: previous.opens || {},
         entry_down_rounds: previous.entry_down_rounds || {},
       }, null, 2) + '\n', {
         httpMetadata: { contentType: 'application/json', cacheControl: 'public, max-age=120' },
@@ -216,9 +197,9 @@ export async function onRequestGet(context) {
     }
     return json({ ok: true, cached: true, updated: previous.updated, listUpdated: previous.listUpdated,
                   nextRetryAt: new Date(prevAt + FLOOR_MS).toISOString(),
-                  valid: (previous.valid || []).length, invalid: previous.invalid || [],
-                  vouch_promoted: mv.promoted, vouch_demoted: mv.demoted, vouches: vshot,
-                  backoff: previous.backoff || {} });
+                  valid: validArr.length, invalid: invalidArr,
+                  vouch_demoted: mv.demoted, vouch_revoked: revoked,
+                  vouches: vshot, backoff: previous.backoff || {} });
   }
 
   // 单台冷却：429/限流 → 两个档位；超时/5xx/网络异常 → 一个档位。
@@ -407,13 +388,10 @@ export async function onRequestGet(context) {
       }
     }
   }
-  // 玩家票统一过一遍：正向能翻判死链的每一支（冷却沿用、边缘探不到、5xx、无版本号），
-  // 负向攒够 2 个不同来源就把正在显示的挪进暂存区。顺带清掉被捞回者的退避 —— 票只是
-  // "别藏起来"，不是"以后不用再看了"；被负向隐藏的**不写退避**，下一轮照探、票一翻回去就回前台。
-  const vouchMoves = applyVouches(valid, invalid, occupancy);
-  const vouchPromoted = vouchMoves.promoted;
-  const vouchDemoted = vouchMoves.demoted;
-  for (const id of Object.keys(backoff)) { if (vouchOk(id)) delete backoff[id]; }
+  // 玩家「进不去」票：攒够 2 个不同来源就把正在显示的挪进暂存区，**不写退避** ——
+  // 票只是"这一行先别展示"，下一轮照探，票被撤回/purge/过期就当场回前台（revokeVouches）。
+  const vouchMarks = {};
+  const vouchDemoted = applyVouches(valid, invalid, occupancy, vouchMarks).demoted;
   const liveIds = new Set(servers.map((s) => s.id));
   // 版本号是"这台真的在跑一个我们能对话的服务"的唯一硬证据。occupancy 里没有点分版本号
   // （边缘读不到、玩家与盒子的回执也没回报过）就按**校验失败**处理 —— 而不是只让每个网页
@@ -424,19 +402,6 @@ export async function onRequestGet(context) {
   for (let i = valid.length - 1; i >= 0; i -= 1) {
     const vid = valid[i];
     if (isVersion((occupancy[vid] || {}).app)) continue;
-    const c = vouchOk(vid);
-    if (c) {
-      // 版本号读不到、但玩家点过「我核验通过」：只标不藏。
-      // 这条判据的原意是"别把不是卫戍的服务当服务器列出来"，而准入在 submit 那道
-      // 健康端点指纹上已经把过了；这里再判死只会把活着但构建不回报 app/version 的服藏掉。
-      occupancy[vid] = Object.assign({}, occupancy[vid] || {}, {
-        variant: (occupancy[vid] || {}).variant || 'player',
-        player_vouched: c.ok,
-        player_bad: c.bad,
-        vouched_at: c.at,
-      });
-      continue;
-    }
     const entry = byId.get(vid) || {};
     valid.splice(i, 1);
     invalid.push({ id: vid, name: entry.name, url: entry.url,
@@ -450,6 +415,23 @@ export async function onRequestGet(context) {
     if (!liveIds.has(k)) delete entryDown[k];
   }
 
+  // 打开跳转的点击数（写口 /api/servers/open）并进这份快照：页面本来就读 verified.json，
+  // 再开一个请求就等于在又慢又抖的链路上多一次往返。
+  let opens = {};
+  const openRes = await env.R2BUCKET.get(OPEN_KEY);
+  if (openRes) {
+    try {
+      const od = JSON.parse(await openRes.text());
+      const today = new Date().toISOString().slice(0, 10);
+      for (const oid of Object.keys(od.opens || {})) {
+        const r = od.opens[oid] || {};
+        const total = Number(r.total) || 0;
+        if (!total) continue;
+        opens[oid] = { total, today: r.day === today ? (Number(r.today) || 0) : 0, at: r.at || null };
+      }
+    } catch { /* 没计数就空着 */ }
+  }
+
   const verifiedDoc = {
     updated: new Date().toISOString(),
     listUpdated: doc.updated, // 清单一变就立刻重探，否则新上的服务器会被缓存挡到下个档位
@@ -458,7 +440,9 @@ export async function onRequestGet(context) {
     occupancy,
     backoff,
     evidence,
-    vouches: vouchSnapshot(),   // 页面据此显示「已有 N 位玩家核验」，管理页据此复核是谁放回前台的
+    vouches: vouchSnapshot(),   // 「N 人进不去」的票数，页面与管理页共用
+    player_state: vouchMarks,   // 哪些条目是靠票隐藏的：票一撤/purge/过期就当场回前台
+    opens,                      // 「目前已点击 N 次」
     entry_down_rounds: entryDown,
   };
   await env.R2BUCKET.put(VERIFIED_KEY, JSON.stringify(verifiedDoc, null, 2) + '\n', {
@@ -470,7 +454,6 @@ export async function onRequestGet(context) {
   return json({ ok: true, updated: verifiedDoc.updated, valid: valid.length,
                 invalid: invalid.map((i) => ({ id: i.id, name: i.name, reason: i.reason })),
                 skipped: skipped, cooling: Object.keys(backoff).length,
-                entry_dead: entryDead, versionless,
-                vouch_promoted: vouchPromoted, vouch_demoted: vouchDemoted,
+                entry_dead: entryDead, versionless, vouch_demoted: vouchDemoted,
                 nextRetryAt: new Date(Date.now() + FLOOR_MS).toISOString() });
 }
