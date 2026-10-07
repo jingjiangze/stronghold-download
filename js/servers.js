@@ -137,14 +137,25 @@
   function loadList() {
     var cached = loadListCache();
     if (cached) { prepare(cached); render(); }
-    var snap = fetchJson(LIST_SOURCES[1]).catch(function () { return null; });
-    var live = fetchJson(LIST_SOURCES[0]).catch(function () { return null; });
-    snap.then(function (data) { if (data) { prepare(data); render(); } });
-    return Promise.all([snap, live]).then(function (r) {
-      var data = r[1] || r[0] || null;
-      if (data) saveListCache(data);
-      return data;
-    });
+    var gotLive = false;
+    var grab = function (url, isLive) {
+      return fetchJson(url).catch(function () { return null; }).then(function (data) {
+        if (!data) return null;
+        // 现网值已经到了就别让仓库里那份快照盖回去（快照是手工同步的，可能落后）
+        if (!isLive && gotLive) return data;
+        if (isLive) gotLive = true;
+        prepare(data);
+        render();
+        saveListCache(data);
+        return data;
+      });
+    };
+    var snap = grab(LIST_SOURCES[1], false);
+    var live = grab(LIST_SOURCES[0], true);
+    // boot() 把 verified.json 排在清单之后，所以这里**只等先到的那一路**。
+    // 以前是 Promise.all：10-07 实测 R2 现网值 0.9 s、打包快照 6.9 s，
+    // 负载条和版本判定就被最慢的一路整整拖了 6 秒（首屏 13.7 s 才出现）。
+    return Promise.race([live, snap]);
   }
 
   function prepare(data) {

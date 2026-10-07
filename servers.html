@@ -12,6 +12,9 @@
 
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <!-- 清单与负载数据都在 R2 域名上，握手（实测 1.1 s）不该排在首屏之后现做 -->
+  <link rel="preconnect" href="https://weishucdn.jiangjiangze.icu" crossorigin />
+  <link rel="dns-prefetch" href="https://weishucdn.jiangjiangze.icu" />
   <link rel="stylesheet" media="print" onload="this.media='all'"
         href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700;900&family=Oxanium:wght@400;500;600;700&family=Rajdhani:wght@500;600;700&display=swap" />
   <link rel="stylesheet" href="./fonts/fonts.css" />
@@ -118,6 +121,6 @@
     </main>
   </div>
 
-  <script src="./js/servers.js?v=37" defer></script>
+  <script src="./js/servers.js?v=38" defer></script>
 </body>
 </html>

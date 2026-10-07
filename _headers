@@ -10,12 +10,20 @@
 /js/*
   Cache-Control: public, max-age=31536000, immutable
 
-# 只剩镜像清单（data/mirrors.json）：改了它就热生效，不用发版
+# 静态兜底数据：镜像清单 + 仓库里那份签名清单快照（servers.js 的第二路取数）
 /data/*
   Cache-Control: public, max-age=300, stale-while-revalidate=3600
 
 # HTML 给一个短 TTL + SWR：清单页的按钮/文案改动靠 ?v= 生效，不需要每次都回源
 /*.html
+  Cache-Control: public, max-age=120, stale-while-revalidate=600
+
+# Pages 的"干净地址"不匹配上面那条 /*.html（/servers 就是 servers.html），于是它一直是
+# max-age=0, must-revalidate —— 每次进入都回源一次，实测文档首字节 5.1 s。
+/servers
+  Cache-Control: public, max-age=120, stale-while-revalidate=600
+
+/admin
   Cache-Control: public, max-age=120, stale-while-revalidate=600
 
 /
