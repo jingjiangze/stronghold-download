@@ -98,7 +98,6 @@ jobs:
           # 探针确认过的地址就从待复核清单里摘掉（没确认的留着下轮再试），别让它无限堆
           if [ -s _probe/recheck.json ]; then
             rclone copyto _probe/recheck.json "r2:$BUCKET/site/recheck.json" --s3-no-check-bucket \
-              --s3-metadata Content-Type=application/json \
               --header-upload "Content-Type: application/json" \
               --header-upload "Cache-Control: public, max-age=60"
             echo "待复核清单已回收"
