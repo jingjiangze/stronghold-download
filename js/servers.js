@@ -138,15 +138,23 @@
     var cached = loadListCache();
     if (cached) { prepare(cached); render(); }
     var gotLive = false;
+    var preparedSources = 0;
     var grab = function (url, isLive) {
       return fetchJson(url).catch(function () { return null; }).then(function (data) {
         if (!data) return null;
         // 现网值已经到了就别让仓库里那份快照盖回去（快照是手工同步的，可能落后）
         if (!isLive && gotLive) return data;
         if (isLive) gotLive = true;
+        var hadList = preparedSources > 0;
+        preparedSources += 1;
         prepare(data);
         render();
         saveListCache(data);
+        // 第二份来源到货：换源带来的新条目要补测（第一份由 boot() 负责；正在跑就排队）
+        if (hadList) {
+          if (state.running) state.reprobe = true;
+          else probeAll(false);
+        }
         return data;
       });
     };
@@ -161,6 +169,20 @@
   function prepare(data) {
     var raw = data && Array.isArray(data.servers) ? data.servers : [];
     state.updated = (data && data.updated) || null;
+    // 换源不换成绩：R2 现网清单与打包快照各自到货都会重建这份列表，后到的那次会把先到
+    // 那次已经测出的本机 ms 全部带走。10-08 实测到的现象正是「数字先出来、测速一结束
+    // 又全变回 ≈/—，要等下一个周期才回来」—— 用户报的「延迟数字加载慢」就是这个。
+    // 按 id|host 把成绩带过去（条目没了自然丢弃）。
+    var carried = {};
+    (state.servers || []).forEach(function (s) {
+      if (!s || !s.id) return;
+      carried[s.id + '|' + (s.url ? s.url.host : '')] = {
+        ms: s.ms, okCount: s.okCount, offline: !!s.offline,
+        probedAt: s.probedAt || 0, cachedAt: s.cachedAt || 0, level: s.level || 'pending'
+      };
+    });
+    // frozenOrder 里装的是旧对象：换源后留着它，排序与渲染会继续读已被换掉的成绩
+    frozenOrder = null;
     state.servers = raw.filter(function (s) { return s && s.enabled !== false && s.url; }).map(function (s) {
       var target = targetUrl(s.url);
       var reason = '';
@@ -173,9 +195,10 @@
         var root = new URL('/', target);
         if (root.href !== candidates[0].href) candidates.push(root);
       }
-      return {
-        // 同一 host 可以挂多个实例，所以缺 id 时用 host+path 兜底，避免两行共用一份 occupancy
-        id: String(s.id || (target && (target.hostname + (target.pathname === '/' ? '' : target.pathname))) || 'server'),
+      // 同一 host 可以挂多个实例，所以缺 id 时用 host+path 兜底，避免两行共用一份 occupancy
+      var id = String(s.id || (target && (target.hostname + (target.pathname === '/' ? '' : target.pathname))) || 'server');
+      var entry = {
+        id: id,
         name: String(s.name || (target && target.hostname) || '未命名'),
         url: target,
         candidates: candidates,
@@ -186,6 +209,16 @@
         offline: false,
         level: 'pending'
       };
+      var prev = carried[id + '|' + (target ? target.host : '')];
+      if (prev && (typeof prev.ms === 'number' || prev.offline)) {
+        entry.ms = prev.ms;
+        entry.okCount = prev.okCount || 0;
+        entry.offline = prev.offline;
+        entry.level = prev.level;
+        entry.probedAt = prev.probedAt;
+        entry.cachedAt = prev.cachedAt;
+      }
+      return entry;
     });
   }
 
@@ -621,6 +654,8 @@
       setText(el.note, '延迟为当前浏览器实测往返时间（每台先预热再取 3 次采样中位数），仅供参考。');
       render();
       schedule();
+      // 这一轮进行中有来源换过清单（新条目进来）：立刻补测，不等下一个周期
+      if (state.reprobe) { state.reprobe = false; probeAll(false); }
     });
   }
 
