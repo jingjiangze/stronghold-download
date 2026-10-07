@@ -54,6 +54,61 @@ node tools/sign-servers.mjs --sign --publish     # 重签并发布，发布后�
 对象键递归按字典序、数组顺序不变、无多余空白；**`updated` 参与签名**，所以手改时间戳必然验不过。
 `review` 的响应里带 `canonicalSha256`，和本机签名器打印的 sha 一致就说明签的是同一份。
 
+## 提交兼容与三条探测通道（2026-10-07）
+
+**只有地址必填**：名称留空自动用域名、探针路径留空由系统按
+`/healthz` → `/api/status` → `/api/health` → `/health` 依次试（命中哪条就记进 `probe`，以后只敲那一条），
+备注留空即可。地址接受玩家手打的多种写法：`dx.example.com:29943`、`HTTPS://Host//play`、
+`host.`（尾点 FQDN）、`http://1.2.3.4:3000`，统一由 `_verify.js` 的 `normalizeTarget()` 归一
+（缺协议补 `https:`，内网/环回/带账号密码照旧拒）。
+
+两条曾经会把活服判死的规则已经改掉：
+- 访客**没填**探针时不再沿用 `validateEntries` 的 `/healthz` 默认值 —— 那让多候选路径永远轮不到；
+- 「响应不是 JSON」不再算否定。很多面板在任意路径都回一张首页，那是**这条路径没挂对**，
+  当成"这台不是卫戍服"会一票否决挂在别的路径上的服，并且立刻 break 掉后面的候选。
+
+失败分两类，处理完全不同：
+
+| 类别 | 含义 | 处置 |
+| --- | --- | --- |
+| `negative` | 读到了 JSON 但 `ok` 不是 true / 缺协议字段 —— **看见它不是** | 当场拒收（有第二手证据时改为进暂存区让维护者判） |
+| `inconclusive` | 52x / 403 / 超时 / TLS 握不上 / 候选路径全 404 —— **看不见它** | 带证据进暂存区，回执明确说「会复核」；同 IP 每小时 5 条上限 |
+
+三条探测通道，各自补的边缘不同：
+
+1. **Cloudflare 边缘**（`verifyServerHealth`）：主判据，多候选路径 + 12s 超时。
+2. **访客浏览器**（`js/servers.js` 的 `browserVerify`）：提交前并发打四条候选路径 + 入口页 no-cors 可达性。
+   它是唯一能穿过「证书警告 + 继续访问」这条路径的观察点，但**任何人都能伪造**，
+   所以服务端用 `sanitizeBrowserVerify()` 白名单重洗字段、证据等级自己算，**只当复核材料，绝不作为放行依据**。
+3. **证书旁路探针**（`tools/tls-probe.mjs` + `.github/workflows/tls-probe.yml`，每 2 小时一轮）：
+   Cloudflare 的 `fetch` 没有"忽略证书"开关，源站自签（SakuraFrp 这类隧道给的自动证书，
+   实测 `dx.frp-gap.com:29943` 的证书是 `SakuraFrp Automatic TLS sn.950937332`）时边缘只能拿到 525/526。
+   这一链跑在能关校验的 GitHub Runner 上：先严格打，**只有失败原因确实是证书**才对单个请求
+   关掉 `rejectUnauthorized`（不设全局环境变量），且**只有读到完整协议指纹**才写进 R2 的 `site/probes.json`。
+   站点侧 `readProbeReports()` 消费（12 小时过期、无指纹的报告直接不信），据此放行时一律带上
+   `attested_by:'tls-probe'` + `direct_cn`，审计里可查、可随时撤。
+   这个 job 只有 R2 的读写钥匙（和 `mirror-r2` 同一对 secret），**没有 PUBLISH_KEY、没有任何签名私钥**。
+   待复核的地址由 `submit` 登记到公开的 `site/recheck.json`（只有地址与探针路径，不含提交者 IP），
+   探针确认过的自动从那份清单里摘掉。
+
+**「（待核）」的自动转正**：scout 给自动发现的服起名 `域名（待核）`，字样在签名清单的 `name` 里，
+所以去掉它必须改名重签。`verify.js` 每轮真探后按两条判据（满足其一）剥掉后缀并服务端重签发布，
+发布审计记 `via:'auto-promote'`：
+
+- 点过「打开」的**去重人数** > 5（`site/opens.json` 的 `seen` 键数；对外只发计数 `people`，不发键）；
+- **连续**校验通过满 24 小时（`site/stable.json` 记起点，掉回 invalid 立刻清零）。
+
+没配 `SP_SIGN_KEY`、或撞上清单并发（`baseUpdated` 对不上）时一个字都不改，也不会对外宣布转正。
+
+离线用例（不打真实网络，fetch/R2/KV 全是桩）：
+
+```bash
+node tests/submit_compat.mjs    # 归一化、失败分类、暂存区分流、浏览器证据清洗、review 的 force 边界
+node tests/verify_promote.mjs   # 探针救回看不见的前台条目、「待核」两条判据与并发保护
+node tools/tls-probe.mjs --dir _probe --max 60   # CI 里的探针（先 rclone 拉三个 json）
+node tools/tls-probe.mjs --live --only dx.example.com:29943   # 本机手工复查一条
+```
+
 ## 玩家评价「大杯 / 小杯」与打开点击数（2026-10-06）
 
 **形态**：清单每行两个小按钮 —— **大杯 = 好评，小杯 = 差评**。两者**只调排序权重，永不决定某台显不显示**；

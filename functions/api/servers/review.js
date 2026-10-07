@@ -2,12 +2,16 @@
 // 维护者审核队列。
 //   action: "approve" → 重做健康校验 + 入口校验 → 追加进线上清单 → 当场签名（配了 SP_SIGN_KEY 时）
 //           "reject"  → 丢弃该条
-// Body: { id, action }   Auth: header x-admin-key == PUBLISH_KEY secret
+//   force: true（仅 approve）→ 边缘「看不见」这类 inconclusive 条目由维护者担保上线：
+//           打上 direct_cn + attested_by:maintainer。边缘**亲眼看见它不是**卫戍协议服务器
+//           （negative）时，还必须有访客浏览器的完整指纹才允许覆盖 —— 光凭口令不够。
+//   approve 复核失败时条目**留在暂存区**（以前先删后验，一次误点就把报料销毁了）。
+// Body: { id, action, force? }   Auth: header x-admin-key == PUBLISH_KEY secret
 // approve 的返回里带 canonicalSha256，便于确认「签的就是这份」。
 // 匿名提交的正常路径已经不走这里了：/api/servers/submit 校验有效就当场上线，队列只留给
 // 需要维护者处置的三种情况（担保提交 / 本 IP 额度用完 / 清单并发更新）。
 
-import { checkEntryUrl, listCollision, payloadSha256, verifyServerHealth } from '../_verify.js';
+import { checkEntryUrl, listCollision, payloadSha256, probeKey, readProbeReports, verifyServerHealth } from '../_verify.js';
 import { publishServersDoc, signServersDoc } from '../_publish.js';
 
 function json(data, status) {
@@ -44,27 +48,57 @@ export async function onRequestPost(context) {
   const record = JSON.parse(raw);
 
   const index = await readIndex(env);
-  const nextIndex = index.filter((x) => x !== id);
-  await env.SERVER_REVIEW.delete(`pending/${id}`);
-  await env.SERVER_REVIEW.put('pending_index', JSON.stringify(nextIndex));
+  const dequeue = async () => {
+    const nextIndex = index.filter((x) => x !== id);
+    await env.SERVER_REVIEW.delete(`pending/${id}`);
+    await env.SERVER_REVIEW.put('pending_index', JSON.stringify(nextIndex));
+  };
 
   if (action === 'reject') {
+    await dequeue();
     return json({ ok: true, action, id });
   }
 
   // approve: fresh verification (the queue may be stale), then publish.
-  const verdict = await verifyServerHealth(record.url, record.probe, 12000);
+  // 探针路径按提交时的来源决定：访客**自己填过**就只敲那一条（Rainya 那种挂在 /api/status 的
+  // 服，先敲 /healthz 可能撞上反代首页被判"不是卫戍协议"）；没填或队列里的老记录则放开成
+  // 多候选逐个试 —— 默认值 '/healthz' 会把另外三条门永远挡住。
+  const probeHint = record.probeFromVisitor ? record.probe : null;
+  const verdict = await verifyServerHealth(record.url, probeHint, 12000);
   // direct_cn 条目允许在边缘复核失败时发布：真实玩家从国内连接，verify.js 的 direct_cn
   // 分支会让它留在 valid 里，不会被隔离。
   if (!verdict.ok && record.direct_cn !== true) {
-    return json({ ok: false, error: `复核失败：${verdict.error}（已从队列移除）` }, 400);
+    // 先给它一次**不需要人工担保**的机会：证书旁路探针（GitHub Runner / 盒子，能关 TLS 校验的
+    // 那一链）若在有效期内读到过完整协议指纹，这就是一条独立的验活结论，直接按探针担保发布。
+    const reports = await readProbeReports(env);
+    const report = verdict.verdict === 'inconclusive' ? (reports[probeKey(record.url)] || null) : null;
+    if (report) {
+      record.direct_cn = true;
+      record.attested_by = 'tls-probe';
+      record.tlsProbe = report;
+      if (report.probePath) record.probe = report.probePath;
+    } else {
+      // 「需要复核」这一类（自签证书 / 防火墙 / 路径自定义）本来就指望着人工拍板：
+      // force=true 才覆盖，且**边缘亲眼看见它不是卫戍协议**时，还得有访客浏览器的完整指纹才算数。
+      const browserProof = record.browserVerify && record.browserVerify.level === 'protocol';
+      const overridable = doc.force === true && (verdict.verdict !== 'negative' || browserProof);
+      if (!overridable) {
+        // 条目留在暂存区：一次误点不该把玩家的报料销毁掉（以前这里先删后验，失败就等于丢了）
+        return json({ ok: false, kept: true, error: `复核失败：${verdict.error}（条目已留在暂存区，可等证书旁路探针确认，或带证据强制上线）` }, 400);
+      }
+      record.direct_cn = true;
+      record.attested_by = browserProof && verdict.verdict === 'negative' ? 'maintainer+browser-proof' : 'maintainer';
+    }
   }
   // 第二道闸（与 submit 同口径）：清单那条入口地址本身也得打得开，
   // 否则一上线就是"绿灯行 + 玩家点开 502"（game.rainya.me 那种半挂）。
   if (verdict.ok) {
     const gate = await checkEntryUrl(record.url);
-    if (!gate.ok) return json({ ok: false, error: `复核失败：${gate.error}（已从队列移除）` }, 400);
+    if (!gate.ok) {
+      return json({ ok: false, kept: true, error: `复核失败：${gate.error}（条目已留在暂存区）` }, 400);
+    }
   }
+  await dequeue();
 
   const liveRes = await env.R2BUCKET.get('site/servers.json');
   let live = { updated: new Date().toISOString(), servers: [] };
@@ -84,10 +118,11 @@ export async function onRequestPost(context) {
     servers[collide.index] = { ...existing, url: record.url };
     upgraded = { id: existing.id, from: existing.url, to: record.url };
   } else {
-    const entry = { id: record.id, name: record.name, url: record.url, probe: record.probe || '/healthz', enabled: true };
+    const entry = { id: record.id, name: record.name, url: record.url,
+                    probe: verdict.probePath || record.probe || '/healthz', enabled: true };
     // direct_cn 必须一起带进清单：verify.js 靠这个字段放过「国内直连 200、CF 边缘 403」的服，
     // 漏带的话这种服务器收录后会被整条隐藏（183.66.27.19:20522 就踩过）。
-    for (const k of ['note', 'region', 'tier', 'weight', 'protocol', 'app', 'direct_cn']) if (record[k] != null) entry[k] = record[k];
+    for (const k of ['note', 'region', 'tier', 'weight', 'protocol', 'app', 'direct_cn', 'attested_by']) if (record[k] != null) entry[k] = record[k];
     servers.push(entry);
   }
 

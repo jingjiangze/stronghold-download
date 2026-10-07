@@ -15,3 +15,11 @@ dl_test_out.txt
 ls.json
 mirror_test*.txt
 occ_cache_test.txt
+# 本机跑探针/查现网留下的临时件：_tmp 里有过清单快照，_probe 是 CI 模式的工作目录，
+# _dl-* 是部署用的 staging 与干净构建树（都不该进仓库，也不该被 deploy.mjs 传到站点上）
+_tmp/
+_probe/
+_probe-report.json
+_dl-deploy/
+_dl-build/
+

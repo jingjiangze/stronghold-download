@@ -22,9 +22,9 @@
   <link rel="stylesheet" href="./css/components.css?v=4" />
   <link rel="stylesheet" href="./css/screens/title.css?v=4" />
   <link rel="stylesheet" href="./css/devices.css?v=4" />
-  <link rel="stylesheet" href="./css/dl.css?v=7" />
+  <link rel="stylesheet" href="./css/dl.css?v=20" />
   <link rel="stylesheet" href="./css/servers.css?v=25" />
-  <link rel="stylesheet" href="./css/admin.css?v=7" />
+  <link rel="stylesheet" href="./css/admin.css?v=9" />
 </head>
 <body>
   <div class="screen title-screen servers-screen">
@@ -93,21 +93,24 @@
               <button type="button" class="btn btn--ghost btn--sm" data-close="1"><span class="btn__label">关闭</span></button>
             </div>
             <div class="admin-grid">
-              <label class="admin-field"><span class="micro">名称</span>
-                <input id="sv-add-name" maxlength="24" placeholder="例：星尘子服" required /></label>
-              <label class="admin-field"><span class="micro">地址</span>
-                <input id="sv-add-url" inputmode="url" placeholder="https://your-server.example" required /></label>
-              <label class="admin-field"><span class="micro">探针路径</span>
-                <input id="sv-add-probe" placeholder="/healthz" value="/healthz" /></label>
-              <label class="admin-field"><span class="micro">备注</span>
+              <label class="admin-field"><span class="micro">名称（可留空）</span>
+                <input id="sv-add-name" maxlength="24" placeholder="留空则用域名显示" /></label>
+              <label class="admin-field"><span class="micro">地址（三种写法都行）</span>
+                <input id="sv-add-url" inputmode="url" placeholder="dx.example.com:29943 或 https://host/play" required /></label>
+              <label class="admin-field"><span class="micro">探针路径（可留空）</span>
+                <input id="sv-add-probe" maxlength="64" placeholder="留空 = 自动试 /healthz、/api/status…" /></label>
+              <label class="admin-field"><span class="micro">备注（可留空）</span>
                 <input id="sv-add-note" maxlength="24" placeholder="可选" /></label>
             </div>
             <p class="admin-err" id="sv-add-err" hidden></p>
             <div class="admin-actions">
               <button type="submit" class="btn btn--primary btn--sm" id="sv-add-go"><span class="btn__label">校验并提交</span></button>
             </div>
-            <p class="dl-note">提交后由服务端实测该地址的 /healthz：确认是卫戍协议服务器即自动加入公共清单；
-              不是本项目服务器会被拒绝并显示原因。</p>
+            <p class="dl-note"><b>只有地址必填</b>，名称、探针路径、备注都可以留空。
+              服务端会按 <code>/healthz</code>、<code>/api/status</code>、<code>/api/health</code>、<code>/health</code> 依次实测，
+              确认是卫戍协议服务器就当场进公共清单。
+              若服务端暂时"看不见"它（自签证书、防火墙、路径自定义），提交也不会白报：条目会带证据进暂存区并标注「需要复核」，
+              同时你浏览器这一侧的探测结果会作为第二手证据一并附上 —— 玩家自己点得进去、Cloudflare 却握手失败的那种，就是靠它复核的。</p>
           </form>
         </div>
         <p class="dl-links">
@@ -121,6 +124,6 @@
     </main>
   </div>
 
-  <script src="./js/servers.js?v=38" defer></script>
+  <script src="./js/servers.js?v=41" defer></script>
 </body>
 </html>

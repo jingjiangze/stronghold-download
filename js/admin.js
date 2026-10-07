@@ -32,6 +32,9 @@
     list: document.getElementById('ad-list'),
     review: document.getElementById('ad-review'),
     pending: document.getElementById('ad-pending'),
+    queue: document.getElementById('ad-queue'),
+    queueHead: document.getElementById('ad-queue-title'),
+    queueList: document.getElementById('ad-queue-list'),
     reload: document.getElementById('ad-reload'),
     form: document.getElementById('ad-form'),
     name: document.getElementById('ad-name'),
@@ -399,17 +402,168 @@
     });
   }
 
+  /* ---- 待复核队列 ----------------------------------------------------------------------
+   * 边缘「看不见」的提交（自签证书、防火墙 403、超时、候选路径全 404）不再被当场拒收，
+   * 而是带着两边证据进这里等人工判定。维护者要一眼看清三件事：
+   *   边缘到底看见了什么、访客浏览器看见了什么、这两者矛不矛盾。
+   * 「带证据上线」= POST /api/servers/review { action:'approve', force:true }，
+   * 服务端会打上 direct_cn + attested_by:maintainer —— 担保人是维护者本人，不是探针。
+   */
+  var BV_KIND_TEXT = {
+    protocol: '读到完整指纹', 'not-protocol': 'JSON 但不是卫戍协议', 'not-json': '响应不是 JSON',
+    http: 'HTTP 错误', timeout: '超时', blocked: '连不上（证书/网络被拒）', cors: '连上了但读不到（CORS）',
+    tls: '证书被拒', dns: '解析失败'
+  };
+
+  function edgeText(rec) {
+    var v = rec.verify || {};
+    if (v.ok) {
+      return '边缘：通过（' + (v.probePath || rec.probe || '/healthz') + '，'
+        + (v.variant === 'workers' ? 'workers 版' : v.variant === 'node' ? 'node 版' : '未知形态')
+        + (v.rooms == null ? '' : '，房间 ' + v.rooms + ' / 真人 ' + v.humans) + '）';
+    }
+    return '边缘：' + (v.verdict === 'negative' ? '确认不是卫戍协议服务器' : '看不见')
+      + ' —— ' + (v.error || '未记录') + (rec.reviewReason ? '（' + rec.reviewReason + '）' : '');
+  }
+
+  function browserText(rec) {
+    var b = rec.browserVerify;
+    if (!b) return '';
+    var bits = [];
+    if (b.level === 'protocol' && b.fingerprint) {
+      bits.push('读到完整指纹' + (b.fingerprint.app ? '（' + b.fingerprint.app
+        + (b.fingerprint.version != null ? ' / 协议 v' + b.fingerprint.version : '') + '）' : ''));
+    } else if (b.level === 'reachable') {
+      bits.push('玩家侧能连通');
+    } else {
+      bits.push('玩家侧也没看见');
+    }
+    if (b.entryReachable === true) bits.push('入口页面打得开');
+    var results = Array.isArray(b.results) ? b.results : [];
+    if (results.length) {
+      bits.push(results.map(function (r) {
+        return r.path + ' ' + (BV_KIND_TEXT[r.kind] || r.kind) + (r.code ? '(' + r.code + ')' : '');
+      }).join('、'));
+    }
+    return '访客浏览器：' + bits.join('，');
+  }
+
+  function queueRow(rec) {
+    var div = document.createElement('div');
+    div.className = 'sv-row' + (rec.needsReview ? ' is-quarantined' : '');
+
+    var main = document.createElement('div');
+    main.className = 'sv-main';
+    var name = document.createElement('span');
+    name.className = 'sv-name';
+    name.textContent = (rec.needsReview ? '【需要复核】' : '【排队】') + (rec.name || rec.url);
+    var host = document.createElement('span');
+    host.className = 'sv-host';
+    host.textContent = rec.url + ' · 提交于 ' + (rec.submittedAt || '').slice(0, 16).replace('T', ' ')
+      + ' · ' + (rec.submittedBy || '?') + (rec.attestedBy ? ' · 担保提交' : '');
+    main.appendChild(name);
+    main.appendChild(host);
+
+    var why = document.createElement('span');
+    why.className = 'sv-vouchbadge';
+    why.textContent = edgeText(rec);
+    main.appendChild(why);
+
+    var tp = rec.tlsProbe;
+    if (tp && tp.fingerprint) {
+      var tnode = document.createElement('span');
+      tnode.className = 'sv-vouchbadge';
+      tnode.textContent = '证书旁路探针：' + (tp.probePath || '?') + ' 读到完整指纹（'
+        + (tp.fingerprint.app || ('协议 v' + tp.fingerprint.version)) + '，'
+        + (tp.tls || '自签') + '，' + (tp.ageMin != null ? tp.ageMin + ' 分钟前' : '?') + '）—— 点「通过」不需要担保';
+      tnode.title = '来源 ' + (tp.source || 'tls-probe') + '：GitHub Runner / 盒子那一链，能关 TLS 校验；只有读到协议指纹才写进报告';
+      main.appendChild(tnode);
+    }
+    var bv = browserText(rec);
+    if (bv) {
+      var bnode = document.createElement('span');
+      bnode.className = 'sv-vouchbadge';
+      bnode.textContent = bv;
+      bnode.title = '访客浏览器证据：任何人都能伪造，只当复核参考，不作为放行依据';
+      main.appendChild(bnode);
+    }
+    div.appendChild(main);
+
+    var up = document.createElement('button');
+    up.type = 'button';
+    up.className = 'sv-toggle';
+    up.textContent = rec.needsReview ? '带证据上线' : '通过上线';
+    up.addEventListener('click', function () {
+      var tip = rec.needsReview
+        ? '确认按维护者担保上线？（边缘' + ((rec.verify && rec.verify.ok) ? '其实已通过' : '看不见这台服务器')
+          + '，会打上 direct_cn + attested_by:maintainer）\n' + rec.url
+        : '按常规校验通过并上线？\n' + rec.url;
+      if (!window.confirm(tip)) return;
+      reviewAction(rec.id, 'approve', !!rec.needsReview).then(function (data) {
+        showError('');
+        setText(el.status, data.hint || '已处理');
+        loadQueue();
+      }).catch(function (err) { showError(err.message); loadQueue(); });
+    });
+    div.appendChild(up);
+
+    var drop = document.createElement('button');
+    drop.type = 'button';
+    drop.className = 'sv-del';
+    drop.textContent = '丢弃';
+    drop.addEventListener('click', function () {
+      if (!window.confirm('丢弃这条报料？\n' + rec.url)) return;
+      reviewAction(rec.id, 'reject', false).then(function () { loadQueue(); })
+        .catch(function (err) { showError(err.message); });
+    });
+    div.appendChild(drop);
+    return div;
+  }
+
+  function reviewAction(id, action, force) {
+    return fetch('/api/servers/review', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-admin-key': key() },
+      body: JSON.stringify({ id: id, action: action, force: force })
+    }).then(function (res) {
+      return res.json().catch(function () { return {}; }).then(function (data) {
+        if (!res.ok || !data.ok) throw new Error(data.error || ('HTTP ' + res.status));
+        return data;
+      });
+    });
+  }
+
+  function loadQueue() {
+    if (!el.queue) return Promise.resolve();
+    return fetch('/api/servers/submit', { headers: { 'x-admin-key': key() } })
+      .then(function (res) { return res.json().catch(function () { return {}; }); })
+      .then(function (data) {
+        var pending = (data && Array.isArray(data.pending)) ? data.pending : [];
+        el.queue.hidden = !pending.length;
+        if (el.queueHead) setText(el.queueHead, '待复核队列（' + pending.length + '）');
+        el.queueList.textContent = '';
+        pending.forEach(function (rec) { el.queueList.appendChild(queueRow(rec)); });
+      })
+      .catch(function () { /* 队列读不到不影响清单管理 */ });
+  }
+
   /* ---- add server -------------------------------------------------------------------- */
 
   var PRIVATE_V4 = [/^127\./, /^10\./, /^192\.168\./, /^169\.254\./, /^0\./,
                     /^172\.(1[6-9]|2[0-9]|3[01])\./];
 
   function validateUrl(raw) {
+    var s = String(raw || '').trim();
+    if (!s) return { error: '地址不能为空' };
+    // 与管理端 normalizeTarget 同规则：没写协议补 https://，主机转小写、去尾点与重复斜杠
+    if (!/^[a-zA-Z][a-zA-Z0-9+.\-]*:\/\//.test(s)) s = 'https://' + s.replace(/^\/+/, '');
     var url;
-    try { url = new URL(String(raw).trim()); } catch (err) { return { error: '地址无法解析' }; }
+    try { url = new URL(s); } catch (err) { return { error: '地址无法解析' }; }
     if (url.protocol !== 'https:' && url.protocol !== 'http:') return { error: '仅允许 http/https' };
     if (url.username || url.password) return { error: '地址中不能包含账号密码' };
-    var h = url.hostname.toLowerCase();
+    url.search = ''; url.hash = '';
+    url.pathname = url.pathname.replace(/\/{2,}/g, '/');
+    var h = url.hostname.toLowerCase().replace(/\.+$/, '');
     var unsafe = !h || h === 'localhost' || h.endsWith('.localhost') || h.endsWith('.local') || h.endsWith('.internal');
     if (!unsafe && h.charAt(0) === '[') {
       var v6 = h.slice(1, -1);
@@ -419,7 +573,9 @@
       unsafe = PRIVATE_V4.some(function (re) { return re.test(h); });
     }
     if (unsafe) return { error: '拒绝内网/环回/保留地址' };
-    return { url: url };
+    // 返回归一化后的地址 + host，便于留空名称时回落成域名
+    var href = url.href.replace(/\/+$/, '');
+    return { url: url, href: href || url.href, host: url.host };
   }
 
   function onAdd(event) {
@@ -427,22 +583,29 @@
     showError('');
     var check = validateUrl(el.url.value);
     if (check.error) { showError(check.error); return; }
-    var probe = String(el.probe.value || '/healthz').trim() || '/healthz';
-    if (!probe.startsWith('/')) probe = '/' + probe;
-    var entry = { name: (el.name.value || '').trim() || check.url.host, url: check.url.href, probe: probe };
+    // 名称/探针/备注都可留空：探针留空就交给服务端按四条候选路径逐个试
+    // （写死 /healthz 会把挂在 /api/status 上的服判成"不是卫戍协议"）
+    var entry = { url: check.href };
+    var givenName = (el.name.value || '').trim();
+    if (givenName) entry.name = givenName;
+    var probe = String(el.probe.value || '').trim();
+    if (probe) entry.probe = probe.charAt(0) === '/' ? probe : '/' + probe;
     if ((el.note.value || '').trim()) entry.note = el.note.value.trim();
+    var name = givenName || check.host;
     if (el.submit) { el.submit.disabled = true; setText(el.submit.querySelector('.btn__label'), '校验中…'); }
     fetch('/api/servers/submit', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'x-admin-key': key() },
       body: JSON.stringify({ servers: [entry] })
     }).then(function (res) {
       return res.json().catch(function () { return {}; }).then(function (data) { return { status: res.status, data: data }; });
     }).then(function (out) {
       if (!out.data.ok) throw new Error(out.data.error || ('HTTP ' + out.status));
-      setText(el.status, '「' + entry.name + '」已通过校验并加入清单');
-      el.name.value = ''; el.url.value = ''; el.note.value = '';
-      return loadPublished().then(render);
+      setText(el.status, out.data.queued
+        ? '「' + name + '」已进' + (out.data.review ? '待复核队列' : '暂存队列')
+        : '「' + name + '」已通过校验并加入清单');
+      el.name.value = ''; el.url.value = ''; el.probe.value = ''; el.note.value = '';
+      return loadPublished().then(render).then(loadQueue);
     }).catch(function (err) {
       showError('提交失败：' + (err && err.message ? err.message : '网络'));
     }).finally(function () {
@@ -455,7 +618,7 @@
   function enterGate() {
     el.gate.hidden = false;
     el.gateLogin.hidden = true;
-    loadPublished().then(function () { render(); loadReview(); })
+    loadPublished().then(function () { render(); loadReview(); loadQueue(); })
       .catch(function () { setText(el.status, '清单加载失败，可稍后刷新'); });
   }
 
@@ -488,6 +651,7 @@
     if (el.keyForm) el.keyForm.addEventListener('submit', onKeySubmit);
     if (el.form) el.form.addEventListener('submit', onAdd);
     if (el.reload) el.reload.addEventListener('click', loadReview);
+    if (el.queueReload) el.queueReload.addEventListener('click', loadQueue);
 
     var stored = '';
     try { stored = sessionStorage.getItem(KEY_STORE) || ''; } catch (err) { /* ignore */ }

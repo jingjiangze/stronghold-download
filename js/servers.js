@@ -302,7 +302,18 @@
     var s = state.opens[id] || { total: 0, today: 0, at: null };
     var cut = s.at ? (Date.parse(s.at) || 0) : 0;
     var extra = (state.openLocal[id] || []).filter(function (t) { return Number(t) > cut; }).length;
-    return { total: (s.total || 0) + extra, today: (s.today || 0) + extra };
+    // people = 去重点击人数（服务端按 sha256(ip|id) 算好的计数，只发数不发键）
+    return { total: (s.total || 0) + extra, today: (s.today || 0) + extra,
+             people: (Number(s.people) || 0) + (extra ? 1 : 0) };
+  }
+
+  /** 「（待核）」什么时候该消失：判据在服务端（verify.js 每轮真探后改名重签），
+   *  这里只是万一清单还没改过来时的兜底显示，不改变任何数据。 */
+  function displayName(server) {
+    var name = server.name || '';
+    if (!/（待核）\s*$/.test(name)) return name;
+    var on = openCount(server.id);
+    return on.people > 5 ? name.replace(/（待核）\s*$/, '') : name;
   }
 
   function bumpOpenLocal(id) {
@@ -717,7 +728,7 @@
     main.className = 'sv-main';
     var name = document.createElement('span');
     name.className = 'sv-name';
-    name.textContent = server.name;
+    name.textContent = displayName(server);
     // 版本号是**域名的兄弟**，不是域名的孩子：`.sv-host` 带 ellipsis 裁剪，以前把版本 span
     // 塞在它里面，域名一长（game.lingluotoki.dpdns.org）就把 `v0.1.4` 咬成 `v⋯`。
     var hostline = document.createElement('span');
@@ -787,7 +798,7 @@
     var on = openCount(server.id);
     oc.className = 'sv-opencount';
     oc.hidden = !on.total;
-    oc.textContent = '目前已点击 ' + on.total + ' 次';
+    oc.textContent = '目前已点击 ' + on.total + ' 次' + (on.people > 1 ? '（' + on.people + ' 人）' : '');
     oc.title = openTitle(on);
     main.appendChild(oc);
 
@@ -818,7 +829,7 @@
     var on = openCount(server.id);
     if (node) {
       node.hidden = false;
-      node.textContent = '目前已点击 ' + on.total + ' 次';
+      node.textContent = '目前已点击 ' + on.total + ' 次' + (on.people > 1 ? '（' + on.people + ' 人）' : '');
       node.title = openTitle(on);
     }
     fetch(OPEN_URL, {
@@ -1040,11 +1051,18 @@
                            /^172\.(1[6-9]|2[0-9]|3[01])\./];
 
   function submitTargetOk(raw) {
+    var s = String(raw || '').trim();
+    if (!s) return { error: '地址不能为空' };
+    // 和后端 normalizeTarget 同一套规则：没写协议就补 https，主机转小写、去尾点与重复斜杠。
+    // 玩家手打的 `dx.frp-gap.com:29943` 以前会在这里被判"地址无法解析"，压根到不了服务端。
+    if (!/^[a-zA-Z][a-zA-Z0-9+.\-]*:\/\//.test(s)) s = 'https://' + s.replace(/^\/+/, '');
     var url;
-    try { url = new URL(String(raw).trim()); } catch (err) { return { error: '地址无法解析' }; }
+    try { url = new URL(s); } catch (err) { return { error: '地址无法解析' }; }
     if (url.protocol !== 'https:' && url.protocol !== 'http:') return { error: '仅允许 http/https' };
     if (url.username || url.password) return { error: '地址中不能包含账号密码' };
-    var h = url.hostname.toLowerCase();
+    url.search = ''; url.hash = '';
+    url.pathname = url.pathname.replace(/\/{2,}/g, '/');
+    var h = url.hostname.toLowerCase().replace(/\.+$/, '');
     var unsafe = !h || h === 'localhost' || h.endsWith('.localhost') || h.endsWith('.local') || h.endsWith('.internal');
     if (!unsafe && h.charAt(0) === '[') {
       var v6 = h.slice(1, -1);
@@ -1054,7 +1072,121 @@
       unsafe = PRIVATE_V4_SUBMIT.some(function (re) { return re.test(h); });
     }
     if (unsafe) return { error: '拒绝内网/环回/保留地址' };
-    return { url: url };
+    var href = url.href.replace(/\/+$/, '');
+    return { url: url, href: href || url.href };
+  }
+
+  /* ---- visitor-side probe ------------------------------------------------------------
+   * 浏览器是**唯一能穿过"证书警告 + 继续访问"**这条路径的观察者。Cloudflare 边缘在 TLS
+   * 握手就被自签源站挡死的服务器（SakuraFrp 这类映射给的自动证书），服务端永远看不见指纹，
+   * 而玩家自己点得进去。于是提交前让访客浏览器也打一轮，把结果作为**复核材料**随单上传。
+   * 三条纪律：
+   *   1) 这份证据只帮维护者判断，绝不作为放行依据（任何人都能伪造它，服务端还会再洗一遍字段）；
+   *   2) 只做有边界的并发探测（候选路径并行、每路 3.5s 超时），不阻塞提交太久；
+   *   3) 分类要说老实话：读到 JSON 才算指纹，opaque 响应只能证明"连上了"。
+   */
+  var BV_PATHS = ['/healthz', '/api/status', '/api/health', '/health'];
+  var BV_TIMEOUT = 3500;
+
+  function bvFetch(href, mode) {
+    var timedOut = false;
+    var ctrl = typeof AbortController === 'function' ? new AbortController() : null;
+    var timer = setTimeout(function () {
+      timedOut = true;
+      if (ctrl) { try { ctrl.abort(); } catch (err) {} }
+    }, BV_TIMEOUT);
+    return fetch(href, {
+      method: 'GET',
+      mode: mode,
+      cache: 'no-store',
+      credentials: 'omit',
+      headers: mode === 'cors' ? { accept: 'application/json' } : {},
+      signal: ctrl ? ctrl.signal : undefined
+    }).then(function (res) { clearTimeout(timer); return res; },
+      function (err) { clearTimeout(timer); err && (err.__bvTimeout = timedOut); throw err; });
+  }
+
+  function bvKindOfError(err) {
+    return err && (err.__bvTimeout || err.name === 'AbortError' || err.name === 'TimeoutError') ? 'timeout' : 'blocked';
+  }
+
+  function bvFingerprint(body) {
+    if (!body || typeof body !== 'object' || Array.isArray(body)) return null;
+    if (body.ok !== true) return null;
+    var numeric = typeof body.version === 'number';
+    var shaped = numeric || body.runtime === 'cloudflare' || typeof body.app === 'string';
+    if (!shaped) return null;
+    var out = { ok: true };
+    if (numeric) out.version = body.version;
+    if (body.runtime === 'cloudflare') out.runtime = 'cloudflare';
+    if (typeof body.app === 'string') out.app = body.app.slice(0, 32);
+    if (typeof body.build === 'string') out.build = body.build.slice(0, 40);
+    var fields = ['uptimeSec', 'sockets', 'sessions', 'rooms', 'matches', 'humans', 'bots'];
+    for (var i = 0; i < fields.length; i += 1) {
+      var v = body[fields[i]];
+      if (typeof v === 'number' && isFinite(v)) out[fields[i]] = v;
+    }
+    return out;
+  }
+
+  /** 一条候选路径：先按 cors 打（能读 body 才算真凭据），被 CORS 挡了再用 no-cors 分清
+   *  "连上了读不到" 和 "根本连不上"。返回 { path, kind, code? }。 */
+  function bvProbePath(href, path) {
+    return bvFetch(href, 'cors').then(function (res) {
+      if (!res.ok) return { path: path, kind: 'http', code: res.status };
+      var type = (res.headers.get('content-type') || '');
+      return res.text().then(function (text) {
+        var body = null;
+        if (type.indexOf('json') >= 0 || /^[\s]*\{/.test(text || '')) {
+          try { body = JSON.parse(text); } catch (err) { body = null; }
+        }
+        var fp = bvFingerprint(body);
+        if (fp) return { path: path, kind: 'protocol', code: 200, fingerprint: fp };
+        if (body && typeof body === 'object') return { path: path, kind: 'not-protocol', code: 200 };
+        return { path: path, kind: 'not-json', code: 200 };
+      });
+    }, function (err) {
+      if (bvKindOfError(err) === 'timeout') return { path: path, kind: 'timeout' };
+      // TypeError：可能是 CORS，也可能是证书/DNS —— 用 no-cors 再试一次来区分
+      return bvFetch(href, 'no-cors').then(function () {
+        return { path: path, kind: 'cors' };
+      }, function (err2) {
+        return { path: path, kind: bvKindOfError(err2) };
+      });
+    });
+  }
+
+  function bvReachable(href) {
+    return bvFetch(href, 'no-cors').then(function () { return true; }, function () { return false; });
+  }
+
+  /** 汇总成一份 browserVerify；服务端会再洗一次字段，这里只管如实记录看到了什么。 */
+  function browserVerify(base, entryHref) {
+    var tasks = [];
+    for (var i = 0; i < BV_PATHS.length; i += 1) {
+      var path = BV_PATHS[i];
+      tasks.push(bvProbePath(base + path, path));
+    }
+    tasks.push(bvReachable(entryHref).then(function (ok) { return { __entry: ok }; },
+      function () { return { __entry: false }; }));
+    return Promise.all(tasks).then(function (list) {
+      var results = [], fingerprint = null, probePath = null, reachable = false, entryReachable = false;
+      for (var j = 0; j < list.length; j += 1) {
+        var item = list[j] || {};
+        if (item.__entry !== undefined) { entryReachable = !!item.__entry; continue; }
+        results.push({ path: item.path, kind: item.kind, code: item.code });
+        if (item.kind !== 'timeout' && item.kind !== 'blocked') reachable = true;
+        if (item.kind === 'protocol' && !fingerprint) { fingerprint = item.fingerprint; probePath = item.path; }
+      }
+      return {
+        results: results,
+        fingerprint: fingerprint,
+        probePath: probePath,
+        reachable: reachable,
+        entryReachable: entryReachable,
+        at: new Date().toISOString()
+      };
+    });
   }
 
   function showSubmitError(text) {
@@ -1078,27 +1210,45 @@
     event.preventDefault();
     var check = submitTargetOk(el.addUrl.value);
     if (check.error) { showSubmitError(check.error); return; }
-    var probe = String(el.addProbe.value || '/healthz').trim() || '/healthz';
-    if (!probe.startsWith('/')) probe = '/' + probe;
-    var name = (el.addName.value || '').trim() || check.url.host;
-    var payload = { servers: [{ name: name, url: check.url.href, probe: probe }] };
-    if ((el.addNote.value || '').trim()) payload.servers[0].note = el.addNote.value.trim();
+    // 名称、探针路径、备注**全部可留空**：名称由服务端回落成域名，探针交给多候选路径逐个试，
+    // 备注本来就是可选项。以前三个都填才让提交，等于把不懂挂载点的玩家挡在门外。
+    var entry = { url: check.href };
+    var givenName = (el.addName.value || '').trim();
+    if (givenName) entry.name = givenName;
+    var probe = String(el.addProbe.value || '').trim();
+    if (probe) entry.probe = probe.charAt(0) === '/' ? probe : '/' + probe;
+    var note = (el.addNote.value || '').trim();
+    if (note) entry.note = note;
+    var name = givenName || check.url.host;
+    var payload = { servers: [entry] };
 
-    if (el.addGo) { el.addGo.disabled = true; setText(el.addGo.querySelector('.btn__label'), '校验中…'); }
+    if (el.addGo) { el.addGo.disabled = true; setText(el.addGo.querySelector('.btn__label'), '浏览器自检中…'); }
     showSubmitError('');
-    fetch('/api/servers/submit', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(payload)
+    // 先让访客浏览器打一轮（候选路径并行、3.5s 上限），再连同证据一起提交
+    browserVerify(check.url.origin + '/', check.href).then(function (bv) {
+      payload.browserVerify = bv;
+      if (el.addGo) setText(el.addGo.querySelector('.btn__label'), '提交中…');
+      return fetch('/api/servers/submit', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
     }).then(function (res) {
       return res.json().catch(function () { return {}; }).then(function (data) { return { status: res.status, data: data }; });
     }).then(function (outcome) {
-      if (!outcome.data.ok) throw new Error(outcome.data.error || ('HTTP ' + outcome.status));
+      var data = outcome.data;
+      if (!data.ok) throw new Error(data.error || ('HTTP ' + outcome.status));
       closeModal();
-      el.addName.value = ''; el.addUrl.value = ''; el.addNote.value = '';
+      el.addName.value = ''; el.addUrl.value = ''; el.addProbe.value = ''; el.addNote.value = '';
+      if (data.queued) {
+        // 进暂存区不是失败：把原因和"会复核"讲明白，别让访客以为石沉大海
+        if (el.addErr) showSubmitError(data.hint || '已提交，等待维护者复核。');
+        setText(el.note, '「' + name + '」已提交到暂存区，标注「需要复核」，维护者会带两边证据判定后再上线。');
+        return;
+      }
       // The list just gained a server: refresh the manifest and measure the newcomer.
-      loadList().then(function (data) { prepare(data); applyCache(loadCache()); render(); probeAll(false); });
-      setText(el.note, '「' + name + '」校验通过，已加入清单（服务端实测 /healthz 确认为卫戍协议服务器）。');
+      loadList().then(function (res) { prepare(res); applyCache(loadCache()); render(); probeAll(false); });
+      setText(el.note, '「' + name + '」校验通过，已加入清单（服务端实测健康端点确认为卫戍协议服务器）。');
     }).catch(function (err) {
       showSubmitError('提交失败：' + (err && err.message ? err.message : '网络'));
     }).finally(function () {

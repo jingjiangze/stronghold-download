@@ -21,7 +21,8 @@
 // 取消：没有事实核验的点击不该推翻判据），再给负向两票隐藏（同日改成降权：单条「我连不上」多半
 // 是本地噪声，10-05 就因此把当天最大的 81 房/83 人服整条藏掉过；挪到后面可逆，藏掉不可逆）。
 
-import { verifyServerHealth, checkEntryUrl } from '../_verify.js';
+import { checkEntryUrl, probeKey, readProbeReports, verifyServerHealth } from '../_verify.js';
+import { canSign, publishServersDoc, signServersDoc } from '../_publish.js';
 
 const LIST_KEY = 'site/servers.json';
 const VERIFIED_KEY = 'site/verified.json';
@@ -29,6 +30,11 @@ const PINGS_KEY = 'site/pings.json';
 const VOUCH_KEY = 'site/vouches.json';
 const LAT_KEY = 'site/latency.json';
 const OPEN_KEY = 'site/opens.json';
+// 每台**连续**校验通过的起点：「待核」转正的第二条判据（满一天）用它算，掉回 invalid 就清零。
+const STABLE_KEY = 'site/stable.json';
+const PENDING_LABEL = /（待核）\s*$/;
+const STABLE_PROMOTE_MS = 24 * 3600 * 1000;
+const PEOPLE_PROMOTE = 5;
 
 function json(data, status) {
   return new Response(JSON.stringify(data), {
@@ -182,7 +188,9 @@ export async function onRequestGet(context) {
         const r = od.opens[id] || {};
         const total = Number(r.total) || 0;
         if (!total) continue;
-        out[id] = { total, today: r.day === today ? (Number(r.today) || 0) : 0, at: r.at || null };
+        out[id] = { total, today: r.day === today ? (Number(r.today) || 0) : 0, at: r.at || null,
+                    // 去重点击人数：seen 的键是 sha256(ip|id|'open')，只发计数不发键
+                    people: Object.keys((r.seen && typeof r.seen === 'object') ? r.seen : {}).length };
       }
     } catch { /* 没计数就空着 */ }
     return out;
@@ -194,6 +202,8 @@ export async function onRequestGet(context) {
   // 只认「服务端自己回了 5xx」这种确切失败；429 是我们敲得太勤，不算服务器坏了。
   const hardDown = (s) => /返回\s*5\d\d/.test(String(s || ''));
   const evidence = {};
+  // 证书旁路探针的报告：整轮只读一次，逐条按归一化地址取
+  const tlsReports = await readProbeReports(env);
   const prevValid = new Set(Array.isArray(previous.valid) ? previous.valid : []);
   const prevOccupancy = (previous.occupancy && typeof previous.occupancy === 'object') ? previous.occupancy : {};
   // 整体节奏：默认 30 分钟才真打一轮（VERIFY_FLOOR_MIN 可覆盖）。页面开着也只是读这份结论，
@@ -224,6 +234,7 @@ export async function onRequestGet(context) {
         valid: validArr, invalid: invalidArr, occupancy: occ,
         backoff: previous.backoff || {}, evidence: previous.evidence || {},
         vouches: vshot, opens: opensNow, latency: latNow,
+        stable: previous.stable || {}, promoted: previous.promoted || [],
         entry_down_rounds: previous.entry_down_rounds || {},
       }, null, 2) + '\n', {
         httpMetadata: { contentType: 'application/json', cacheControl: 'public, max-age=120' },
@@ -380,6 +391,22 @@ export async function onRequestGet(context) {
       delete backoff[id];
       delete entryDown[id];
       invalid.push({ id, name: r.entry.name, url: r.entry.url, reason: '已停用（管理页关掉，需手工恢复展示）' });
+    } else if (tlsReports[probeKey(r.entry.url)]) {
+      // 证书旁路探针（GitHub Runner / 盒子那一链，能关 TLS 校验）读到过完整协议指纹：
+      // CF 对自签源站永远握不上手（525/526），而这一路真读到了 { ok:true, version, rooms, humans … }。
+      // 排在 403 / direct_cn / 玩家回执 / 盒子探测之前，因为它**带着内容**：那几路只能证明"连上了"，
+      // 这一路能填 occupancy，于是「版本号是唯一硬证据」的判定照样成立 ——
+      // 绕过的是握手机制，不是判据。除维护者停用之外，它只被更强的证据（本轮真探成功）盖过。
+      const p = tlsReports[probeKey(r.entry.url)];
+      delete backoff[id];
+      evidence[id] = { at: p.at, ageMin: p.ageMin, via: 'tls-probe', source: p.source,
+                       probePath: p.probePath, tls: p.tls || null, app: p.fingerprint.app || null };
+      valid.push(id);
+      occupancy[id] = pickOccupancy(id, {
+        rooms: p.fingerprint.rooms ?? null, humans: p.fingerprint.humans ?? null,
+        variant: p.fingerprint.runtime === 'cloudflare' ? 'workers' : 'node',
+        app: p.fingerprint.app || null, build: p.fingerprint.build || null,
+      }, 'tls-probe');
     } else if (/403/.test(String(r.reason || '') + String(r.error || '')) && !/已停用/.test(String(r.reason || ''))) {
       // 边缘 403 不算死，也不再要求条目带 direct_cn 标记（2026-10-05 定的政策）：
       // CF 出口被国内云的防火墙/安全组挡掉是常态，同一条地址十几分钟后又常常能通，
@@ -426,7 +453,9 @@ export async function onRequestGet(context) {
   // （边缘读不到、玩家与盒子的回执也没回报过）就按**校验失败**处理 —— 而不是只让每个网页
   // 访客自己藏自己那一份：判死一次对所有出口、包括游戏客户端一致，进 admin 暂存区可复核。
   // 不写退避：下一轮继续真探，版本一被读到就自动回前台。
-  const isVersion = (v) => /^\d+(\.\d+){1,3}$/.test(String(v || ''));
+  // 带预发布后缀的号也是号：皮肤分支报的是 `0.1.6-pre-skin`，按 $ 收死会把它判成
+  // "探不到版本号"而整条隐藏 —— 判据要的是"这台真的在跑一个我们能对话的服务"。
+  const isVersion = (v) => /^\d+(\.\d+){1,3}([-+~.][\w.-]*)?/.test(String(v || ''));
   const byId = new Map(servers.map((s) => [s.id, s]));
   for (let i = valid.length - 1; i >= 0; i -= 1) {
     const vid = valid[i];
@@ -448,9 +477,64 @@ export async function onRequestGet(context) {
   // 再开一个请求就等于在又慢又抖的链路上多一次往返。
   const opens = await readOpens();
 
+  /* ---- 「待核」自动转正 ----------------------------------------------------------------
+   * scout 给自动发现的服起名 `域名（待核）`，字样在**签名清单的 name 里**，所以去掉它必须
+   * 改名重签发布，前端单方面不显示只算遮丑。转正判据（2026-10-07 用户定的两条，满足其一）：
+   *   ① 点过「打开」的去重人数 > 5；
+   *   ② 连续校验通过满 24 小时（site/stable.json 记起点，掉回 invalid 立刻清零）。
+   * 只在真探轮做、只在确有条目够格时才动清单，并用 baseUpdated 挡住并发；没配签名密钥就啥也不改。
+   */
+  let stable = {};
+  const nowIso = new Date(nowMs).toISOString();
+  try {
+    const s = await env.R2BUCKET.get(STABLE_KEY);
+    const parsed = s ? JSON.parse(await s.text()) : null;
+    // 写出去的是 { updated, stable:{id:{since}} }，读的时候两种形态都认（老数据/手工改过）
+    stable = (parsed && parsed.stable && typeof parsed.stable === 'object') ? parsed.stable
+      : (parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {});
+  } catch { stable = {}; }
+  if (!stable || typeof stable !== 'object' || Array.isArray(stable)) stable = {};
+  const validSet = new Set(valid);
+  for (const id of validSet) if (!stable[id] || !Date.parse(stable[id].since || '')) stable[id] = { since: nowIso };
+  for (const k of Object.keys(stable)) if (!validSet.has(k) || !liveIds.has(k)) delete stable[k];
+  await env.R2BUCKET.put(STABLE_KEY, JSON.stringify({ updated: nowIso, stable }, null, 1) + '\n', {
+    httpMetadata: { contentType: 'application/json', cacheControl: 'public, max-age=300' },
+  });
+
+  const promoted = [];
+  for (const s of servers) {
+    if (!PENDING_LABEL.test(String(s.name || '')) || !validSet.has(s.id)) continue;
+    const people = Number((opens[s.id] || {}).people) || 0;
+    const since = Date.parse((stable[s.id] || {}).since || '');
+    const held = Number.isFinite(since) ? nowMs - since : 0;
+    const why = people > PEOPLE_PROMOTE ? `${people} 位玩家点过「打开」`
+      : (held >= STABLE_PROMOTE_MS ? '连续校验通过满一天' : '');
+    if (!why) continue;
+    const name = String(s.name).replace(PENDING_LABEL, '').trim() || s.url;
+    promoted.push({ id: s.id, from: s.name, to: name, why });
+  }
+  let listUpdatedAfter = doc.updated;
+  if (promoted.length && canSign(env)) {
+    const byId = new Map(promoted.map((p) => [p.id, p]));
+    const signed = await signServersDoc({ ...doc,
+      servers: servers.map((s) => (byId.has(s.id) ? { ...s, name: byId.get(s.id).to } : s)) }, env);
+    if (signed) {
+      const out = await publishServersDoc(env, signed, {
+        baseUpdated: doc.updated, via: 'auto-promote',
+        entryId: promoted.map((p) => p.id).join(','), entryUrl: promoted.map((p) => p.to).join(','),
+        ip: (request.headers.get('cf-connecting-ip') || '').slice(0, 60),
+        ua: request.headers.get('user-agent'), country: (request.cf && request.cf.country) || null,
+      });
+      if (out && out.ok) listUpdatedAfter = signed.updated;
+      else promoted.length = 0;   // 撞并发或没签成：这条什么都没改，别对外宣布转正
+    } else promoted.length = 0;
+  }
+
   const verifiedDoc = {
     updated: new Date().toISOString(),
-    listUpdated: doc.updated, // 清单一变就立刻重探，否则新上的服务器会被缓存挡到下个档位
+    // 清单一变就立刻重探，否则新上的服务器会被缓存挡到下个档位；刚改完名的这轮例外，
+    // 名字变了但探测结论没变，用新时间戳挡住一次无谓的全量重探。
+    listUpdated: listUpdatedAfter,
     valid,
     invalid,
     occupancy,
@@ -458,7 +542,9 @@ export async function onRequestGet(context) {
     evidence,
     vouches: vouchSnapshot(),   // 大杯/小杯票数：页面只拿它调权重，不参与隐藏判断
     latency: await sharedLatency(), // 共享延迟（玩家反馈中位数 → 盒子探测 → 单条回执）：排序用它
-    opens,                      // 「目前已点击 N 次」
+    opens,                      // 「目前已点击 N 次」+ people（去重人数，只发计数不发键）
+    stable: Object.fromEntries(Object.keys(stable).map((k) => [k, stable[k].since])),
+    promoted,                   // 这一轮去掉「（待核）」的条目与原因
     entry_down_rounds: entryDown,
   };
   await env.R2BUCKET.put(VERIFIED_KEY, JSON.stringify(verifiedDoc, null, 2) + '\n', {
@@ -471,5 +557,7 @@ export async function onRequestGet(context) {
                 invalid: invalid.map((i) => ({ id: i.id, name: i.name, reason: i.reason })),
                 skipped: skipped, cooling: Object.keys(backoff).length,
                 entry_dead: entryDead, versionless,
+                promoted: promoted.map((p) => ({ id: p.id, name: p.to, why: p.why })),
+                tlsProbeHits: Object.keys(tlsReports).length,
                 nextRetryAt: new Date(Date.now() + FLOOR_MS).toISOString() });
 }

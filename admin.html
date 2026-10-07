@@ -19,9 +19,9 @@
   <link rel="stylesheet" href="./css/components.css?v=8" />
   <link rel="stylesheet" href="./css/screens/title.css?v=8" />
   <link rel="stylesheet" href="./css/devices.css?v=8" />
-  <link rel="stylesheet" href="./css/dl.css?v=8" />
-  <link rel="stylesheet" href="./css/servers.css?v=24" />
-  <link rel="stylesheet" href="./css/admin.css?v=8" />
+  <link rel="stylesheet" href="./css/dl.css?v=20" />
+  <link rel="stylesheet" href="./css/servers.css?v=25" />
+  <link rel="stylesheet" href="./css/admin.css?v=9" />
 </head>
 <body>
   <div class="screen title-screen servers-screen">
@@ -81,9 +81,17 @@
 
         <div class="admin-list" id="ad-list"></div>
 
+        <div class="admin-review" id="ad-queue" hidden>
+          <div class="servers-head">
+            <span class="micro micro--mint" id="ad-queue-title">待复核队列</span>
+            <button type="button" class="btn btn--ghost btn--sm" id="ad-queue-reload"><span class="btn__label">刷新队列</span></button>
+          </div>
+          <div class="admin-list" id="ad-queue-list"></div>
+        </div>
+
         <div class="admin-review" id="ad-review" hidden>
           <div class="servers-head">
-            <span class="micro micro--mint">未通过校验（暂存区）</span>
+            <span class="micro micro--mint">已隐藏（校验未通过）</span>
             <button type="button" class="btn btn--ghost btn--sm" id="ad-reload"><span class="btn__label">刷新</span></button>
           </div>
           <div class="admin-list" id="ad-pending"></div>
@@ -92,19 +100,19 @@
         <form class="admin-form" id="ad-form" autocomplete="off">
           <div class="admin-grid">
             <label class="admin-field">
-              <span class="micro">名称</span>
-              <input id="ad-name" maxlength="24" placeholder="例：腾讯云测试服" required />
+              <span class="micro">名称（可留空）</span>
+              <input id="ad-name" maxlength="24" placeholder="留空则用域名显示" />
             </label>
             <label class="admin-field">
-              <span class="micro">地址</span>
-              <input id="ad-url" inputmode="url" placeholder="http://106.55.43.13:3000 或 https://host" required />
+              <span class="micro">地址（裸域名 / IP:端口 / 完整链接都行）</span>
+              <input id="ad-url" inputmode="url" placeholder="dx.example.com:29943 或 https://host/play" required />
             </label>
             <label class="admin-field">
-              <span class="micro">探针路径</span>
-              <input id="ad-probe" placeholder="/healthz" value="/healthz" />
+              <span class="micro">探针路径（可留空）</span>
+              <input id="ad-probe" maxlength="64" placeholder="留空 = 自动试四条" />
             </label>
             <label class="admin-field">
-              <span class="micro">备注</span>
+              <span class="micro">备注（可留空）</span>
               <input id="ad-note" maxlength="24" placeholder="可选" />
             </label>
           </div>
@@ -140,6 +148,6 @@
     </main>
   </div>
 
-  <script src="./js/admin.js?v=11" defer></script>
+  <script src="./js/admin.js?v=13" defer></script>
 </body>
 </html>
