@@ -766,6 +766,17 @@
       hostVer.textContent = versionText;
       hostline.appendChild(hostVer);
     }
+    // http 直连的服务器：点「打开」落地的页面就是 http，浏览器会对**那台服务器**显示
+    // 「不安全」。那是它自己没配 TLS，不是本站（https）的问题——徽标在这里把话说清，
+    // 免得玩家把两件事混成「这个清单网站不安全」（10-07 已有人这么理解并来报修）。
+    if (server.url && server.url.protocol === 'http:') {
+      var plain = document.createElement('span');
+      plain.className = 'sv-plain';
+      plain.textContent = 'HTTP';
+      plain.title = '这台服务器用 http 明文连接：打开后浏览器会在地址栏提示「不安全」，'
+        + '是该服务器没配 HTTPS，与本站无关。能连，但在这个服产生的数据走明文。';
+      hostline.appendChild(plain);
+    }
     main.appendChild(hostline);
     // 后端在应答、清单那条入口却 5xx（闸门只标注不隐藏，10-05 定的口径）：把这半坏说出来，
     // 否则玩家点开才知道是 502，还以为是我们给的错地址。

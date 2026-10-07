@@ -25,6 +25,11 @@
   <link rel="stylesheet" href="./css/dl.css?v=20" />
   <link rel="stylesheet" href="./css/servers.css?v=25" />
   <link rel="stylesheet" href="./css/admin.css?v=9" />
+  <style>
+    /* http 明文服徽标（js/servers.js row() 挂在域名后）：琥珀描边小标签，不抢状态点的戏。
+       只这个页面用，放内联避免为 6 个字符动共享的 dl/servers.css 版本号。 */
+    .sv-plain{flex:0 0 auto;font-size:10px;line-height:1;padding:2px 4px;border:1px solid #8a6d2b;color:#e0b45c;border-radius:2px;letter-spacing:.05em;cursor:help}
+  </style>
 </head>
 <body>
   <div class="screen title-screen servers-screen">
@@ -124,6 +129,6 @@
     </main>
   </div>
 
-  <script src="./js/servers.js?v=41" defer></script>
+  <script src="./js/servers.js?v=42" defer></script>
 </body>
 </html>

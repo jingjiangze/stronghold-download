@@ -28,3 +28,11 @@
 
 /
   Cache-Control: public, max-age=120, stale-while-revalidate=600
+
+# 关死「地址栏不安全」在本站的两个来路：
+#   HSTS —— 浏览器记住后 Typed 域名直接走 https，不再出现 http 中间态（本站全资源 https，无风险）；
+#   upgrade-insecure-requests —— 未来谁手滑放进 http 子资源也被浏览器当场升到 https。
+# 清单里 http:// 游戏服的「不安全」是那台服务器自己的页面，由 servers.js 的 HTTP 徽标说明。
+/*
+  Strict-Transport-Security: max-age=31536000
+  Content-Security-Policy: upgrade-insecure-requests
