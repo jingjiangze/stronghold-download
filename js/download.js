@@ -17,6 +17,10 @@
   var API_LIST = 'https://api.github.com/repos/' + REPO + '/releases?per_page=10';
   var API_DOWNLOADS = 'https://api.github.com/repos/' + REPO + '/releases?per_page=100';
   var PRIMARY_ASSET = 'app-release.apk';
+  /** 微信内置浏览器：页面里不能留任何 .apk / 下载路由链接 —— 微信按「网页含下载内容」拦截，
+   *  链接留着只会让玩家点下去撞上拦截页（10-08 用户反馈「微信说含下载内容不安全」）。
+   *  这里只保留版本/大小/更新日志等信息，下载入口交给 #dl-wx 的「在浏览器打开 / 复制链接」。 */
+  var IN_WECHAT = /MicroMessenger/i.test(navigator.userAgent);
   var PROBE_BYTES = 3 * 1024 * 1024;
   var PROBE_TIMEOUT_MS = 12000;
   var API_TIMEOUT_MS = 9000;
@@ -530,6 +534,8 @@
   function renderMirrors() {
     if (!el.mirrors) return;
     el.mirrors.textContent = '';
+    // 微信里连镜像按钮也不渲染：每一个都是 .apk 直链，微信正是按这个拦页面。
+    if (IN_WECHAT) { el.mirrors.hidden = true; return; }
     var applicable = 0;
     var firstParty = firstPartyButton();
     if (firstParty) {
@@ -585,6 +591,12 @@
   }
 
   function applyPrimary() {
+    // 微信内不渲染下载入口（见 IN_WECHAT 注释）：隐藏主按钮，镜像行同样清空。
+    if (IN_WECHAT) {
+      if (el.primary) el.primary.hidden = true;
+      renderMirrors();
+      return;
+    }
     var counted = countedUrl();
     var url = null;
     var chosen = null;
@@ -798,6 +810,10 @@
     if (!box) return;
     if (!/MicroMessenger/i.test(navigator.userAgent)) return;
     box.hidden = false;
+    // 主按钮在静态 HTML 里带一个 GitHub 兜底链接，先立刻藏掉，别让微信用户点到一个
+    // 会被拦的下载入口（applyPrimary 里还会再藏一次，那是数据到位后的兜底）。
+    var primary = document.getElementById('dl-primary');
+    if (primary) primary.hidden = true;
     var btn = document.getElementById('dl-wx-copy');
     if (!btn) return;
     btn.addEventListener('click', function () {
