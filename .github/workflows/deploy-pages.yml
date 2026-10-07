@@ -1,0 +1,50 @@
+name: deploy-pages
+
+# 为什么要有这条工作流：这个 Pages 项目**没有连 git**（CF API 里项目对象根本没有 source 字段），
+# 仓库里那个 dynamic/pages/pages-build-deployment 是集成被摘掉之后留下的空壳 —— 它跑成功也
+# 不会改生产（10-07 实测：run #150/#151/#152 全 success，账号下 12 次部署却全是 direct upload）。
+# 于是线上变成"谁最后 wrangler 直传谁说了算"，当天一条旧线（HEAD cd6fbcb）连打 4 次直传，
+# 把生产按回旧构建一个多小时没人能纠正。
+#
+# 这条工作流把"上线"变成 push 的函数：每次 push 到 main 都从 main 重新直传一次。
+# 走的是 tools/deploy.mjs（只上传对外的那几十个文件，不会把 tools/ README/.github 烤上线，
+# 也比 CF 原生 git 构建安全 —— 后者会把整个仓库 checkout 当输出目录）。
+# 需要两个仓库 secret：CLOUDFLARE_API_TOKEN（Pages:Edit + 那个账号）、CLOUDFLARE_ACCOUNT_ID。
+# 缺 secret 时**故意让它失败**：静默跳过会让人以为 push 已经上线了。
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+  schedule:
+    - cron: '23 * * * *'   # 只是兜底。GitHub 的 cron 在这个账号上是饥饿的（实测 */10 五小时
+                           # 只命中一次），别把它当节拍；真正的节拍是 push。
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 直传 main 到 Production
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ] || [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
+            echo "::error::缺 CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID secret，无法上线"
+            exit 1
+          fi
+          npx --yes wrangler --version
+          node tools/deploy.mjs
