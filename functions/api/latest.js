@@ -158,9 +158,11 @@ export async function onRequestGet(context) {
     const apk = apkAssetOf(fetched.release);
     const cdn = await cdnHasBuild(fetched.release.tag_name, apk && apk.size);
     const changelog = await readChangelog(env, fetched.release.tag_name);
-    // CDN 缺这份构建 → 去催 mirror-apk。GitHub 的 cron 在这是饥饿的（实测 `*/10` 五个小时
-    // 只命中一次，shell-v2.9.18 发布后挂了整整 2 小时），所以不能只等定时。
-    waitUntil(kickIfCdnStale(env, fetched.release.tag_name, cdn));
+    // CDN 缺这份构建、**或者这份构建的玩家日志还没生成** → 去催 mirror-apk（同一条链的两步，
+    // 一次 dispatch 都补上）。GitHub 的 cron 在这是饥饿的（实测 `*/10` 五个小时只命中一次，
+    // shell-v2.9.18 发布后挂了整整 2 小时），所以不能只等定时 —— 10-07 就是 shell-v2.9.31
+    // 的 CDN 字节早就躺在 R2 上、日志却没生成，页面只能显示"构建更新（明细见发布页）"。
+    waitUntil(kickIfCdnStale(env, fetched.release.tag_name, cdn, { missingChangelog: !changelog }));
     const payload = Object.assign({}, fetched.release, {
       _cachedAt: Date.now(),
       _stale: false,

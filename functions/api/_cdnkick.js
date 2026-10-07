@@ -83,12 +83,16 @@ export async function kickMirror(env, tag, opts) {
 }
 
 /** 访客路径上的判定：只在"CDN 确实缺/不符"时 kick，一切限流照走。 */
-export async function kickIfCdnStale(env, tag, cdn) {
+export async function kickIfCdnStale(env, tag, cdn, opts) {
+  const o = opts || {};
   if (!tag) return { ok: false, skipped: '没有可比的 tag' };
-  if (cdn && cdn.ok) return { ok: false, skipped: 'CDN 已是最新构建' };
-  const reason = (cdn && cdn.reason) || 'unknown';
+  // 两个理由都要催：CDN 缺这份构建，以及玩家日志还没生成 —— 它们本来就是 mirror-apk
+  // 同一次运行里的两步，一次 dispatch 两件事都补上。GitHub 的 cron 在这个账号下是饥饿的
+  // （实测 `*/10` 五个小时只命中一次），只等定时就会出现"版本线一切正常、日志是上一版的"。
+  if (cdn && cdn.ok && !o.missingChangelog) return { ok: false, skipped: 'CDN 与日志都是这份构建' };
+  const reason = cdn && !cdn.ok ? cdn.reason : 'changelog-missing';
   const out = await kickMirror(env, tag);
-  return Object.assign({ cdnReason: reason }, out);
+  return Object.assign({ cdnReason: reason || 'unknown' }, out);
 }
 
 /** 给管理页/审计用的最近记录。 */
