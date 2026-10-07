@@ -125,7 +125,11 @@ export async function onRequestGet(context) {
     return out;
   };
   const median = (arr) => {
-    const a = arr.filter((x) => Number.isFinite(x)).sort((x, y) => x - y);
+    // 样本 ms 归根到底是玩家上报值：只收 [0, 600000] 里的有限数再参与统计，
+    // 极端值（1e15 之类）不能把中位数推到没有意义的量级。
+    const a = arr.map((x) => Number(x))
+      .filter((x) => Number.isFinite(x) && x >= 0 && x <= 600000)
+      .sort((x, y) => x - y);
     return a.length ? a[Math.floor((a.length - 1) / 2)] : null;
   };
   /**

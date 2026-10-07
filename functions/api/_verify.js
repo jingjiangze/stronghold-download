@@ -541,8 +541,15 @@ const CLIENT_MARKERS = [/viewport-fit=cover/i, /\/vendor\//i, /STRONGHOLD PROTOC
 
 /** 这个地址像不像游戏客户端本体（而不是状态页/落地页/任意能打开的路径）。 */
 export async function looksLikeClientPage(rawUrl, timeoutMs) {
+  // 与 checkEntryUrl 同一套前置闸：这个函数拿的是提交者手打的地址，fetch 前必须
+  // 拦掉非 http(s)、带凭据、内网/环回主机 —— 否则等于替提交者代理请求任意地址。
+  let url;
+  try { url = new URL(String(rawUrl)); } catch { return false; }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') return false;
+  if (url.username || url.password) return false;
+  if (isUnsafeHostname(url.hostname)) return false;
   try {
-    const res = await fetch(String(rawUrl), {
+    const res = await fetch(url.href, {
       headers: { 'user-agent': 'stronghold-dl-gate/1', accept: 'text/html' },
       signal: AbortSignal.timeout(timeoutMs || 8000),
     });
