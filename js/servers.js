@@ -826,17 +826,6 @@
       hostVer.textContent = versionText;
       hostline.appendChild(hostVer);
     }
-    // http 直连的服务器：点「打开」落地的页面就是 http，浏览器会对**那台服务器**显示
-    // 「不安全」。那是它自己没配 TLS，不是本站（https）的问题——徽标在这里把话说清，
-    // 免得玩家把两件事混成「这个清单网站不安全」（10-07 已有人这么理解并来报修）。
-    if (server.url && server.url.protocol === 'http:') {
-      var plain = document.createElement('span');
-      plain.className = 'sv-plain';
-      plain.textContent = 'HTTP';
-      plain.title = '这台服务器用 http 明文连接：直接打开会被浏览器标注「不安全」，所以这里改成复制地址。'
-        + '是该服务器没配 HTTPS，与本站无关。能连，但在这个服产生的数据走明文。';
-      hostline.appendChild(plain);
-    }
     main.appendChild(hostline);
     // 后端在应答、清单那条入口却 5xx（闸门只标注不隐藏，10-05 定的口径）：把这半坏说出来，
     // 否则玩家点开才知道是 502，还以为是我们给的错地址。
@@ -876,22 +865,7 @@
     oc.title = openTitle(on);
     main.appendChild(oc);
 
-    if (server.url && server.url.protocol === 'http:') {
-      // http 服务器不再给「打开」：跳过去就是浏览器标红的 http 页面（地址栏「不安全」，
-      // 10-07 有玩家把这一幕当成"清单网站不安全"来报）。改成复制地址 —— 要开就粘贴到
-      // 地址栏，或直接填进游戏客户端的服务器框；不计入「打开」点击数（没有发生跳转）。
-      var copy = document.createElement('button');
-      copy.type = 'button';
-      copy.className = 'btn btn--secondary btn--sm';
-      var copyLabel = document.createElement('span');
-      copyLabel.className = 'btn__label';
-      copyLabel.textContent = '复制';
-      copy.appendChild(copyLabel);
-      copy.title = '这台服务器是 http 明文地址：直接打开会被浏览器标注「不安全」，所以改成复制。'
-        + '粘贴到浏览器地址栏或客户端的服务器地址框即可。';
-      copy.addEventListener('click', function () { copyText(server.url.href, copyLabel); });
-      div.appendChild(copy);
-    } else if (server.url) {
+    if (server.url) {
       var open = document.createElement('a');
       open.className = 'btn btn--secondary btn--sm';
       open.href = server.url.href;
@@ -905,32 +879,6 @@
       div.appendChild(open);
     }
     return div;
-  }
-
-  /** 复制到剪贴板：clipboard API 优先，老 WebView 退 execCommand（两条路都只在 https 页面可靠）。 */
-  function copyText(text, labelNode) {
-    var done = function () {
-      if (!labelNode) return;
-      labelNode.textContent = '已复制 ✓';
-      setTimeout(function () { labelNode.textContent = '复制'; }, 1600);
-    };
-    var fallback = function () {
-      var ta = document.createElement('textarea');
-      ta.value = text;
-      ta.setAttribute('readonly', '');
-      ta.style.position = 'fixed';
-      ta.style.opacity = '0';
-      document.body.appendChild(ta);
-      ta.select();
-      try { document.execCommand('copy'); } catch (err) { /* 老 WebView 拒绝就只能手动长按了 */ }
-      document.body.removeChild(ta);
-      done();
-    };
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text).then(done, fallback);
-    } else {
-      fallback();
-    }
   }
 
   function openTitle(on) {
