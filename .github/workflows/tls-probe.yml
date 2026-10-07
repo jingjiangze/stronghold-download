@@ -1,0 +1,105 @@
+name: tls-probe
+
+# 证书旁路探针：Cloudflare 的 fetch 没有"忽略证书"开关，源站自签（SakuraFrp 之类的隧道给的
+# 自动证书）时边缘只能拿到 525/526，服务器明明活着、玩家进得去，站点却永远看不见。
+# 这一链在 GitHub Runner 上跑（Node 可以对单个请求关掉校验），只有读到**完整协议指纹**
+# 才写进 site/probes.json，站点侧 readProbeReports() 据此放行并记 attested_by:'tls-probe'。
+#
+# 密钥边界：这个 job 只拿 R2 的读写钥匙（和 mirror-r2 同一对 secret），
+# 没有 PUBLISH_KEY、没有任何签名私钥 —— 它能做的是"提供证据"，拍板仍在站点自己的函数里。
+#
+# 频率：每 2 小时一轮。站点侧报告 12 小时过期，所以最坏情况下报告会在一轮里续上；
+# 免费版 Actions 分钟数有限（本仓每月 2000 分钟），这一条大约占 100 分钟。
+
+on:
+  schedule:
+    - cron: '41 */2 * * *'
+  workflow_dispatch:
+    inputs:
+      only:
+        description: '只复查这一条地址（留空 = 按站点侧的失效清单与待复核清单跑）'
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tls-probe
+  cancel-in-progress: false
+
+env:
+  BUCKET: stronghold-assets
+  R2_ENDPOINT: https://8641802a2d46497f1cc4e7a4cba365d2.r2.cloudflarestorage.com
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install rclone
+        run: |
+          set -euo pipefail
+          curl -fsSL https://downloads.rclone.org/rclone-current-linux-amd64.zip -o rclone.zip
+          unzip -q rclone.zip
+          install -m 0755 rclone-*/rclone /usr/local/bin/rclone
+
+      - name: Configure r2 remote
+        env:
+          R2_ACCESS_KEY: ${{ secrets.R2_ACCESS_KEY }}
+          R2_SECRET_KEY: ${{ secrets.R2_SECRET_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$R2_ACCESS_KEY" || { echo "R2 secrets absent"; exit 1; }
+          rclone config create r2 s3 provider=Cloudflare \
+            access_key_id="$R2_ACCESS_KEY" \
+            secret_access_key="$R2_SECRET_KEY" \
+            endpoint="$R2_ENDPOINT" > /dev/null
+
+      - name: Pull the list, the partition and the recheck manifest
+        run: |
+          set -euo pipefail
+          mkdir -p _probe
+          for f in servers.json verified.json probes.json recheck.json; do
+            if rclone copyto "r2:$BUCKET/site/$f" "_probe/$f" --s3-no-check-bucket > /dev/null 2>&1; then
+              echo "got $f ($(stat -c %s "_probe/$f") bytes)"
+            else
+              echo "no $f yet"
+            fi
+          done
+
+      - name: Probe with certificate bypass
+        env:
+          ONLY: ${{ github.event.inputs.only }}
+        run: |
+          set -euo pipefail
+          ARGS=(--dir _probe --max 60)
+          [ -n "$ONLY" ] && ARGS+=(--only "$ONLY")
+          node tools/tls-probe.mjs "${ARGS[@]}" | tee _probe/run.log
+
+      - name: Publish the reports back to R2
+        run: |
+          set -euo pipefail
+          test -s _probe/probes.json || { echo "没有生成报告"; exit 1; }
+          rclone copyto _probe/probes.json "r2:$BUCKET/site/probes.json" --s3-no-check-bucket \
+            --header-upload "Content-Type: application/json" \
+            --header-upload "Cache-Control: public, max-age=60"
+
+      - name: Drop the recheck items this run confirmed
+        run: |
+          set -euo pipefail
+          # 探针确认过的地址就从待复核清单里摘掉（没确认的留着下轮再试），别让它无限堆
+          if [ -s _probe/recheck.json ]; then
+            rclone copyto _probe/recheck.json "r2:$BUCKET/site/recheck.json" --s3-no-check-bucket \
+              --s3-metadata Content-Type=application/json \
+              --header-upload "Content-Type: application/json" \
+              --header-upload "Cache-Control: public, max-age=60"
+            echo "待复核清单已回收"
+          fi
