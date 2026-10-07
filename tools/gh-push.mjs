@@ -18,7 +18,7 @@
      · blobs 传**原文**（content 字段），不是 base64 —— 2026-10-06 就是因为把 base64 再塞进
        content，远端存下的是编码文本而不是代码；每个 blob 写完立刻拉回来逐字节比对。
    ========================================================================================== */
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -74,7 +74,13 @@ if (from) {
 files = [...new Set(files)];
 deletes = [...new Set(deletes)].filter((d) => !files.includes(d));
 if (!files.length && !deletes.length) { console.error('没给文件：--files 或 --from 至少来一个'); process.exit(2); }
-for (const f of files) if (!fs.existsSync(path.join(SRC, f))) { console.error('本地不存在：' + f); process.exit(2); }
+// 文件必须存在于**本地 HEAD 这棵提交里**（不是工作树）：要推的就是已提交的内容，
+// 工作树里未提交的同类文件与本任务无关，混进来反而会把别人没验证过的东西推上线。
+const head = git(['rev-parse', 'HEAD']);
+for (const f of files) {
+  const has = spawnSync('git', ['cat-file', '-e', `${head}:${f}`], { cwd: SRC }).status === 0;
+  if (!has) { console.error(`本地 HEAD 里没有这个文件：${f}`); process.exit(2); }
+}
 
 console.log(`目标 ${REPO}@${BRANCH}：更新 ${files.length} · 删除 ${deletes.length}`);
 files.forEach((f) => console.log('  +', f));
@@ -87,7 +93,10 @@ console.log('远端当前 =', remoteSha.slice(0, 10));
 
 const tree = [];
 for (const rel of files) {
-  const raw = fs.readFileSync(path.join(SRC, rel), 'utf8');
+  // 取**提交里**的内容，不是工作树的：core.autocrlf=true 时工作树是 CRLF，
+  // 直接读文件会把 CRLF 推上远端，导致远端 blob 与本地 git blob 永远差一个 \r。
+  // 注意这里不能走 git()：那个 helper 带 .trim()，会把文件末尾的换行吃掉。
+  const raw = execFileSync('git', ['show', `${head}:${rel}`], { cwd: SRC, encoding: 'utf8' });
   const blob = await call('POST', `/repos/${REPO}/git/blobs`, { content: raw });   // 原文，不 base64
   tree.push({ path: rel, mode: '100644', type: 'blob', sha: blob.sha });
   const back = await call('GET', `/repos/${REPO}/git/blobs/${blob.sha}`);
