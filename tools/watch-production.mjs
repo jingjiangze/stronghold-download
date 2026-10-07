@@ -11,6 +11,7 @@
 
      node tools/watch-production.mjs --dry   只比对，不动线上
      node tools/watch-production.mjs         不一致就从 origin/main 重新直传
+     计划任务里跑这份副本时带 --repo "C:\DDDD\Agent Work\stronghold-dl-site"
 
    判据用版本标记而不是整份文件：index.html 里的 download.js?v= / dl.css?v=，
    servers.html 里的 servers.js?v= / servers.css?v=。改任何对外代码都必须 bump ?v=
@@ -22,10 +23,17 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const SRC = path.resolve(HERE, '..');
+// 默认跟着自己所在的仓库跑；计划任务里用 --repo 指过去，这样这份脚本可以放在任何地方，
+// 也不会依赖某个窗口的脏工作树。
+const argOf = (name, def) => {
+  const i = process.argv.indexOf('--' + name);
+  return i >= 0 && process.argv[i + 1] ? process.argv[i + 1] : def;
+};
+const REPO_DIR = path.resolve(argOf('repo', path.resolve(HERE, '..')));
+const SRC = REPO_DIR;
 const SITE = 'https://dl.jiangjiangze.icu';
-const LOG = path.resolve(SRC, '..', '_watch-production.log');
-const WORKTREE = path.resolve(SRC, '..', '_wt-watch');
+const LOG = path.resolve(REPO_DIR, '..', '_watch-production.log');
+const WORKTREE = path.resolve(REPO_DIR, '..', '_wt-watch');
 
 // [仓库里的 html, 它引用的资源名, 线上取哪个地址]
 const MARKERS = [
@@ -109,19 +117,46 @@ let localRef = '';
 try { localRef = git(['rev-parse', 'origin/main']); } catch (err) { localRef = ''; }
 
 if (!remoteTip) { log('没有远端真值，本轮不判断（绝不拿本地旧 ref 去修线）'); process.exit(1); }
-if (localRef !== remoteTip) {
-  log('本地 origin/main (' + (localRef ? localRef.slice(0, 7) : '无') + ') ≠ 远端 main (' +
-    remoteTip.slice(0, 7) + ') —— github.com 不通，本轮只报告、不动线上');
-  process.exit(1);
-}
 const remote = remoteTip;
-
-const checks = [];
-for (const [file, asset, page] of MARKERS) {
-  let want = null;
-  try { want = versionOf(git(['show', remote + ':' + file]), asset); } catch (err) { /* 文件不存在 */ }
-  checks.push({ file, asset, page, want });
+// 动手修线需要 main 的**整棵树**（只有 git fetch 拿得到），所以本地引用必须已经追上远端。
+// 但"发现线上被人盖了"不需要 —— 期望值直接问 api.github.com 的 contents 接口，
+// github.com:443 不通的那段时间里照样能报警（只是不动线上）。
+const canFix = localRef === remoteTip;
+if (!canFix) {
+  log('本地 origin/main (' + (localRef ? localRef.slice(0, 7) : '无') + ') ≠ 远端 main (' +
+    remoteTip.slice(0, 7) + ') —— 本轮只报告，不动线上');
 }
+
+async function expectedFromApi(file) {
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      const res = await fetch('https://api.github.com/repos/' + REPO + '/contents/' +
+        file.split('/').map(encodeURIComponent).join('/') + '?ref=' + remoteTip, {
+        headers: { accept: 'application/vnd.github.raw', 'user-agent': 'stronghold-watch-production' },
+        signal: AbortSignal.timeout(45000),
+      });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return await res.text();
+    } catch (err) {
+      if (attempt === 3) throw err;
+      await new Promise((r) => setTimeout(r, 4000 * attempt));
+    }
+  }
+  return '';
+}
+
+const sources = [];
+for (const [file, asset, page] of MARKERS) {
+  if (!sources.some((s) => s.file === file)) {
+    let text = '';
+    try { text = await expectedFromApi(file); }
+    catch (err) { log('读不到远端 ' + file + '：' + err.message); }
+    sources.push({ file, text });
+  }
+}
+const checks = MARKERS.map(([file, asset, page]) => ({
+  file, asset, page, want: versionOf((sources.find((s) => s.file === file) || {}).text, asset),
+}));
 
 let pages = {};
 try {
@@ -139,8 +174,10 @@ const summary = checks.map((c) => c.asset + ' main=' + c.want + ' 线上=' + (c.
 
 if (!bad.length) { log('一致：' + summary); process.exit(0); }
 
-log('✗ 线上与 main 不一致：' + summary + ' —— ' + (dry ? '（--dry：不动线上）' : '从 origin/main 重新直传'));
+log('✗ 线上与 main 不一致：' + summary);
 if (dry) process.exit(2);
+if (!canFix) { log('  …但本地拿不到 main 的整棵树（git fetch 未跟上），不动线上'); process.exit(2); }
+log('  → 从 origin/main 重新直传');
 
 try { fs.rmSync(WORKTREE, { recursive: true, force: true }); } catch (err) { /* Windows 上可能慢一拍 */ }
 try { git(['worktree', 'add', '--detach', WORKTREE, remote]); }
