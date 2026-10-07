@@ -43,7 +43,12 @@ const MARKERS = [
   ['servers.html', 'servers.css', '/servers'],
 ];
 
-const git = (args, cwd) => execFileSync('git', args, { cwd: cwd || SRC, encoding: 'utf8' }).trim();
+const git = (args, cwd) => execFileSync('git', args, {
+  cwd: cwd || SRC, encoding: 'utf8', timeout: 120000,
+  // 计划任务里没有终端可以问口令：GIT_TERMINAL_PROMPT=0 让 git 直接失败而不是挂在那里
+  // （实测这个任务曾经 7 分钟不落一行日志，就是卡在 fetch 上等凭据）。
+  env: Object.assign({}, process.env, { GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never' }),
+}).trim();
 
 function versionOf(text, asset) {
   const m = String(text || '').match(new RegExp(asset.replace('.', '\\.') + '\\?v=(\\d+)'));
