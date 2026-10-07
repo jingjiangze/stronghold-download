@@ -355,8 +355,12 @@
     return hidden;
   }
 
-  function loadVerified() {
-    return fetchJson(VERIFIED_URL).then(function (doc) {
+  function loadVerified(prestarted) {
+    // verified.json 与清单相互独立：boot() 在 loadList 出膛的同时就把这一发打出去，
+    // 清单一到立刻有共享延迟可画（≈ 值），不用等清单回来再串行等第二段往返。
+    var p = prestarted || fetchJson(VERIFIED_URL);
+    return p.then(function (doc) {
+      if (!doc) return 0;
       var hidden = applyVerified(doc);
       // Cache occupancy (rooms/humans/version) alongside the latency cache so the page
       // renders complete rows from the local snapshot even before the network answers.
@@ -674,10 +678,31 @@
 
   /* ---- rendering -------------------------------------------------------------------- */
 
+  /** 共享探测值（verified.json 的 latency，随排序链路一起到页面）。本机没测出来时延迟列
+   *  先拿它顶上 —— 以前这里只有「—」，首访要等探针队列跑完（几十秒）才见数字。 */
+  function sharedOf(server) {
+    var sh = state.latency[server.id];
+    return sh && sh.ms != null ? sh : null;
+  }
+
+  function sharedTitle(sh) {
+    var src = sh.src === 'players-cn' ? '国内玩家实测样本'
+      : sh.src === 'players' ? '玩家实测样本'
+      : sh.src === 'cn-probe' ? '盒子国内探测'
+      : '共享探测';
+    return '共享探测参考值（' + src + '，' + (sh.n || 1) + ' 个样本'
+      + (sh.ageMin != null ? '，' + sh.ageMin + ' 分钟前' : '') + '）；本机测速完成后会换成你自己的实测值';
+  }
+
   function msText(server) {
-    if (server.level === 'na') return '不可测速';
     if (server.offline) return '离线';
-    if (server.ms == null) return '—';
+    if (server.ms == null) {
+      // 本机还没测到（或协议不让测，如 http 条目）：有共享值就先给 ≈ 参考值，
+      // 比一直摆着「—」/「不可测速」有用 —— 用户报过「延迟数字加载慢」就是这一段。
+      var sh = sharedOf(server);
+      if (sh) return '≈ ' + Math.round(sh.ms) + ' ms';
+      return server.level === 'na' ? '不可测速' : '—';
+    }
     return Math.round(server.ms) + ' ms' + (server.okCount < SAMPLES ? ' *' : '');
   }
 
@@ -773,7 +798,7 @@
       var plain = document.createElement('span');
       plain.className = 'sv-plain';
       plain.textContent = 'HTTP';
-      plain.title = '这台服务器用 http 明文连接：打开后浏览器会在地址栏提示「不安全」，'
+      plain.title = '这台服务器用 http 明文连接：直接打开会被浏览器标注「不安全」，所以这里改成复制地址。'
         + '是该服务器没配 HTTPS，与本站无关。能连，但在这个服产生的数据走明文。';
       hostline.appendChild(plain);
     }
@@ -792,11 +817,14 @@
     }
 
     var ms = document.createElement('span');
-    ms.className = 'sv-ms';
+    var shared = sharedOf(server);
+    var showShared = server.ms == null && !server.offline && shared;
+    if (showShared) ms.className = 'sv-ms sv-ms--shared';
+    else ms.className = 'sv-ms';
     ms.textContent = msText(server);
     ms.title = server.cachedAt
       ? '缓存于 ' + new Date(server.cachedAt).toLocaleString('zh-CN', { hour12: false })
-      : '';
+      : (showShared ? sharedTitle(shared) : '');
     div.appendChild(ms);
 
     // 大杯=好评、小杯=差评，放在「打开」前面（先给判断再给跳转）。两个都只调排序权重：
@@ -813,7 +841,22 @@
     oc.title = openTitle(on);
     main.appendChild(oc);
 
-    if (server.url) {
+    if (server.url && server.url.protocol === 'http:') {
+      // http 服务器不再给「打开」：跳过去就是浏览器标红的 http 页面（地址栏「不安全」，
+      // 10-07 有玩家把这一幕当成"清单网站不安全"来报）。改成复制地址 —— 要开就粘贴到
+      // 地址栏，或直接填进游戏客户端的服务器框；不计入「打开」点击数（没有发生跳转）。
+      var copy = document.createElement('button');
+      copy.type = 'button';
+      copy.className = 'btn btn--secondary btn--sm';
+      var copyLabel = document.createElement('span');
+      copyLabel.className = 'btn__label';
+      copyLabel.textContent = '复制';
+      copy.appendChild(copyLabel);
+      copy.title = '这台服务器是 http 明文地址：直接打开会被浏览器标注「不安全」，所以改成复制。'
+        + '粘贴到浏览器地址栏或客户端的服务器地址框即可。';
+      copy.addEventListener('click', function () { copyText(server.url.href, copyLabel); });
+      div.appendChild(copy);
+    } else if (server.url) {
       var open = document.createElement('a');
       open.className = 'btn btn--secondary btn--sm';
       open.href = server.url.href;
@@ -827,6 +870,32 @@
       div.appendChild(open);
     }
     return div;
+  }
+
+  /** 复制到剪贴板：clipboard API 优先，老 WebView 退 execCommand（两条路都只在 https 页面可靠）。 */
+  function copyText(text, labelNode) {
+    var done = function () {
+      if (!labelNode) return;
+      labelNode.textContent = '已复制 ✓';
+      setTimeout(function () { labelNode.textContent = '复制'; }, 1600);
+    };
+    var fallback = function () {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); } catch (err) { /* 老 WebView 拒绝就只能手动长按了 */ }
+      document.body.removeChild(ta);
+      done();
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, fallback);
+    } else {
+      fallback();
+    }
   }
 
   function openTitle(on) {
@@ -1298,6 +1367,9 @@
     });
     setInterval(tick, 1000);
 
+    // 与清单并行出膛：清单一到，applyVerified 里的共享延迟就能立刻上列（≈ 值）
+    var verifiedDoc = fetchJson(VERIFIED_URL).catch(function () { return null; });
+
     loadList().then(function (data) {
       prepare(data);
       var hits = applyCache(loadCache());
@@ -1311,7 +1383,7 @@
       }
       // Server-side fingerprint verdicts: hide entries that are not Stronghold Protocol
       // servers (or are broken), then keep the partition fresh every 5 minutes.
-      loadVerified();
+      loadVerified(verifiedDoc);
       if (state.verifyTimer) clearInterval(state.verifyTimer);
       state.verifyTimer = setInterval(triggerVerify, VERIFY_REFRESH_MS);
       setTimeout(triggerVerify, 1500); // first shared re-verify shortly after load
