@@ -789,9 +789,31 @@
     }, 10 * 60 * 1000);
   }
 
+  /** 微信内置浏览器：政策上不允许在微信里直接下载 APK，点下载只会被拦（10-08 用户反馈
+   *  「微信说含下载内容不安全」）。这与本站的安全状态无关，但玩家看到的就是"打不开"，
+   *  所以检测到 MicroMessenger 时直接把两条出路摆出来：右上角「在浏览器打开」，或复制链接。
+   *  页面本身不做任何跳转/诱导，也不影响其它浏览器的正常下载。 */
+  function wireWeChatHint() {
+    var box = document.getElementById('dl-wx');
+    if (!box) return;
+    if (!/MicroMessenger/i.test(navigator.userAgent)) return;
+    box.hidden = false;
+    var btn = document.getElementById('dl-wx-copy');
+    if (!btn) return;
+    btn.addEventListener('click', function () {
+      copyText(location.href.split('#')[0], function () {
+        btn.classList.add('is-done');
+        var old = btn.textContent;
+        btn.textContent = '已复制';
+        setTimeout(function () { btn.classList.remove('is-done'); btn.textContent = old; }, 1600);
+      });
+    });
+  }
+
   function start() {
     wireHashButton();
     wireQqFooter();
+    wireWeChatHint();
     watchForNewRelease();
 
     // 镜像清单只是按钮列表，它拿不到不该带走整页 —— 版本号和离线快照都跟它无关

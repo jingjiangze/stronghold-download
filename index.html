@@ -19,7 +19,7 @@
   <link rel="stylesheet" href="./css/components.css?v=4" />
   <link rel="stylesheet" href="./css/screens/title.css?v=4" />
   <link rel="stylesheet" href="./css/devices.css?v=4" />
-  <link rel="stylesheet" href="./css/dl.css?v=20" />
+  <link rel="stylesheet" href="./css/dl.css?v=21" />
 </head>
 <body>
   <div class="screen title-screen">
@@ -84,6 +84,14 @@
           <svg class="icon btn__icon" viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true" focusable="false"><path fill="currentColor" d="M5.6 5 4.2 6.4 9.8 12l-5.6 5.6L5.6 19l7-7zm7 0-1.4 1.4 5.6 5.6-5.6 5.6 1.4 1.4 7-7z" /></svg>
         </a>
         <div class="dl-mirrors" id="dl-mirrors" aria-label="下载镜像"></div>
+        <!-- 微信内置浏览器（MicroMessenger）政策上不允许直接下载 APK：检测到微信时把
+             「在浏览器打开 / 复制链接」两条出路摆出来，免得玩家以为站点坏了或"不安全"。
+             与本站安全无关，纯平台策略；也顺带说明域名未备案导致的提示。 -->
+        <div class="dl-wx" id="dl-wx" hidden>
+          <p class="dl-wx__title">微信里无法直接下载安装包</p>
+          <p class="dl-wx__body">微信不允许在聊天窗口内下载 APK（平台策略，与本站无关）。请点右上角「···」→「在浏览器打开」后重试；也可以先复制本页链接，再粘贴到手机浏览器里打开。</p>
+          <button type="button" class="dl-copy" id="dl-wx-copy" title="复制本页链接">复制本页链接</button>
+        </div>
         <div class="dl-meta">
           <span id="dl-version">正在获取版本信息…</span>
           <span id="dl-size" class="dl-size"></span>

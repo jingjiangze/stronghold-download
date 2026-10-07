@@ -87,6 +87,19 @@
 .dl-copy.is-done { color: var(--gold-2); border-color: var(--gold-a20); }
 .dl-probe { font-size: .13rem; color: var(--text-dim); letter-spacing: .06em; }
 
+/* ---- 微信内置浏览器提示（见 js/download.js 的 wireWeChatHint）----------------------
+   微信不允许在聊天窗口内直接下载 APK（平台策略，与本站安全无关）。检测到
+   MicroMessenger 时显示这个盒子：告诉玩家「在浏览器打开」或先复制链接。 */
+.dl-wx {
+  margin: .1rem auto 0;
+  padding: .08rem .12rem;
+  border: 1px solid var(--gold-a20);
+  background: rgba(255, 198, 0, .06);
+  text-align: center;
+}
+.dl-wx__title { margin: 0 0 .04rem; font-size: .14rem; letter-spacing: .08em; color: var(--gold-2); }
+.dl-wx__body { margin: 0 0 .06rem; font-size: .12rem; line-height: 1.7; color: var(--text-md); }
+
 .dl-note {
   margin: 0;
   text-align: center;
