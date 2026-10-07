@@ -10,14 +10,13 @@
   <title>卫戍协议：盟约 · 服务器清单</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' fill='%230c0f0e'/%3E%3Cpath fill='%234ed8af' d='M5 3h3v2h2V3h4v2h2V3h3v5l-2 2v7l2 2v2H5v-2l2-2v-7L5 8z'/%3E%3C/svg%3E" />
 
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <!-- 清单与负载数据都在 R2 域名上，握手（实测 1.1 s）不该排在首屏之后现做 -->
   <link rel="preconnect" href="https://weishucdn.jiangjiangze.icu" crossorigin />
   <link rel="dns-prefetch" href="https://weishucdn.jiangjiangze.icu" />
-  <link rel="stylesheet" media="print" onload="this.media='all'"
-        href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700;900&family=Oxanium:wght@400;500;600;700&family=Rajdhani:wght@500;600;700&display=swap" />
+  <!-- 字体全部自托管（fonts/fonts.css + fonts/webfonts-local.css）：以前引 fonts.googleapis.com，
+       国内被劫持重定向到 http 时 Chrome 会把整页判「不安全」（10-08 实测复现）。 -->
   <link rel="stylesheet" href="./fonts/fonts.css" />
+  <link rel="stylesheet" href="./fonts/webfonts-local.css" />
   <link rel="stylesheet" href="./css/theme.css?v=4" />
   <link rel="stylesheet" href="./css/components.css?v=4" />
   <link rel="stylesheet" href="./css/screens/title.css?v=4" />
