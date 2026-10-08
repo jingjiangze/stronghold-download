@@ -46,7 +46,7 @@ const num = (flag, dflt) => {
   return Number.isFinite(v) && v >= 0 ? v : dflt;
 };
 const KEEP_PER_FAMILY = num('--keep', 2);
-const GRACE_HOURS = num('--grace-hours', 24);
+const GRACE_HOURS = num('--grace-hours', 6);
 const MAX_DELETE = num('--max-delete', 8);
 
 // ---- 凭证 ---------------------------------------------------------------------------

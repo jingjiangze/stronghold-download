@@ -30,7 +30,7 @@ on:
       grace_hours:
         description: '多久内写过的对象一律先留着'
         required: false
-        default: '24'
+        default: '6'
 
 permissions:
   contents: read
@@ -59,7 +59,7 @@ jobs:
           R2_ACCESS_KEY: ${{ secrets.R2_ACCESS_KEY }}
           R2_SECRET_KEY: ${{ secrets.R2_SECRET_KEY }}
           KEEP: ${{ github.event.inputs.keep || '2' }}
-          GRACE: ${{ github.event.inputs.grace_hours || '24' }}
+          GRACE: ${{ github.event.inputs.grace_hours || '6' }}
           MODE: ${{ github.event.inputs.mode || 'apply' }}
         run: |
           set -euo pipefail
