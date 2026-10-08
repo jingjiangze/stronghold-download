@@ -179,8 +179,14 @@ async function main() {
     return;
   }
 
-  const keep = new Map(); // key → 理由
-  const addKeep = (key, why) => { if (key && apks.some((a) => a.key === key)) keep.set(key, why); };
+  const keep = new Map(); // key → 理由数组（累积，不覆盖：同一对象常被多条规则同时命中，
+                          // 只留最后一条会看不出"它其实是下载页正在用的那个"）
+  const addKeep = (key, why) => {
+    if (!key || !apks.some((a) => a.key === key)) return;
+    const list = keep.get(key) || [];
+    if (!list.includes(why)) list.push(why);
+    keep.set(key, list);
+  };
 
   const pointers = [];
   for (const pf of ['apk/latest.json', 'apk/latest-re.json']) {
@@ -227,7 +233,7 @@ async function main() {
   console.log(`apk 对象 ${apks.length} 个 / ${(apks.reduce((s, a) => s + a.size, 0) / 1e6).toFixed(0)} MB；保留 ${keep.size}，待删 ${doomed.length}（${doomedMB.toFixed(0)} MB）`);
   console.log('保留：');
   for (const a of apks.filter((x) => keep.has(x.key)).sort((x, y) => x.key.localeCompare(y.key))) {
-    console.log(`  KEEP  ${(a.size / 1e6).toFixed(0).padStart(4)}MB  ${a.lm.slice(0, 10)}  ${a.key}  ← ${keep.get(a.key)}`);
+    console.log(`  KEEP  ${(a.size / 1e6).toFixed(0).padStart(4)}MB  ${a.lm.slice(0, 10)}  ${a.key}  ← ${(keep.get(a.key) || []).join(' + ')}`);
   }
   if (!doomed.length) { console.log('没有需要清理的对象。'); return; }
   console.log('待删：');
