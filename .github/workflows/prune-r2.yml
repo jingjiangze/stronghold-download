@@ -1,14 +1,14 @@
 name: prune-r2
 
-# 定时清理 R2 上「已经没人引用」的安装包（.apk）。
+# 定时清理 R2 上「已经没人引用」的安装包（.apk）与热更新包（content-slim-*.zip）。
 #
-# 背景：每次构建 ~600-750 MB，R2 免费额度 10 GB，几版就顶到天花板（10-04 已到 10.7 GB）。
-# 判定逻辑全在 tools/prune-r2.mjs 里（保留指针指向的、下载页当前链接的、每条线最新的 N 个、
-# 以及 grace 小时内写过的；只删 .apk，永不碰 content-slim-*.zip 与 latest*.json）。
-# 这样本地干跑和 CI 跑的是同一份实现，不会漂移。
+# 背景：每次构建 APK ~600-750 MB、slim ~13 MB，R2 免费额度 10 GB，几版就顶到天花板（10-04 到过 10.7 GB）。
+# 判定逻辑全在 tools/prune-r2.mjs 里：保留「指针指向的 + 清单引用的 + 每条线最新 N 个」，
+# 其余超过 age_hours（默认 12h）未引用的清掉；永不碰 latest*.json 与 apk/ 之外的前缀。
+# 本地干跑与 CI 跑的是同一份实现，不会漂移。
 #
-# 旧版本只认 `stronghold-vX.Y.Z.apk` 一种命名，而线上实际有四种（shell-v*、stronghold-v*、
-# stronghold-v*-vcNNNN、re-stronghold-v*），实测一个都不匹配 —— 每小时"成功"地什么都没删。
+# 旧版本只认 `stronghold-vX.Y.Z.apk` 一种命名，而线上有四种 APK 命名 + 一种 slim 命名，
+# 实测一个都不匹配 —— 每小时"成功"地什么都没删。
 #
 # 手动触发默认**干跑**（只看会删什么）；定时触发按 apply 真删。
 
@@ -26,11 +26,11 @@ on:
       keep:
         description: '每条命名线保留最新的几个'
         required: false
-        default: '2'
-      grace_hours:
-        description: '多久内写过的对象一律先留着'
+        default: '1'
+      age_hours:
+        description: '超过多少小时的未引用对象就清掉'
         required: false
-        default: '6'
+        default: '12'
 
 permissions:
   contents: read
@@ -54,18 +54,18 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Prune stale APKs
+      - name: Prune stale APKs and hot-update slims
         env:
           R2_ACCESS_KEY: ${{ secrets.R2_ACCESS_KEY }}
           R2_SECRET_KEY: ${{ secrets.R2_SECRET_KEY }}
-          KEEP: ${{ github.event.inputs.keep || '2' }}
-          GRACE: ${{ github.event.inputs.grace_hours || '6' }}
+          KEEP: ${{ github.event.inputs.keep || '1' }}
+          AGE: ${{ github.event.inputs.age_hours || '12' }}
           MODE: ${{ github.event.inputs.mode || 'apply' }}
         run: |
           set -euo pipefail
           test -n "$R2_ACCESS_KEY" && test -n "$R2_SECRET_KEY" || { echo "R2 secrets absent"; exit 1; }
           # 定时触发没有 inputs → MODE 为空 → 取 apply；手动触发按选择的 mode 走。
-          args="--keep=$KEEP --grace-hours=$GRACE"
+          args="--keep=$KEEP --age-hours=$AGE"
           if [ "$MODE" = "apply" ]; then args="$args --apply"; fi
           echo "running: node tools/prune-r2.mjs $args"
           node tools/prune-r2.mjs $args

@@ -1,30 +1,29 @@
-// tools/prune-r2.mjs — 定时清理 R2 上「已经没人引用」的安装包（.apk）。
+// tools/prune-r2.mjs — 定时清理 R2 上「已经没人引用」的安装包（.apk）与热更新包（content-slim-*.zip）。
 //
-// 为什么需要：每次构建 ~600-750 MB，R2 免费额度 10 GB，几版就能顶到天花板（10-04 已到 10.7 GB）。
-// 旧的 prune-r2.yml 只认 `stronghold-vX.Y.Z.apk` 这一种命名，而线上实际有四种
-// （shell-v*、stronghold-v*、stronghold-v*-vcNNNN、re-stronghold-v*），实测**一个都不匹配**，
-// 所以它每小时「成功」地什么都没删。这里改成**按指针判定**，不猜命名。
+// 为什么需要：每次构建 APK ~600-750 MB、slim ~13 MB，R2 免费额度 10 GB，几版就能顶到天花板
+// （10-04 到过 10.7 GB）。旧的 prune-r2.yml 只认 `stronghold-vX.Y.Z.apk` 一种命名，而桶里实际有
+// 四种 APK 命名 + 一种 slim 命名，实测**一个都不匹配**，每小时"成功"地什么都没删。
 //
 // 保留规则（三条并集，任一命中即保留）：
-//   ① 指针指向的那一个：apk/latest.json、apk/latest-re.json 的 apkUrl（客户端更新检查读它们，
-//      删了就等于把还在旧版本上的玩家挂断）；
-//   ② 下载页当前会链接的那一个：https://dl.jiangjiangze.icu/api/latest 的 tag → 由 tag 推出
-//      CDN 键（与 functions/api/_asset.js 的 r2Candidates 同一算法）；
-//   ③ 每条命名线按修改时间最新的 N 个（默认 2，回滚余量）+ 最近 grace-hours 小时内写过的
-//      （默认 24h，避免和正在进行的发布抢跑）。
+//   ① 指针指向的：apk/latest.json、apk/latest-re.json 的 apkUrl（客户端更新检查读它们）；
+//   ② 清单引用的：site/manifest*.json 正文里出现的 content-slim-*.zip（热更链按 manifest 取包）；
+//      以及下载页当前会链接的 CDN 键（站点 /api/latest 的 tag → 按 _asset.js r2Candidates 同算法）；
+//   ③ 每条命名线**最新 1 个**（安全底线：安静期也不至于把某条线唯一的构建删掉）。
+// 其余按**年龄**清理：修改时间早于 --age-hours（默认 12 小时）的删除；更新的先留着
+// （发布流水线可能正在写，且给刚发布的包一个缓冲窗口）。
 //
-// 永不触碰：apk/content-slim-*.zip（热更新载荷，客户端按 manifest 读）、apk/latest*.json、
-// 以及 apk/ 之外的任何前缀（assets/、site/、fonts/ 等）。
+// 永不触碰：apk/latest*.json、apk/ 之外的任何前缀（assets*/、site/、upstream/ 是构建要用的
+// 上游源码包、apk-test/ 是测试通道）。
 //
 // 安全闸（任一不满足就什么都不删，宁可留着）：
 //   · 列举失败 / 列举为空 → 退出；
 //   · 两个指针文件都读不到 → 退出（判定依据不足）；
-//   · 本次待删数量超过 --max-delete（默认 8）→ 退出并打印清单，交人工确认。
+//   · 本次待删数量超过 --max-delete（默认 80）→ 退出并打印清单，交人工确认。
 //
 // 用法：
-//   node tools/prune-r2.mjs                  # 干跑，只打印会删什么
-//   node tools/prune-r2.mjs --apply          # 真删
-//   node tools/prune-r2.mjs --keep=3 --grace-hours=48
+//   node tools/prune-r2.mjs                     # 干跑，只打印会删什么
+//   node tools/prune-r2.mjs --apply             # 真删
+//   node tools/prune-r2.mjs --age-hours=24 --keep=2
 //
 // 凭证：环境变量 R2_ACCESS_KEY / R2_SECRET_KEY / R2_ENDPOINT，否则读 ~/.cf_r2_creds。
 
@@ -37,17 +36,23 @@ import { join } from 'node:path';
 const BUCKET = process.env.R2_BUCKET || 'stronghold-assets';
 const APK_PREFIX = 'apk/';
 const SITE_API = 'https://dl.jiangjiangze.icu/api/latest';
+const MANIFESTS = ['site/manifest.json', 'site/manifest-re.json', 'site/manifest-test.json', 'site/manifest-test-re.json'];
 
 const argv = process.argv.slice(2);
 const APPLY = argv.includes('--apply');
-const num = (flag, dflt) => {
-  const hit = argv.find((a) => a.startsWith(flag + '='));
-  const v = hit ? Number(hit.split('=')[1]) : dflt;
-  return Number.isFinite(v) && v >= 0 ? v : dflt;
+const num = (flags, dflt) => {
+  for (const flag of flags) {
+    const hit = argv.find((a) => a.startsWith(flag + '='));
+    if (hit) {
+      const v = Number(hit.split('=')[1]);
+      if (Number.isFinite(v) && v >= 0) return v;
+    }
+  }
+  return dflt;
 };
-const KEEP_PER_FAMILY = num('--keep', 2);
-const GRACE_HOURS = num('--grace-hours', 6);
-const MAX_DELETE = num('--max-delete', 8);
+const KEEP_PER_FAMILY = num(['--keep'], 1);
+const AGE_HOURS = num(['--age-hours', '--grace-hours'], 12); // --grace-hours 是旧名，保留兼容
+const MAX_DELETE = num(['--max-delete'], 80);
 
 // ---- 凭证 ---------------------------------------------------------------------------
 function loadCreds() {
@@ -125,10 +130,15 @@ async function listAll(prefix) {
   return out;
 }
 
-async function readJson(key) {
+async function readText(key) {
   const res = await request('GET', '/' + BUCKET + '/' + key.split('/').map(qencode).join('/'), '');
-  if (res.status !== 200) return null;
-  try { return JSON.parse(res.body.toString()); } catch { return null; }
+  return res.status === 200 ? res.body.toString() : null;
+}
+
+async function readJson(key) {
+  const t = await readText(key);
+  if (!t) return null;
+  try { return JSON.parse(t); } catch { return null; }
 }
 
 async function remove(key) {
@@ -143,8 +153,7 @@ async function remove(key) {
 async function pageTarget() {
   for (let attempt = 0; attempt < 3; attempt += 1) {
     // 显式 AbortController + clearTimeout（不用 AbortSignal.timeout）：后者在 Windows 上
-    // 进程退出时留着未清的定时器句柄，会触发 libuv 断言并让退出码变 1（CI 是 Linux 不受影响，
-    // 但本地干跑会误报失败）。
+    // 进程退出时留着未清的定时器句柄，会触发 libuv 断言并让退出码变 1。
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 15000);
     try {
@@ -159,35 +168,40 @@ async function pageTarget() {
   return [];
 }
 
-/** 命名线：决定「同一条线的最近 N 个」怎么分组。 */
+/** 命名线：决定「同一条线的最近 N 个」怎么分组。slim 与 APK 分开算。 */
 function familyOf(key) {
   const name = key.slice(APK_PREFIX.length);
+  if (name.startsWith('content-slim-')) return 'slim';
   if (name.startsWith('re-stronghold-')) return 're';
   if (name.startsWith('shell-v')) return 'shell';
   if (name.startsWith('stronghold-')) return 'bare';
   return 'other';
 }
 
+const isTarget = (key) => key.endsWith('.apk') || (key.startsWith(APK_PREFIX + 'content-slim-') && key.endsWith('.zip'));
+
 // ---- 主流程 -------------------------------------------------------------------------
 // 包成函数是为了能 `return` 收尾而不是 process.exit()：Windows 上 undici 的连接句柄还没排空
 // 就强杀进程会触发 libuv 断言（stderr 一行 Assertion failed）并把退出码搞乱。让它自然结束最干净。
 async function main() {
   const all = await listAll(APK_PREFIX);
-  const apks = all.filter((o) => o.key.endsWith('.apk'));
-  if (!apks.length) {
-    console.log('列举到 0 个 apk 对象 —— 判定依据不足，不做任何删除。');
+  const targets = all.filter((o) => isTarget(o.key));
+  const apkCount = targets.filter((o) => o.key.endsWith('.apk')).length;
+  const slimCount = targets.length - apkCount;
+  if (!targets.length) {
+    console.log('列举到 0 个清理目标 —— 判定依据不足，不做任何删除。');
     return;
   }
 
-  const keep = new Map(); // key → 理由数组（累积，不覆盖：同一对象常被多条规则同时命中，
-                          // 只留最后一条会看不出"它其实是下载页正在用的那个"）
+  const keep = new Map(); // key → 理由数组（累积，不覆盖：同一对象常被多条规则同时命中）
   const addKeep = (key, why) => {
-    if (!key || !apks.some((a) => a.key === key)) return;
+    if (!key || !targets.some((a) => a.key === key)) return;
     const list = keep.get(key) || [];
     if (!list.includes(why)) list.push(why);
     keep.set(key, list);
   };
 
+  // ① 指针
   const pointers = [];
   for (const pf of ['apk/latest.json', 'apk/latest-re.json']) {
     const doc = await readJson(pf).catch(() => null);
@@ -200,18 +214,26 @@ async function main() {
     return;
   }
 
+  // ② 下载页当前链接 + 清单引用的 slim
   const pageKeys = await pageTarget();
   for (const k of pageKeys) addKeep(APK_PREFIX + k, '下载页当前链接');
-  // 取不到就多留一个当余量：下载页链接的通常就是"最新那个"，但页面可能滞后于最新构建
-  // （实测 10-08：页面还在链 vc2004，而桶里最新已是 vc2006）。少一条依据时宁可多留。
   const keepPerFamily = pageKeys.length ? KEEP_PER_FAMILY : KEEP_PER_FAMILY + 1;
   if (!pageKeys.length) {
     console.log(`（提示：未能从站点 /api/latest 取到 tag —— 少一条保留依据，本次每条线多留 1 个，即 ${keepPerFamily} 个）`);
   }
 
-  // 每条线按修改时间最新的 N 个
+  const slimRefs = new Set();
+  for (const mf of MANIFESTS) {
+    const text = await readText(mf).catch(() => null);
+    if (!text) continue;
+    for (const m of text.match(/content-slim-[A-Za-z0-9._-]+\.zip/g) || []) slimRefs.add(m);
+  }
+  for (const name of slimRefs) addKeep(APK_PREFIX + name, '清单引用');
+  console.log(`（清单引用到 ${slimRefs.size} 个 slim：${[...slimRefs].join(', ') || '无'}）`);
+
+  // ③ 每条线最新 N 个（安全底线）
   const byFamily = new Map();
-  for (const a of apks) {
+  for (const a of targets) {
     const f = familyOf(a.key);
     if (!byFamily.has(f)) byFamily.set(f, []);
     byFamily.get(f).push(a);
@@ -221,23 +243,27 @@ async function main() {
     list.slice(0, keepPerFamily).forEach((a) => addKeep(a.key, `${f} 线最新 ${keepPerFamily} 个之一`));
   }
 
-  // grace：最近写过的一律先留着（发布流水线可能正在写）
-  const cutoff = Date.now() - GRACE_HOURS * 3600e3;
-  for (const a of apks) {
-    if (Date.parse(a.lm) >= cutoff) addKeep(a.key, `${GRACE_HOURS}h 内写过`);
+  // 年龄窗口：比 AGE_HOURS 新的先留着
+  const cutoff = Date.now() - AGE_HOURS * 3600e3;
+  for (const a of targets) {
+    if (Date.parse(a.lm) >= cutoff) addKeep(a.key, `${AGE_HOURS}h 内写过`);
   }
 
-  const doomed = apks.filter((a) => !keep.has(a.key));
+  const doomed = targets.filter((a) => !keep.has(a.key));
   const doomedMB = doomed.reduce((s, a) => s + a.size, 0) / 1e6;
+  const sumMB = (list) => (list.reduce((s, a) => s + a.size, 0) / 1e6).toFixed(0);
 
-  console.log(`apk 对象 ${apks.length} 个 / ${(apks.reduce((s, a) => s + a.size, 0) / 1e6).toFixed(0)} MB；保留 ${keep.size}，待删 ${doomed.length}（${doomedMB.toFixed(0)} MB）`);
+  console.log(`目标 ${targets.length} 个（apk ${apkCount} + slim ${slimCount}）/ ${sumMB(targets)} MB；`
+    + `保留 ${keep.size}，待删 ${doomed.length}（${doomedMB.toFixed(0)} MB）；年龄线 ${AGE_HOURS}h`);
   console.log('保留：');
-  for (const a of apks.filter((x) => keep.has(x.key)).sort((x, y) => x.key.localeCompare(y.key))) {
+  for (const a of targets.filter((x) => keep.has(x.key)).sort((x, y) => x.key.localeCompare(y.key))) {
     console.log(`  KEEP  ${(a.size / 1e6).toFixed(0).padStart(4)}MB  ${a.lm.slice(0, 10)}  ${a.key}  ← ${(keep.get(a.key) || []).join(' + ')}`);
   }
   if (!doomed.length) { console.log('没有需要清理的对象。'); return; }
-  console.log('待删：');
-  for (const a of doomed) console.log(`  DEL   ${(a.size / 1e6).toFixed(0).padStart(4)}MB  ${a.lm.slice(0, 10)}  ${a.key}`);
+  console.log(`待删（${doomed.length} 个）：`);
+  for (const a of doomed.sort((x, y) => x.key.localeCompare(y.key))) {
+    console.log(`  DEL   ${(a.size / 1e6).toFixed(0).padStart(4)}MB  ${a.lm.slice(0, 10)}  ${a.key}`);
+  }
 
   if (doomed.length > MAX_DELETE) {
     console.log(`待删数量 ${doomed.length} 超过上限 ${MAX_DELETE} —— 中止（防误判批量删库），请人工确认后加 --max-delete 重跑。`);
