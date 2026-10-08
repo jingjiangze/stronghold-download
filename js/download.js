@@ -17,6 +17,25 @@
   var API_LIST = 'https://api.github.com/repos/' + REPO + '/releases?per_page=10';
   var API_DOWNLOADS = 'https://api.github.com/repos/' + REPO + '/releases?per_page=100';
   var PRIMARY_ASSET = 'app-release.apk';
+  /** 已知恶意/仿冒主机：对**合法**镜像做 typosquat（差一个后缀）的域名，返回的是 HTML 跳转页
+   *  而非文件 —— 10-08 用户报 gh-proxy.net（冒充 gh-proxy.com）被 Defender 判
+   *  Trojan:HTML/Redirector。清单是访客侧动态读 /data/mirrors.json 的（300s 边缘缓存），
+   *  所以这里再钉一道硬黑名单：即便清单被误加、被篡改、或某访客手上还是旧缓存，也不会信任它。
+   *  比对用 hostname（去掉端口/ scheme/ userinfo），精确匹配整段主机名。 */
+  var BLOCKED_HOSTS = { 'gh-proxy.net': true };
+
+  function isBlockedHost(raw) {
+    var s = String(raw || '').trim().toLowerCase();
+    if (!s) return false;
+    // 传进来的可能是完整 URL（清单里的 prefix/template），也可能是已解析出的裸主机名（带不带端口）。
+    // 注意 new URL('host:443') 不抛错、会把 host 当成 scheme 解析出空 hostname —— 所以只有解析出
+    // 非空 hostname 时才采信，否则落到裸主机名拆分。
+    try {
+      var h = new URL(s).hostname;
+      if (h) return !!BLOCKED_HOSTS[h];
+    } catch (err) { /* not absolute */ }
+    return !!BLOCKED_HOSTS[s.split('/')[0].split(':')[0]];
+  }
   /** 微信内置浏览器：页面里不能留任何 .apk / 下载路由链接 —— 微信按「网页含下载内容」拦截，
    *  链接留着只会让玩家点下去撞上拦截页（10-08 用户反馈「微信说含下载内容不安全」）。
    *  这里只保留版本/大小/更新日志等信息，下载入口交给 #dl-wx 的「在浏览器打开 / 复制链接」。 */
@@ -231,7 +250,7 @@
     state.mirrors.forEach(function (m) {
       [m.prefix, m.template].forEach(function (tpl) {
         if (!tpl) return;
-        try { hosts[new URL(tpl).host] = true; } catch (e) { /* ignore malformed */ }
+        try { var h = new URL(tpl).host; if (!isBlockedHost(h)) hosts[h] = true; } catch (e) { /* ignore malformed */ }
       });
     });
     return hosts;
