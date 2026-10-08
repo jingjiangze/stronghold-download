@@ -91,7 +91,7 @@ function sign(method, uri, query, payload) {
     + ', SignedHeaders=' + names.join(';') + ', Signature=' + hmac(k, sts).toString('hex') };
 }
 
-function request(method, uri, query, payload = Buffer.alloc(0)) {
+function requestOnce(method, uri, query, payload) {
   return new Promise((resolve, reject) => {
     const path = query ? uri + '?' + query : uri;
     const req = https.request({ host: HOST, path, method, headers: sign(method, uri, query, payload) }, (res) => {
@@ -103,6 +103,22 @@ function request(method, uri, query, payload = Buffer.alloc(0)) {
     req.setTimeout(30000, () => req.destroy(new Error('timeout')));
     req.end(payload);
   });
+}
+
+/** 带重试：本机/CI 到 R2 的连接会被代理或网络抖动掐断（socket hang up / ECONNRESET），
+ *  一次瞬时错误不该让整轮定时清理半途而废 —— 之前实测每轮都在删到一半时中断。
+ *  幂等（GET/DELETE），重试安全。 */
+async function request(method, uri, query, payload = Buffer.alloc(0)) {
+  let lastErr;
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    try {
+      return await requestOnce(method, uri, query, payload);
+    } catch (err) {
+      lastErr = err;
+      await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+    }
+  }
+  throw lastErr;
 }
 
 const qs = (pairs) => pairs.filter(([, v]) => v !== undefined).sort((a, b) => (a[0] < b[0] ? -1 : 1))
