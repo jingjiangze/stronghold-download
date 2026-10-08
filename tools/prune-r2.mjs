@@ -8,11 +8,11 @@
 //   ① 指针指向的：apk/latest.json、apk/latest-re.json 的 apkUrl（客户端更新检查读它们）；
 //   ② 清单引用的：site/manifest*.json 正文里出现的 content-slim-*.zip（热更链按 manifest 取包）；
 //      以及下载页当前会链接的 CDN 键（站点 /api/latest 的 tag → 按 _asset.js r2Candidates 同算法）；
-//   ③ 每条命名线**最新 1 个**（安全底线：安静期也不至于把某条线唯一的构建删掉）。
-// 其余按**年龄**清理：修改时间早于 --age-hours（默认 12 小时）的删除；更新的先留着
-// （发布流水线可能正在写，且给刚发布的包一个缓冲窗口）。
+//   ③ **每种只留最新 --keep 个（默认 2）**：APK 与热更包各按**版本号**排序（不是 mtime ——
+//      否则会把"同一构建的旧命名别名"当成第 2 名留下，真构建反而被删），无版本号的遗留名排最后。
+//   再叠一个 --grace-hours（默认 2 小时）窗口：刚写进来的先留着，防和正在进行的发布抢跑。
 //
-// 永不触碰：apk/latest*.json、apk/ 之外的任何前缀（assets*/、site/、upstream/ 是构建要用的
+// 永不触碰：apk/latest*.json、apk/ 之外的任何前缀（assets/、site/、upstream/ 是构建要用的
 // 上游源码包、apk-test/ 是测试通道）。
 //
 // 安全闸（任一不满足就什么都不删，宁可留着）：
@@ -23,7 +23,7 @@
 // 用法：
 //   node tools/prune-r2.mjs                     # 干跑，只打印会删什么
 //   node tools/prune-r2.mjs --apply             # 真删
-//   node tools/prune-r2.mjs --age-hours=24 --keep=2
+//   node tools/prune-r2.mjs --keep=2 --grace-hours=2
 //
 // 凭证：环境变量 R2_ACCESS_KEY / R2_SECRET_KEY / R2_ENDPOINT，否则读 ~/.cf_r2_creds。
 
@@ -36,7 +36,10 @@ import { join } from 'node:path';
 const BUCKET = process.env.R2_BUCKET || 'stronghold-assets';
 const APK_PREFIX = 'apk/';
 const SITE_API = 'https://dl.jiangjiangze.icu/api/latest';
-const MANIFESTS = ['site/manifest.json', 'site/manifest-re.json', 'site/manifest-test.json', 'site/manifest-test-re.json'];
+// 只认**生产**清单指针。测试通道的清单（manifest-test*.json）不在此列：它的 slim 在 `apk-test/`
+// 前缀下（line.mjs 的 TEST_SLIM_PREFIX），而线上那份还停在旧约定、引用着 apk/ 里的老 slim ——
+// 认它会把一个早已没人读的 9MB 老包永久保住。
+const MANIFESTS = ['site/manifest.json', 'site/manifest-re.json'];
 
 const argv = process.argv.slice(2);
 const APPLY = argv.includes('--apply');
@@ -50,8 +53,11 @@ const num = (flags, dflt) => {
   }
   return dflt;
 };
-const KEEP_PER_FAMILY = num(['--keep'], 1);
-const AGE_HOURS = num(['--age-hours', '--grace-hours'], 12); // --grace-hours 是旧名，保留兼容
+const KEEP_PER_KIND = num(['--keep'], 2);
+// 宽限窗口默认 0：**在途发布已由"最新 N 个 + 指针/清单引用"两条规则覆盖**（发布链是先传对象、
+// 后写指针，所以新对象一定是最新的、一定被留），再叠一个窗口只会让桶里短期多于 N 个、挡住目标。
+// 需要时可用 --grace-hours=N 打开。
+const GRACE_HOURS = num(['--grace-hours', '--age-hours'], 0); // --age-hours 是旧名，保留兼容
 const MAX_DELETE = num(['--max-delete'], 80);
 
 // ---- 凭证 ---------------------------------------------------------------------------
@@ -184,14 +190,27 @@ async function pageTarget() {
   return [];
 }
 
-/** 命名线：决定「同一条线的最近 N 个」怎么分组。slim 与 APK 分开算。 */
-function familyOf(key) {
-  const name = key.slice(APK_PREFIX.length);
-  if (name.startsWith('content-slim-')) return 'slim';
-  if (name.startsWith('re-stronghold-')) return 're';
-  if (name.startsWith('shell-v')) return 'shell';
-  if (name.startsWith('stronghold-')) return 'bare';
-  return 'other';
+/** 种类：APK 与热更包各留 --keep 个。 */
+function kindOf(key) {
+  return key.startsWith(APK_PREFIX + 'content-slim-') ? 'slim' : 'apk';
+}
+
+/**
+ * 版本排序键（越大越新）。**按版本号而不是 mtime**：同一构建常以两个名字并存
+ * （`stronghold-v0.2.1-vc2009.apk` 与遗留别名 `re-stronghold-v0.2.1.apk` 同批写入），
+ * 只按 mtime 排会把别名当成"第 2 新"留下、把真正的上一个构建（vc2008）删掉。
+ *   · `-vc<版本码>.apk`  → 1e9 + 版本码（本线的正式命名）
+ *   · `-vX.Y.Z.apk`      → 1e6 + 版本号（旧线 shell-v2.9.31 这类）
+ *   · 无版本号的遗留名    → 0（永远排最后，优先被清掉）
+ */
+function rankOf(key) {
+  const vc = /-vc(\d{1,6})\.apk$/.exec(key);
+  if (vc) return 1e9 + Number(vc[1]);
+  const sem = /-v(\d{1,4})\.(\d{1,4})\.(\d{1,4})\.apk$/.exec(key);
+  if (sem) return 1e6 + Number(sem[1]) * 1e4 + Number(sem[2]) * 1e2 + Number(sem[3]);
+  const z = /-v(\d{1,4})\.(\d{1,4})\.(\d{1,4})\.zip$/.exec(key);   // slim: content-slim-shell-vX.Y.Z.zip
+  if (z) return 1e6 + Number(z[1]) * 1e4 + Number(z[2]) * 1e2 + Number(z[3]);
+  return 0;
 }
 
 const isTarget = (key) => key.endsWith('.apk') || (key.startsWith(APK_PREFIX + 'content-slim-') && key.endsWith('.zip'));
@@ -233,9 +252,9 @@ async function main() {
   // ② 下载页当前链接 + 清单引用的 slim
   const pageKeys = await pageTarget();
   for (const k of pageKeys) addKeep(APK_PREFIX + k, '下载页当前链接');
-  const keepPerFamily = pageKeys.length ? KEEP_PER_FAMILY : KEEP_PER_FAMILY + 1;
+  const keepPerKind = pageKeys.length ? KEEP_PER_KIND : KEEP_PER_KIND + 1;
   if (!pageKeys.length) {
-    console.log(`（提示：未能从站点 /api/latest 取到 tag —— 少一条保留依据，本次每条线多留 1 个，即 ${keepPerFamily} 个）`);
+    console.log(`（提示：未能从站点 /api/latest 取到 tag —— 少一条保留依据，本次每种多留 1 个，即 ${keepPerKind} 个）`);
   }
 
   const slimRefs = new Set();
@@ -247,22 +266,22 @@ async function main() {
   for (const name of slimRefs) addKeep(APK_PREFIX + name, '清单引用');
   console.log(`（清单引用到 ${slimRefs.size} 个 slim：${[...slimRefs].join(', ') || '无'}）`);
 
-  // ③ 每条线最新 N 个（安全底线）
-  const byFamily = new Map();
+  // ③ 每种只留最新 N 个（按版本号排序，mtime 只作同版本内的次序）
+  const byKind = new Map();
   for (const a of targets) {
-    const f = familyOf(a.key);
-    if (!byFamily.has(f)) byFamily.set(f, []);
-    byFamily.get(f).push(a);
+    const k = kindOf(a.key);
+    if (!byKind.has(k)) byKind.set(k, []);
+    byKind.get(k).push(a);
   }
-  for (const [f, list] of byFamily) {
-    list.sort((a, b) => String(b.lm).localeCompare(String(a.lm)));
-    list.slice(0, keepPerFamily).forEach((a) => addKeep(a.key, `${f} 线最新 ${keepPerFamily} 个之一`));
+  for (const [kind, list] of byKind) {
+    list.sort((a, b) => (rankOf(b.key) - rankOf(a.key)) || String(b.lm).localeCompare(String(a.lm)));
+    list.slice(0, keepPerKind).forEach((a) => addKeep(a.key, `${kind} 最新 ${keepPerKind} 个之一`));
   }
 
-  // 年龄窗口：比 AGE_HOURS 新的先留着
-  const cutoff = Date.now() - AGE_HOURS * 3600e3;
+  // 宽限窗口：刚写进来的先留着（防和正在进行的发布抢跑）
+  const cutoff = Date.now() - GRACE_HOURS * 3600e3;
   for (const a of targets) {
-    if (Date.parse(a.lm) >= cutoff) addKeep(a.key, `${AGE_HOURS}h 内写过`);
+    if (Date.parse(a.lm) >= cutoff) addKeep(a.key, `${GRACE_HOURS}h 内写过`);
   }
 
   const doomed = targets.filter((a) => !keep.has(a.key));
@@ -270,7 +289,7 @@ async function main() {
   const sumMB = (list) => (list.reduce((s, a) => s + a.size, 0) / 1e6).toFixed(0);
 
   console.log(`目标 ${targets.length} 个（apk ${apkCount} + slim ${slimCount}）/ ${sumMB(targets)} MB；`
-    + `保留 ${keep.size}，待删 ${doomed.length}（${doomedMB.toFixed(0)} MB）；年龄线 ${AGE_HOURS}h`);
+    + `保留 ${keep.size}，待删 ${doomed.length}（${doomedMB.toFixed(0)} MB）；每种留 ${keepPerKind} 个 + ${GRACE_HOURS}h 宽限`);
   console.log('保留：');
   for (const a of targets.filter((x) => keep.has(x.key)).sort((x, y) => x.key.localeCompare(y.key))) {
     console.log(`  KEEP  ${(a.size / 1e6).toFixed(0).padStart(4)}MB  ${a.lm.slice(0, 10)}  ${a.key}  ← ${(keep.get(a.key) || []).join(' + ')}`);
