@@ -15,7 +15,6 @@ export const SIZE_TOLERANCE = 65536;
 export const ACCELERATORS = [
   'https://gh-proxy.com/',
   'https://ghfast.top/',
-  'https://ghproxy.net/',
 ];
 
 export function r2Asset(tag) {
