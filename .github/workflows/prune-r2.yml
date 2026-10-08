@@ -3,9 +3,9 @@ name: prune-r2
 # 定时清理 R2 上「已经没人引用」的安装包（.apk）与热更新包（content-slim-*.zip）。
 #
 # 背景：每次构建 APK ~600-750 MB、slim ~13 MB，R2 免费额度 10 GB，几版就顶到天花板（10-04 到过 10.7 GB）。
-# 判定逻辑全在 tools/prune-r2.mjs 里：保留「指针指向的 + 清单引用的 + 每条线最新 N 个」，
-# 其余超过 age_hours（默认 12h）未引用的清掉；永不碰 latest*.json 与 apk/ 之外的前缀。
-# 本地干跑与 CI 跑的是同一份实现，不会漂移。
+# 判定逻辑全在 tools/prune-r2.mjs 里：保留「指针指向的 + 清单引用的 + **每种最新 N 个**」，
+# 其余清掉（N 默认 2 = 只留最新两个 APK 与两个热更包，给回滚留一个）；永不碰 latest*.json
+# 与 apk/ 之外的前缀。本地干跑与 CI 跑的是同一份实现，不会漂移。
 #
 # 旧版本只认 `stronghold-vX.Y.Z.apk` 一种命名，而线上有四种 APK 命名 + 一种 slim 命名，
 # 实测一个都不匹配 —— 每小时"成功"地什么都没删。
@@ -24,13 +24,13 @@ on:
         type: choice
         options: ['dry-run', 'apply']
       keep:
-        description: '每条命名线保留最新的几个'
+        description: 'APK 与热更包各保留最新的几个'
         required: false
-        default: '1'
-      age_hours:
-        description: '超过多少小时的未引用对象就清掉'
+        default: '2'
+      grace_hours:
+        description: '刚写入的对象额外保留多少小时（默认 0：在途发布已由"最新N+引用"覆盖）'
         required: false
-        default: '12'
+        default: '0'
 
 permissions:
   contents: read
@@ -58,14 +58,14 @@ jobs:
         env:
           R2_ACCESS_KEY: ${{ secrets.R2_ACCESS_KEY }}
           R2_SECRET_KEY: ${{ secrets.R2_SECRET_KEY }}
-          KEEP: ${{ github.event.inputs.keep || '1' }}
-          AGE: ${{ github.event.inputs.age_hours || '12' }}
+          KEEP: ${{ github.event.inputs.keep || '2' }}
+          GRACE: ${{ github.event.inputs.grace_hours || '0' }}
           MODE: ${{ github.event.inputs.mode || 'apply' }}
         run: |
           set -euo pipefail
           test -n "$R2_ACCESS_KEY" && test -n "$R2_SECRET_KEY" || { echo "R2 secrets absent"; exit 1; }
           # 定时触发没有 inputs → MODE 为空 → 取 apply；手动触发按选择的 mode 走。
-          args="--keep=$KEEP --age-hours=$AGE"
+          args="--keep=$KEEP --grace-hours=$GRACE"
           if [ "$MODE" = "apply" ]; then args="$args --apply"; fi
           echo "running: node tools/prune-r2.mjs $args"
           node tools/prune-r2.mjs $args
