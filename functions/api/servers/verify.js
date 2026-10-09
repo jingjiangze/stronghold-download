@@ -444,23 +444,19 @@ export async function onRequestGet(context) {
       valid.push(id);
       occupancy[id] = pickOccupancy(id, null, 'direct-cn');
     } else if (r.certError || /证书校验失败/.test(String(r.reason || '') + String(r.error || ''))) {
-      // 证书原因（自签/过期/不受信）被 CF 边缘在 TLS 握手就拒掉：这种"看不见"不等于"服务器死了"，
-      // 玩家浏览器关掉告警照样进游戏（frp-box.com:38916 这类 SakuraFrp 自动证书就是）。
-      // 只有**已经有证据表明这台活着**才放行，与 403 分支同口径：
-      //   上轮校验通过 / 国内直连标记 / 玩家回执 / 盒子探测 任一成立 → 保留在清单（沿用上次 occupancy，
-      //   末段「探不到版本号」硬闸也跳过它）；零证据的仍走暂存区复核，不因此被直接放出。
+      // 证书原因（自签/过期/不受信，CF 边缘返回 525/526/495/496）被 TLS 握手就拒掉：这种"看不见"
+      // 不等于服务器死了，玩家浏览器跳过告警照样进游戏（frp-box.com:38916 这类 SakuraFrp 自动证书就是）。
+      // 与 403 分支同口径（2026-10-09 定）：**证书失败直接保留在清单**，不要求任何预先证据 ——
+      // 因为 CF 这层本来就读不到它，要证据也只能来自玩家/盒子/上一轮，而用户明确要求
+      // "不要因为证书原因隐藏服务器"。末段「探不到版本号」硬闸会跳过 certRescued，故不会被误判死。
+      // 沿用上一次有信号的 occupancy（版本号/负载条不丢）；没有则留空白，前端按"证书警告"态显示。
       // 不写退避：下一轮继续真探，证书一旦换成受信的立刻按正常路径定级。
-      if (prevValid.has(r.entry.id) || r.entry.direct_cn === true
-          || browserOk(r.entry.id) || cnProbeOk(r.entry.id)) {
-        delete backoff[r.entry.id];
-        certRescued.add(r.entry.id);
-        valid.push(r.entry.id);
-        occupancy[r.entry.id] = pickOccupancy(r.entry.id, null, 'edge-cert');
-      } else {
-        const reason = r.reason || r.error || '校验未通过';
-        invalid.push({ id: r.entry.id, name: r.entry.name, url: r.entry.url, reason: '证书校验失败（自签/不受信）：' + reason });
-        delete backoff[r.entry.id];
-      }
+      delete backoff[r.entry.id];
+      certRescued.add(r.entry.id);
+      valid.push(r.entry.id);
+      occupancy[r.entry.id] = (prevOccupancy[r.entry.id] && hasSignal(prevOccupancy[r.entry.id]))
+        ? prevOccupancy[r.entry.id]
+        : pickOccupancy(r.entry.id, null, 'edge-cert');
     } else {
       const reason = r.reason || r.error || '校验未通过';
       invalid.push({ id: r.entry.id, name: r.entry.name, url: r.entry.url, reason });

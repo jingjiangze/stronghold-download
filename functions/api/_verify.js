@@ -310,6 +310,7 @@ export async function verifyServerHealth(origin, probe, timeoutMs) {
 
   let lastError = '地址无法解析';
   let lastVerdict = 'inconclusive';
+  let lastCert = false;
   for (const path of candidates) {
     const one = await probeOnce(origin, path, timeoutMs);
     if (one.ok) {
@@ -318,10 +319,11 @@ export async function verifyServerHealth(origin, probe, timeoutMs) {
     }
     lastError = one.error;
     lastVerdict = one.verdict;
+    if (one.certError) lastCert = true;
     // 已经"看见它不是"就不用再敲别的门了（也只有这种才允许提前收工）
     if (one.verdict === 'negative') break;
   }
-  const fail = { ok: false, verdict: lastVerdict, error: lastError };
+  const fail = { ok: false, verdict: lastVerdict, error: lastError, certError: lastCert };
   cache.set(cacheKey, { ok: false, error: lastError, verdict: fail, at: Date.now() });
   return fail;
 }
@@ -351,7 +353,11 @@ async function probeOnce(origin, probe, timeoutMs) {
   const res = outcome.res;
   if (!res.ok) {
     const err = `${probe} 返回 ${res.status}`;
-    return { ok: false, verdict: classifyProbeFailure(err), error: err };
+    // 525/526/495/496 是 TLS 层失败：CF 边缘对自签/过期/不受信证书在握手上就断，
+    // 返回的是状态码而不是异常。这种"看不见"不等于服务器死了（玩家浏览器跳过告警照进），
+    // 单独打 certError 标记，让 verify 走「证书原因不隐藏」分支，而不是按普通死服处理。
+    const certStatus = res.status === 525 || res.status === 526 || res.status === 495 || res.status === 496;
+    return { ok: false, verdict: classifyProbeFailure(err), error: err, certError: certStatus };
   }
 
   const contentType = res.headers.get('content-type') || '';
