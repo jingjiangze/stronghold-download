@@ -206,6 +206,9 @@ export async function onRequestGet(context) {
   // 只认「服务端自己回了 5xx」这种确切失败；429 是我们敲得太勤，不算服务器坏了。
   const hardDown = (s) => /返回\s*5\d\d/.test(String(s || ''));
   const evidence = {};
+  // 证书原因（自签/过期/不受信）被边缘拒绝握手的服务器：进了这条"免死"名单的 id，
+  // 末段「没有版本号就判死」的硬闸要跳过它们——证书不是"服务器死了"，只是 CF 边缘看不清。
+  const certRescued = new Set();
   // 证书旁路探针的报告：整轮只读一次，逐条按归一化地址取
   const tlsReports = await readProbeReports(env);
   const prevValid = new Set(Array.isArray(previous.valid) ? previous.valid : []);
@@ -440,6 +443,24 @@ export async function onRequestGet(context) {
       evidence[id] = { at: p.at, country: p.country, ms: p.ms, okHits: p.okHits, via: 'cn-probe' };
       valid.push(id);
       occupancy[id] = pickOccupancy(id, null, 'direct-cn');
+    } else if (r.certError || /证书校验失败/.test(String(r.reason || '') + String(r.error || ''))) {
+      // 证书原因（自签/过期/不受信）被 CF 边缘在 TLS 握手就拒掉：这种"看不见"不等于"服务器死了"，
+      // 玩家浏览器关掉告警照样进游戏（frp-box.com:38916 这类 SakuraFrp 自动证书就是）。
+      // 只有**已经有证据表明这台活着**才放行，与 403 分支同口径：
+      //   上轮校验通过 / 国内直连标记 / 玩家回执 / 盒子探测 任一成立 → 保留在清单（沿用上次 occupancy，
+      //   末段「探不到版本号」硬闸也跳过它）；零证据的仍走暂存区复核，不因此被直接放出。
+      // 不写退避：下一轮继续真探，证书一旦换成受信的立刻按正常路径定级。
+      if (prevValid.has(r.entry.id) || r.entry.direct_cn === true
+          || browserOk(r.entry.id) || cnProbeOk(r.entry.id)) {
+        delete backoff[r.entry.id];
+        certRescued.add(r.entry.id);
+        valid.push(r.entry.id);
+        occupancy[r.entry.id] = pickOccupancy(r.entry.id, null, 'edge-cert');
+      } else {
+        const reason = r.reason || r.error || '校验未通过';
+        invalid.push({ id: r.entry.id, name: r.entry.name, url: r.entry.url, reason: '证书校验失败（自签/不受信）：' + reason });
+        delete backoff[r.entry.id];
+      }
     } else {
       const reason = r.reason || r.error || '校验未通过';
       invalid.push({ id: r.entry.id, name: r.entry.name, url: r.entry.url, reason });
@@ -463,6 +484,8 @@ export async function onRequestGet(context) {
   const byId = new Map(servers.map((s) => [s.id, s]));
   for (let i = valid.length - 1; i >= 0; i -= 1) {
     const vid = valid[i];
+    // 证书原因"看不见"的服务器：即使边缘没读到版本号也保留（放行已在上面的 certRescued 分支定好）。
+    if (certRescued.has(vid)) continue;
     if (isVersion((occupancy[vid] || {}).app)) continue;
     const entry = byId.get(vid) || {};
     valid.splice(i, 1);

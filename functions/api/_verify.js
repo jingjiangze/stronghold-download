@@ -143,6 +143,12 @@ async function safeFetch(url, init, redirects) {
     // reject used to abort Promise.all in servers/verify and 500 the whole round (CF 1101),
     // so one flaky entry starved every visitor of fresh verdicts.
     const name = (err && err.name) || 'Error';
+    // 证书类失败（自签 / 过期 / 不受信）要单独标出来：CF 边缘在 TLS 握手就断，
+    // 这种"看不见"不该被当成"服务器死了"——它和超时/连不上是不同性质的事，下游据此免死。
+    // 错误信息里抓 cert/ssl/tls/handshake/self-signed/DEPTH_ZERO/expired 任一即可（含 err.cause.code）。
+    const detail = String((err && (err.message || err.code || (err.cause && err.cause.code))) || name);
+    const cert = /cert|ssl|tls|handshake|self.?signed|unable.?to.?verify|DEPTH_ZERO|UNABLE_TO_VERIFY|ERR_SSL|expired/i.test(name + ' ' + detail);
+    if (cert) return { error: '证书校验失败：' + detail.slice(0, 60), certError: true };
     return { error: name === 'TimeoutError' || name === 'AbortError' ? '探测超时' : '连接失败（' + name + '）' };
   }
   if (res.status >= 300 && res.status < 400) {
