@@ -22,8 +22,9 @@ const ALLOWED_HOSTS = (function () {
   return hosts;
 })();
 
-// release asset names are stable; tags are shell-v<X.Y.Z>
-const TAG_RE = /^shell-v\d+\.\d+\.\d+$/;
+// release asset names are stable; the APK line carries a versionCode suffix (-vcNNNN),
+// the content line does not. Both reach the same primary-button route, so accept both.
+const TAG_RE = /^shell-v\d+\.\d+\.\d+(?:-vc\d+)?$/;
 const FILE_RE = /^[A-Za-z0-9._-]+$/;
 
 function json(data, status) {
