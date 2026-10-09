@@ -32,7 +32,8 @@ export async function onRequestGet(context) {
   if (!allowed(context)) return json({ ok: false, error: 'forbidden' }, 403);
   const obj = await context.env.R2BUCKET.get(STATE_KEY);
   if (!obj) return new Response('{}', { headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } });
-  return new Response(await obj.body(), {
+  // R2 对象上是 .text()/.json()/.body（流），没有 .body() —— 写成 body() 会让整条请求 1101。
+  return new Response(await obj.text(), {
     headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
   });
 }
