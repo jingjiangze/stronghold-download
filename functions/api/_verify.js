@@ -65,6 +65,12 @@ function validateUrl(raw) {
 export const PROBE_REPORT_KEY = 'site/probes.json';
 export const RECHECK_KEY = 'site/recheck.json';
 export const PROBE_REPORT_TTL_MS = 12 * 3600 * 1000;
+// 证书旁路探针曾"亲眼验活"过的地址，给一个更长的追诉窗口：CF 边缘因证书拒握手而永远
+// 读不到这类服务器，但玩家浏览器跳过告警照样进游戏（frp-box.com:38916 这类 SakuraFrp 自动证书）。
+// 只要探针曾经拿出完整协议指纹证明"这是一台真在跑的卫戍服"，哪怕报告过了 12h 新鲜期，
+// 边缘这一轮的 525/526/连接失败也不该把它判死（见 verify.js 的证书分支）。
+// 7 天是探针侧自己保留报告的期限，超了就一起丢弃，等于没验过。
+export const PROBE_ATTEST_TTL_MS = 7 * 24 * 3600 * 1000;
 
 /** 报告按归一化后的地址为键，和清单里的 url 同一套口径。 */
 export function probeKey(raw) {
@@ -73,13 +79,16 @@ export function probeKey(raw) {
 }
 
 export async function readProbeReports(env) {
-  const out = {};
-  if (!env || !env.R2BUCKET) return out;
+  // 返回两层：fresh（12h 内、带完整 occupancy 数据，可直接填清单）与
+  // attested（7 天内、探针曾验活过，仅作"这台是真的、边缘看不见不等于死"的免死依据）。
+  const fresh = {};
+  const attested = {};
+  if (!env || !env.R2BUCKET) return { fresh, attested };
   let res;
-  try { res = await env.R2BUCKET.get(PROBE_REPORT_KEY); } catch { return out; }
-  if (!res) return out;
+  try { res = await env.R2BUCKET.get(PROBE_REPORT_KEY); } catch { return { fresh, attested }; }
+  if (!res) return { fresh, attested };
   let doc;
-  try { doc = JSON.parse(await res.text()); } catch { return out; }
+  try { doc = JSON.parse(await res.text()); } catch { return { fresh, attested }; }
   const reports = (doc && doc.reports && typeof doc.reports === 'object') ? doc.reports : {};
   const now = Date.now();
   for (const raw of Object.keys(reports)) {
@@ -87,12 +96,17 @@ export async function readProbeReports(env) {
     const r = reports[raw] || {};
     if (!key || !r || typeof r !== 'object') continue;
     const at = Date.parse(r.at || '');
-    if (!Number.isFinite(at) || now - at > PROBE_REPORT_TTL_MS) continue;
+    if (!Number.isFinite(at)) continue;
     if (r.ok !== true) continue;
     const fp = clampFingerprint(r.fingerprint && typeof r.fingerprint === 'object' ? r.fingerprint : r);
     if (!fp) continue;   // 没有完整协议指纹的报告一律不信
+    // 7 天内的验活记录都算"曾证实它是真服"——无论新鲜期过没过
+    if (now - at <= PROBE_ATTEST_TTL_MS) {
+      attested[key] = { at: new Date(at).toISOString(), ageMin: Math.round((now - at) / 60000), fingerprint: fp };
+    }
+    if (now - at > PROBE_REPORT_TTL_MS) continue;   // 新鲜期之后不再提供 occupancy 数据
     const path = typeof r.probePath === 'string' && r.probePath.startsWith('/') ? r.probePath.slice(0, 64) : null;
-    out[key] = {
+    fresh[key] = {
       at: new Date(at).toISOString(), ageMin: Math.round((now - at) / 60000),
       probePath: path, fingerprint: fp,
       source: String(r.source || '').slice(0, 32) || 'tls-probe',
@@ -103,7 +117,7 @@ export async function readProbeReports(env) {
       entryStatus: Number.isInteger(r.entryStatus) && r.entryStatus >= 100 && r.entryStatus <= 599 ? r.entryStatus : null,
     };
   }
-  return out;
+  return { fresh, attested };
 }
 
 /**

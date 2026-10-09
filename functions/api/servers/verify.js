@@ -210,7 +210,9 @@ export async function onRequestGet(context) {
   // 末段「没有版本号就判死」的硬闸要跳过它们——证书不是"服务器死了"，只是 CF 边缘看不清。
   const certRescued = new Set();
   // 证书旁路探针的报告：整轮只读一次，逐条按归一化地址取
-  const tlsReports = await readProbeReports(env);
+  // 证书旁路探针的报告：整轮只读一次。fresh=12h 内、带完整 occupancy；attested=7 天内曾验活过，
+  // 仅作"边缘看不见不等于死"的免死依据（报告过新鲜期也保留，覆盖 frp-box 这类长期存活但 CF 读不到的服）。
+  const { fresh: tlsFresh, attested: tlsAttested } = await readProbeReports(env);
   const prevValid = new Set(Array.isArray(previous.valid) ? previous.valid : []);
   const prevOccupancy = (previous.occupancy && typeof previous.occupancy === 'object') ? previous.occupancy : {};
   // 整体节奏：默认 30 分钟才真打一轮（VERIFY_FLOOR_MIN 可覆盖）。页面开着也只是读这份结论，
@@ -398,13 +400,13 @@ export async function onRequestGet(context) {
       delete backoff[id];
       delete entryDown[id];
       invalid.push({ id, name: r.entry.name, url: r.entry.url, reason: '已停用（管理页关掉，需手工恢复展示）' });
-    } else if (tlsReports[probeKey(r.entry.url)]) {
-      // 证书旁路探针（GitHub Runner / 盒子那一链，能关 TLS 校验）读到过完整协议指纹：
-      // CF 对自签源站永远握不上手（525/526），而这一路真读到了 { ok:true, version, rooms, humans … }。
+    } else if (tlsFresh[probeKey(r.entry.url)]) {
+      // 证书旁路探针（GitHub Runner / 盒子那一链，能关 TLS 校验）**12h 内**读到过完整协议指纹：
+      // CF 对自签源站永远握不上手（525/526/连接失败），而这一路真读到了 { ok:true, version, rooms, humans … }。
       // 排在 403 / direct_cn / 玩家回执 / 盒子探测之前，因为它**带着内容**：那几路只能证明"连上了"，
       // 这一路能填 occupancy，于是「版本号是唯一硬证据」的判定照样成立 ——
       // 绕过的是握手机制，不是判据。除维护者停用之外，它只被更强的证据（本轮真探成功）盖过。
-      const p = tlsReports[probeKey(r.entry.url)];
+      const p = tlsFresh[probeKey(r.entry.url)];
       delete backoff[id];
       evidence[id] = { at: p.at, ageMin: p.ageMin, via: 'tls-probe', source: p.source,
                        probePath: p.probePath, tls: p.tls || null, app: p.fingerprint.app || null };
@@ -414,6 +416,20 @@ export async function onRequestGet(context) {
         variant: p.fingerprint.runtime === 'cloudflare' ? 'workers' : 'node',
         app: p.fingerprint.app || null, build: p.fingerprint.build || null,
       }, 'tls-probe');
+    } else if (tlsAttested[probeKey(r.entry.url)]) {
+      // 探针曾验活过（7 天内），但报告已过 12h 新鲜期：这台"边缘读不到的活服"事实依旧成立，
+      // 边缘这一轮拿到的 525/526/连接失败不该把它判死。不重填 occupancy（数据可能过期），
+      // 沿用上一次有信号的结论，版本号/负载条不丢；末段版本硬闸也跳过它（已登记 certRescued）。
+      // 这正是 frp-box.com:38916 这一类 SakuraFrp 自动证书的常态：玩家浏览器跳过告警照进，
+      // 而 CF 边缘永远握不上手、证书旁路探针也只每 2 小时跑一次、报告会过期。
+      const p = tlsAttested[probeKey(r.entry.url)];
+      delete backoff[id];
+      certRescued.add(id);
+      evidence[id] = { at: p.at, ageMin: p.ageMin, via: 'tls-probe-attested', app: p.fingerprint.app || null };
+      valid.push(id);
+      occupancy[id] = (prevOccupancy[id] && hasSignal(prevOccupancy[id]))
+        ? prevOccupancy[id]
+        : pickOccupancy(id, null, 'edge-cert');
     } else if (/403/.test(String(r.reason || '') + String(r.error || '')) && !/已停用/.test(String(r.reason || ''))) {
       // 边缘 403 不算死，也不再要求条目带 direct_cn 标记（2026-10-05 定的政策）：
       // CF 出口被国内云的防火墙/安全组挡掉是常态，同一条地址十几分钟后又常常能通，
@@ -581,10 +597,11 @@ export async function onRequestGet(context) {
                 skipped: skipped, cooling: Object.keys(backoff).length,
                 entry_dead: entryDead, versionless,
                 promoted: promoted.map((p) => ({ id: p.id, name: p.to, why: p.why })),
-                tlsProbeHits: Object.keys(tlsReports).length,
+                tlsProbeHits: Object.keys(tlsFresh).length + Object.keys(tlsAttested).length,
                 diag: (() => {
                   const d = results.find((x) => x.entry && x.entry.id === 'muzwqpiq2c8c758f');
-                  return d ? { id: d.entry.id, ok: d.ok, error: d.error || null, reason: d.reason || null, certError: d.certError || false, verdict: d.verdict || null } : null;
+                  return d ? { id: d.entry.id, ok: d.ok, error: d.error || null, reason: d.reason || null, certError: d.certError || false, verdict: d.verdict || null,
+                               inValid: valid.includes(d.entry.id), viaFresh: !!tlsFresh[probeKey(d.entry.url)], viaAttested: !!tlsAttested[probeKey(d.entry.url)] } : null;
                 })(),
                 nextRetryAt: new Date(Date.now() + FLOOR_MS).toISOString() });
 }
