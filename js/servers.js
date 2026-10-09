@@ -197,6 +197,8 @@
       }
       // 同一 host 可以挂多个实例，所以缺 id 时用 host+path 兜底，避免两行共用一份 occupancy
       var id = String(s.id || (target && (target.hostname + (target.pathname === '/' ? '' : target.pathname))) || 'server');
+      // note = 维护者在 servers.json 给这台服写的运营备注（如「借钱 / 支援，兜底利息，
+      // 阵亡分红，团队储备」这类协同经济说明）。只在页面小字展示，不参与排序或健康判定。
       var entry = {
         id: id,
         name: String(s.name || (target && target.hostname) || '未命名'),
@@ -204,6 +206,7 @@
         candidates: candidates,
         probeable: !!target && !reason,
         reason: reason,
+        note: s.note ? String(s.note) : '',
         ms: null,
         okCount: 0,
         offline: false,
@@ -855,6 +858,16 @@
     // 净分高的在同版本里往前挪，**不会因为被差评就消失**（理由见 vouch.js 的注释）。
     var cup = cupGroup(server);
     div.appendChild(cup);
+
+    // 维护者备注（servers.json 的 note，如协同经济说明）：放在「目前已点击」前面，
+    // 一行小字，不参与排序或健康判定。
+    if (server.note) {
+      var sn = document.createElement('span');
+      sn.className = 'sv-servernote';
+      sn.textContent = server.note;
+      sn.title = '服务器备注（维护者填写）';
+      main.appendChild(sn);
+    }
 
     // 打开跳转的点击数：服务端快照 + 本机刚点过的增量（数字要立刻动，不等 120s 缓存）
     var oc = document.createElement('span');

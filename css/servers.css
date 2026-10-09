@@ -241,6 +241,20 @@
 }
 .sv-opencount[hidden] { display: none; }
 
+/* 维护者备注（servers.json 的 note）：一行小字，放在「目前已点击」前面。弱化显示，
+   不参与排序或健康判定；长备注随主列一起换行，不挤占延迟/负载槽位。 */
+.sv-servernote {
+  flex: 0 0 100%;
+  order: -1;
+  margin: 0 0 .01rem;
+  color: var(--text-dim);
+  font-size: .11rem;
+  letter-spacing: .02em;
+  line-height: 1.4;
+  white-space: normal;
+  word-break: break-word;
+}
+
 /* ---- portrait / narrow screens ---------------------------------------------------- */
 @media (max-aspect-ratio: 12/10) {
   .servers-main { margin: .5rem 0 .9rem; }
