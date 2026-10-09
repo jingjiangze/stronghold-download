@@ -172,6 +172,10 @@
   html { font-size: 52px; }
   html, body { overflow: auto; }
   .screen.title-screen { position: relative; min-height: 100svh; padding: 1.1rem 0 1.4rem; }
+  /* 竖屏会随内容长高并出现整页滚动：把装饰背景钉在视口，否则滚动到中部时
+     只剩纯色 --bg-0（雷达/辉光/山脊锚定在文档顶/底，中段视口内无内容）。
+     .screen 刻意不用 transform/filter，故 fixed 不会被改作包含块（见 theme.css:270）。 */
+  .screen.title-screen .title-bg { position: fixed; }
   .title-main { margin-top: 0; }
   .title-cn { font-size: .86rem; }
   .title-corner { display: none; }
