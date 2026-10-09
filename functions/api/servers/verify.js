@@ -582,5 +582,9 @@ export async function onRequestGet(context) {
                 entry_dead: entryDead, versionless,
                 promoted: promoted.map((p) => ({ id: p.id, name: p.to, why: p.why })),
                 tlsProbeHits: Object.keys(tlsReports).length,
+                diag: (() => {
+                  const d = results.find((x) => x.entry && x.entry.id === 'muzwqpiq2c8c758f');
+                  return d ? { id: d.entry.id, ok: d.ok, error: d.error || null, reason: d.reason || null, certError: d.certError || false, verdict: d.verdict || null } : null;
+                })(),
                 nextRetryAt: new Date(Date.now() + FLOOR_MS).toISOString() });
 }
