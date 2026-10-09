@@ -71,16 +71,6 @@ export async function onRequestGet(context) {
     return json({ ok: true, total: total });
   }
 
-  // 下载站临时维护：维护期间所有下载入口已在页面下线，这里对直链/旧书签也一并拦掉，
-  // 避免玩家在修复窗口内下载到不稳定或不同步的构建。维护结束删除这个 early-return 即可。
-  // /api/download/total 不受影响（只读数，不含下载载荷）。
-  if (parts.length === 2 && parts[0] !== 'total') {
-    return json({
-      ok: false,
-      maintenance: true,
-      error: '下载服务临时维护中：正在修复静态热更新资源加载缓慢与服务器 UI 不同步问题，稍后自动恢复。',
-    }, 503);
-  }
   // /api/download/<tag>/<file>
   if (parts.length !== 2) return json({ ok: false, error: 'not found' }, 404);
   const tag = decodeURIComponent(parts[0]);

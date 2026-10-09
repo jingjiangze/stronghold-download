@@ -100,32 +100,6 @@
 .dl-wx__title { margin: 0 0 .04rem; font-size: .14rem; letter-spacing: .08em; color: var(--gold-2); }
 .dl-wx__body { margin: 0 0 .06rem; font-size: .12rem; line-height: 1.7; color: var(--text-md); }
 
-/* ---- 下载站临时维护横幅（js/download.js 的 MAINTENANCE 同步上线/下线）----------------
-   维护期间所有下载入口（主按钮 / 镜像行 / 校验值 / 日志里的下载链接）都被隐藏，
-   这里把"为什么"讲清楚，避免玩家以为站点坏了。版本号、大小等信息照常展示。 */
-.dl-maint {
-  display: flex;
-  align-items: center;
-  gap: .08rem;
-  margin: .08rem auto 0;
-  padding: .07rem .12rem;
-  max-width: 5.6rem;
-  border: 1px solid var(--gold-a20);
-  background: rgba(255, 198, 0, .06);
-  border-radius: .04rem;
-  text-align: left;
-}
-.dl-maint__tag {
-  flex: 0 0 auto;
-  font-size: .12rem;
-  letter-spacing: .08em;
-  color: var(--gold-2);
-  border: 1px solid var(--gold-a20);
-  border-radius: .03rem;
-  padding: .01rem .05rem;
-}
-.dl-maint__text { font-size: .12rem; line-height: 1.6; color: var(--text-md); }
-
 .dl-note {
   margin: 0;
   text-align: center;
