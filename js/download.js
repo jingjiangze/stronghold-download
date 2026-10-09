@@ -40,6 +40,12 @@
    *  链接留着只会让玩家点下去撞上拦截页（10-08 用户反馈「微信说含下载内容不安全」）。
    *  这里只保留版本/大小/更新日志等信息，下载入口交给 #dl-wx 的「在浏览器打开 / 复制链接」。 */
   var IN_WECHAT = /MicroMessenger/i.test(navigator.userAgent);
+  /** 下载站临时维护：下线所有下载入口（主按钮 / 镜像行 / 校验值 / 更新日志里的下载链接），
+   *  并跳过浏览器侧镜像测速，避免玩家在修复窗口内下载到不稳定或不同步的构建。
+   *  维护结束把这里改回 false 即可。影响范围严格限于下载相关 UI：版本号、大小等
+   *  信息仍正常展示，服务器清单站（/servers）与三通道入口页不受影响。 */
+  var MAINTENANCE = true;
+  var MAINTENANCE_NOTE = '下载服务临时维护中：正在修复静态热更新资源加载缓慢与服务器 UI 不同步问题，恢复后自动恢复。';
   var PROBE_BYTES = 3 * 1024 * 1024;
   var PROBE_TIMEOUT_MS = 12000;
   var API_TIMEOUT_MS = 9000;
@@ -578,6 +584,18 @@
 
     setText(el.version, '最新版 ' + release.tag + state.versionSuffix);
     setText(el.size, fmtMB(asset.size));
+
+    // 维护模式：不渲染任何下载入口（主按钮 / 镜像行 / 校验值 / 日志里的下载链接），
+    // 只保留版本号、大小等信息。跳过速度探测（维护期间探测结果无意义）。
+    if (MAINTENANCE) {
+      if (el.primary) { el.primary.hidden = true; el.primary.removeAttribute('href'); }
+      if (el.mirrors) { el.mirrors.textContent = ''; el.mirrors.hidden = true; }
+      if (el.hash) el.hash.hidden = true;
+      renderLog();
+      setText(el.note, MAINTENANCE_NOTE);
+      return;
+    }
+
     setText(el.primaryLabel, '下载 Android 客户端');
 
     // Be explicit when the primary button cannot use the first-party CDN: the fallback is
@@ -815,6 +833,7 @@
         state.release = live;
         state.asset = pickAsset(live);
         render();
+        if (MAINTENANCE) return;
         probeMirrors().then(announceProbe).catch(function () { /* 测速尽力而为 */ });
       }).catch(function () { /* 线上没答案就保留当前这一屏 */ });
     }, 10 * 60 * 1000);
@@ -884,6 +903,7 @@
         setText(el.note, '请点击上方按钮前往 GitHub Releases 页面下载。');
         return;
       }
+      if (MAINTENANCE) return;
       return probeMirrors()
         .then(announceProbe)
         .catch(function () { /* probe is best-effort */ });
