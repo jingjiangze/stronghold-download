@@ -1,5 +1,5 @@
 {
-  "updated": "2026-10-08",
+  "updated": "2026-10-10",
   "note": "Third-party accelerators for the download page. Prefix mirrors get the GitHub asset URL appended. Hosts must stay on this list; the page re-validates every built URL against it. The first-party R2 link is NOT configured here: download.js renders it from /api/latest's verified `_cdn` verdict so it always points at the object that was checked against this release. No raw GitHub direct link is offered: the page is for networks where github.com is unusable.",
   "mirrors": [
     {
@@ -25,6 +25,14 @@
       "prefix": "https://gh.llkk.cc/",
       "cors": false,
       "range": false
+    },
+    {
+      "id": "ghproxynet",
+      "name": "ghproxy.net",
+      "mode": "prefix",
+      "prefix": "https://ghproxy.net/",
+      "cors": false,
+      "range": true
     }
   ]
 }
