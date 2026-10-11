@@ -673,15 +673,60 @@ export async function onRequestGet(context) {
   const publicNext = servers.filter((s) => !movedOutIds.has(String(s.id)) && !retiredIds.has(String(s.id)))
     .concat(movedIn.filter((m) => !retiredIds.has(String(m.id))).map((m) => m.entry));
 
+  /** 后台账本 + 待复核队列：搬进后台不等于盖个章就完事，得有人拍板。
+   *  队列记录沿用 /api/servers/submit 的形状（pending/<id> + pending_index），所以管理页的
+   *  「待复核队列」原样能看能点：点「通过」= 带着这条地址重新上线，点「丢弃」= 留在后台慢慢退休。
+   *  两类都要排：① 本轮刚搬进去的；② **这套规则上线之前就已经躺在后台的**（不然它们永远没人管）。
+   *  同一台只排一次（用 reviewQueued 标记 + index 去重）；每轮最多补 10 条 —— KV 免费额度只有
+   *  1000 写/天，这个账户已经有别的心跳在吃它了（见 cf-kv-write-quota）。 */
+  const QUEUE_BACKFILL_MAX = 10;
+  const queueOfflineForReview = async () => {
+    const queued = new Set();
+    if (!env.SERVER_REVIEW) return queued;
+    let index = [];
+    try { index = JSON.parse(await env.SERVER_REVIEW.get('pending_index') || '[]'); } catch { index = []; }
+    if (!Array.isArray(index)) index = [];
+    const todo = movedOut.map((m) => ({
+      id: String(m.entry.id), entry: m.entry, reason: m.reason, fresh: true,
+    }));
+    for (const [id, rec] of Object.entries(offline)) {
+      if (todo.length >= movedOut.length + QUEUE_BACKFILL_MAX) break;
+      if (movedOutIds.has(id) || validSet.has(id) || !rec || !rec.entry || rec.reviewQueued) continue;
+      todo.push({ id, entry: rec.entry, reason: rec.reason || '离线', fresh: false });
+    }
+    for (const t of todo) {
+      const record = {
+        ...t.entry,
+        id: t.id,
+        submittedAt: nowIso,
+        submittedBy: 'verify:offline-move',
+        source: 'offline-move',
+        verify: { ok: false, verdict: 'inconclusive', error: t.reason, at: nowIso },
+        needsReview: true,
+        reviewReason: `离线已从公共清单摘出，等待复核：${t.reason}`,
+        offlineSince: t.fresh ? nowIso : (offline[t.id] || {}).offlineSince || nowIso,
+      };
+      try {
+        await env.SERVER_REVIEW.put(`pending/${t.id}`, JSON.stringify(record));
+        queued.add(t.id);
+        if (!index.includes(t.id) && index.length < 60) index.push(t.id);
+      } catch { /* 排队失败不影响搬迁本身：账本已经写了，下一轮还会再试 */ }
+    }
+    if (queued.size) { try { await env.SERVER_REVIEW.put('pending_index', JSON.stringify(index)); } catch { /* 下一轮重排 */ } }
+    return queued;
+  };
+
   /** 后台文件的增删要跟着这次发布走：公共清单没发成功就不动后台，否则条目会从两份文件之间掉掉。 */
-  const applyOfflineLedger = async () => {
+  const applyOfflineLedger = async (queuedIds) => {
     for (const m of movedIn) delete offline[String(m.id)];
     for (const r of retired) delete offline[String(r.id)];
     for (const m of movedOut) {
       const id = String(m.entry.id);
-      offline[id] = { entry: m.entry, reason: m.reason, offlineSince: nowIso,
+      offline[id] = { entry: m.entry, reason: m.reason, offlineSince: nowIso, reviewQueued: queuedIds.has(id),
                       lastOkAt: (presence[id] || {}).lastOkAt || null };
     }
+    // 补排队成功的历史后台条目也要打上空标记，否则每轮都会重排同一批、白烧 KV 写额度
+    for (const id of queuedIds) if (offline[id] && !offline[id].reviewQueued) offline[id].reviewQueued = true;
     const keys = Object.keys(offline);
     if (keys.length > OFFLINE_MAX) {
       // 超上限丢最老的（它们已经缺席很久，且还能靠重新提交回来）
@@ -690,7 +735,7 @@ export async function onRequestGet(context) {
     }
     await env.R2BUCKET.put(OFFLINE_KEY, JSON.stringify({
       updated: nowIso, count: Object.keys(offline).length, entries: offline,
-      note: '离线服务器留档：不进公共签名清单，每轮仍随探测，活过来自动搬回；超过 7 天/24 小时确定性拒绝则永久退休',
+      note: '离线服务器留档：不进公共签名清单，每轮仍随探测，活过来自动搬回；同时已排进管理页的待复核队列。连续缺席满 7 天（或 24 小时确定性拒绝）则永久退休。',
     }, null, 2) + '\n', { httpMetadata: { contentType: 'application/json', cacheControl: 'public, max-age=120' } });
   };
 
@@ -735,7 +780,8 @@ export async function onRequestGet(context) {
     }) : null;
     if (out && out.ok) {
       listUpdatedAfter = signed.updated;
-      if (moved || retired.length) await applyOfflineLedger();
+      const queuedIds = await queueOfflineForReview();
+      if (moved || retired.length || queuedIds.size) await applyOfflineLedger(queuedIds);
       if (retired.length) await rememberRetired(env, retired, nowIso);
     } else {
       // 撞并发、没配密钥、或搬完公共清单剩零条：这轮对外什么都不改，也别动后台账本。
@@ -750,6 +796,17 @@ export async function onRequestGet(context) {
     movedOut.length = 0;
     movedIn.length = 0;
     retired.length = 0;
+  }
+
+  // 公共清单这轮没变动时，后台里仍可能压着"这套规则上线之前就离线"的老条目 —— 它们没排过队，
+  // 就永远没人拍板。这一步只写队列与后台账本，不动签名清单，所以不需要 baseUpdated 那套并发保护。
+  let queuedForReview = [];
+  if (!changed && env.SERVER_REVIEW) {
+    const queuedIds = await queueOfflineForReview();
+    if (queuedIds.size) {
+      await applyOfflineLedger(queuedIds);
+      queuedForReview = [...queuedIds];
+    }
   }
 
   const verifiedDoc = {
@@ -771,6 +828,7 @@ export async function onRequestGet(context) {
     moved_out: movedOut.map((m) => ({ id: m.entry.id, name: m.entry.name, url: m.entry.url, reason: m.reason })),
     moved_in: movedIn.map((m) => ({ id: m.id, name: m.entry.name, url: m.entry.url })),
     offline_count: Object.keys(offline).length,   // 后台栏里现在压着多少台离线服务器
+    queued_for_review: queuedForReview,           // 这一轮补排进待复核队列的（清单没变动也会补）
     presence,                   // 每台最后一次被任何可信出口看到 / 缺席起点 / 拒连起点
     entry_down_rounds: entryDown,
   };
@@ -790,6 +848,7 @@ export async function onRequestGet(context) {
                 moved_out: movedOut.map((m) => ({ id: m.entry.id, name: m.entry.name, reason: m.reason })),
                 moved_in: movedIn.map((m) => ({ id: m.id, name: m.entry.name })),
                 offline_count: Object.keys(offline).length,
+                queued_for_review: queuedForReview,
                 // 在路上的：已经有缺席计时但还没到退休线，维护者想复核就看这个数
                 absent_watch: Object.values(presence).filter((p) => p && p.firstAbsentAt).length,
                 tlsProbeHits: Object.keys(tlsFresh).length + Object.keys(tlsAttested).length,

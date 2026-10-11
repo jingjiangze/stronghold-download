@@ -28,6 +28,7 @@ const GOOD = () => ({ ok: true, version: 1, app: '0.1.4', uptimeSec: 100, socket
 
 function makeEnv(servers, extras) {
   const store = new Map();
+  const kv = new Map();
   store.set('site/servers.json', JSON.stringify({ updated: 'L1', v: 1, keyId: 'sp-2026-10', servers }, null, 2));
   for (const k of Object.keys(extras || {})) {
     store.set(k, typeof extras[k] === 'string' ? extras[k] : JSON.stringify(extras[k]));
@@ -38,7 +39,13 @@ function makeEnv(servers, extras) {
       get: async (k) => (store.has(k) ? { text: async () => store.get(k) } : null),
       put: async (k, v) => { store.set(k, String(v)); },
     },
+    SERVER_REVIEW: {
+      get: async (k) => (kv.has(k) ? kv.get(k) : null),
+      put: async (k, v) => { kv.set(k, String(v)); },
+      delete: async (k) => { kv.delete(k); },
+    },
     __store: store,
+    __kv: kv,
   };
 }
 
@@ -232,6 +239,61 @@ stubRefused(['x']);
     // offlineSince 刷新成最新，所以该被丢掉的是最老的 x61、x60
     assert.ok(!bo.entries.x61 && !bo.entries.x60, '最老的两条应该已经被丢掉');
     assert.ok(bo.entries.x5, '没那么旧的不能丢');
+  });
+}
+
+/* ---- ⑦ 搬进后台要进待复核队列 ---------------------------------------------------------- */
+
+stubRefused(['q1', 'q2']);
+{
+  const env = makeEnv([entry('q1'), entry('q2'), entry('qlive')]);
+  const out = await run(env);
+  await ok('搬进后台的条目排进待复核队列，管理页点通过/丢弃就能拍板', () => {
+    assert.deepEqual(out.body.moved_out.map((m) => m.id).sort(), ['q1', 'q2']);
+    const index = JSON.parse(env.__kv.get('pending_index'));
+    assert.deepEqual(index.sort(), ['q1', 'q2'], JSON.stringify(index));
+    const rec = JSON.parse(env.__kv.get('pending/q1'));
+    assert.equal(rec.source, 'offline-move');
+    assert.equal(rec.needsReview, true);
+    assert.match(rec.reviewReason, /等待复核/);
+    assert.equal(rec.url, 'https://q1.example', '队列记录要带着原条目，点通过才能原样放回');
+    assert.ok(!index.includes('qlive'), '活着的当然不该出现在复核队列里');
+  });
+}
+
+stubRefused(['q1']);
+{
+  // 第二轮：q1 又被判活搬回来，再判死搬出去 → 队列里只应该有一条，不重复堆
+  const env = makeEnv([entry('q1'), entry('qlive')], {
+    'site/verified.json': prevDoc({ q1: absent(2 * dayMs), qlive: { lastOkAt: ago(1000) } }),
+  });
+  env.__kv.set('pending_index', JSON.stringify(['q1']));
+  env.__kv.set('pending/q1', JSON.stringify({ id: 'q1', url: 'https://q1.example', source: 'offline-move' }));
+  const out = await run(env);
+  await ok('同一台反复搬动不会在复核队列里堆成重复项', () => {
+    assert.deepEqual(out.body.moved_out.map((m) => m.id), ['q1']);
+    assert.deepEqual(JSON.parse(env.__kv.get('pending_index')), ['q1']);
+  });
+}
+
+stubRefused(['b1']);
+{
+  // 规则上线前就躺在后台的条目：本轮什么都不搬，也要把它们补进复核队列（不然永远没人管）
+  const seeded = offlineRecord('b1', 'b1');
+  const since = seeded.b1.offlineSince;
+  const env = makeEnv([entry('balive')], {
+    'site/offline.json': { updated: ago(1000), count: 1, entries: seeded },
+  });
+  const out = await run(env);
+  await ok('历史后台条目补排进复核队列，并打上标记（下一轮不再重复排队）', () => {
+    assert.deepEqual(out.body.moved_out, [], '这轮没有新的搬迁');
+    assert.equal(out.body.offline_count, 1);
+    const index = JSON.parse(env.__kv.get('pending_index'));
+    assert.deepEqual(index, ['b1'], JSON.stringify(index));
+    const rec = JSON.parse(env.__kv.get('pending/b1'));
+    assert.match(rec.reviewReason, /等待复核/);
+    assert.equal(rec.offlineSince, since, '补排队不能把"什么时候进的后台"改成现在');
+    assert.equal(backoffice(env).entries.b1.reviewQueued, true);
   });
 }
 
