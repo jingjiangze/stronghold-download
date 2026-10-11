@@ -53,6 +53,15 @@ const RETIRE_MAX_PER_ROUND = 5;
 const RETIRE_LOG_MAX = 200;
 const REFUSED_HARD = /ECONNREFUSED|ENOTFOUND|EAI_AGAIN|EHOSTUNREACH|ENETUNREACH|拒绝连接|查无此域名|域名不存在|返回\s*521|返回\s*523|返回\s*530/i;
 
+/* 后台清单（2026-10-12 用户口径：所有离线服务器隐藏到后台）。分区过去只把探不到的条目挪进
+   `invalid`，前端按 valid 过滤（js/servers.js 的 render），但**游戏客户端读的是签名清单本身** ——
+   所以那一栏对玩家仍然是"在线"的。现在离线条目从 site/servers.json 摘进 site/offline.json，
+   保留原对象 + 原因 + 首次离线时间，每轮照样跟着探测，活过来就自动搬回前台。
+   主清单 = servers.json ∪ offline.json：submit/review/PUT 那些写口只碰 servers.json，
+   不会覆盖 offline.json，所以搬来搬去不会丢东西。 */
+const OFFLINE_KEY = 'site/offline.json';
+const OFFLINE_MAX = 60;            // 后台留 60 台，更老的按退休处理（写进 retired.json）
+
 /** 退休记录：只追加不覆盖，保留每台最后一次被看到的时间，出事时能一条条回溯"为什么删了它"。 */
 async function rememberRetired(env, retired, nowIso) {
   try {
@@ -88,6 +97,19 @@ export async function onRequestGet(context) {
   let doc;
   try { doc = JSON.parse(await listRes.text()); } catch { return json({ ok: false, error: 'list corrupt' }, 500); }
   const servers = Array.isArray(doc.servers) ? doc.servers : [];
+
+  // 后台清单：上一轮被判离线、已经从公共签名清单里摘出去的条目。
+  let offline = {};
+  try {
+    const oRes = await env.R2BUCKET.get(OFFLINE_KEY);
+    const od = oRes ? JSON.parse(await oRes.text()) : null;
+    offline = (od && od.entries && typeof od.entries === 'object' && !Array.isArray(od.entries)) ? od.entries : {};
+  } catch { offline = {}; }
+  const offlineIds = new Set(Object.keys(offline));
+  // 探测集合 = 公共清单 ∪ 后台清单。条目只是在两栏之间移动，总数不变，所以每轮的探测预算没变，
+  // 而"活过来自动回前台"完全靠这一句 —— 后台条目不在 servers.json 里，不探就永远回不来。
+  const probeSet = servers.concat(Object.values(offline)
+    .map((o) => o && o.entry).filter((e) => e && e.id && !servers.some((s) => String(s.id) === String(e.id))));
 
   const valid = [];
   const invalid = [];
@@ -282,6 +304,8 @@ export async function onRequestGet(context) {
         stable: previous.stable || {}, promoted: previous.promoted || [],
         // 这条快路径没真探，presence 必须原样带着走 —— 否则缺席计时每轮被清零，退休永远触发不了
         presence: previous.presence || {}, retired: previous.retired || [],
+        moved_out: previous.moved_out || [], moved_in: previous.moved_in || [],
+        offline_count: Number(previous.offline_count) || 0,
         entry_down_rounds: previous.entry_down_rounds || {},
       }, null, 2) + '\n', {
         httpMetadata: { contentType: 'application/json', cacheControl: 'public, max-age=120' },
@@ -318,8 +342,8 @@ export async function onRequestGet(context) {
   // Functions wall-clock budget (sequential 5s timeouts add up to a guaranteed abort).
   const BATCH = 4;
   const results = [];
-  for (let i = 0; i < servers.length; i += BATCH) {
-    const batch = servers.slice(i, i + BATCH);
+  for (let i = 0; i < probeSet.length; i += BATCH) {
+    const batch = probeSet.slice(i, i + BATCH);
     const settled = await Promise.all(batch.map(async (entry) => {
       if (entry.enabled === false) {
         return { entry, ok: false, reason: '已停用', rooms: null, humans: null, variant: null };
@@ -523,7 +547,9 @@ export async function onRequestGet(context) {
       }
     }
   }
-  const liveIds = new Set(servers.map((s) => s.id));
+  // 跟踪集合 = 公共清单 ∪ 后台清单：缺席计时与退避都要跨栏延续，否则一条搬到后台的服务器
+  // 会因为"不在清单里"被清掉记录，下一轮又从零开始计，永远退不了休。
+  const liveIds = new Set(probeSet.map((s) => s.id));
   // 版本号是"这台真的在跑一个我们能对话的服务"的唯一硬证据。occupancy 里没有点分版本号
   // （边缘读不到、玩家与盒子的回执也没回报过）就按**校验失败**处理 —— 而不是只让每个网页
   // 访客自己藏自己那一份：判死一次对所有出口、包括游戏客户端一致，进 admin 暂存区可复核。
@@ -586,7 +612,7 @@ export async function onRequestGet(context) {
   const presence = (previous.presence && typeof previous.presence === 'object' && !Array.isArray(previous.presence))
     ? previous.presence : {};
   const invalidReason = new Map(invalid.map((i) => [String(i.id), String(i.reason || '')]));
-  for (const s of servers) {
+  for (const s of probeSet) {
     const id = String(s.id);
     if (validSet.has(id)) { presence[id] = { lastOkAt: nowIso }; continue; }
     const rec = { ...(presence[id] || {}) };
@@ -598,11 +624,35 @@ export async function onRequestGet(context) {
   }
   for (const k of Object.keys(presence)) if (!liveIds.has(k)) delete presence[k];
 
+  /* ---- 两栏归属：判死的搬进后台，判活的搬回前台 ------------------------------------------
+   * 公共签名清单是**玩家会读的那一份**（客户端不读 verified.json 的分区），所以搬动必须在真探轮
+   * 落地，并和转正/退休合在同一次签名里。两种情况不搬：
+   *   ① 站长显式停用（enabled:false 或理由是「已停用」）—— 那是人的决定，不是探测结论；
+   *   ② 这一轮一条都没判活 / 搬完公共清单就空了 —— 那多半是我们自己的出口故障，不是全网服了。
+   */
+  const movedOut = [];
+  if (validSet.size > 0) {
+    for (const s of servers) {
+      const id = String(s.id);
+      if (validSet.has(id) || s.enabled === false) continue;
+      if (/已停用/.test(invalidReason.get(id) || '')) continue;
+      movedOut.push({ entry: s, reason: invalidReason.get(id) || '本轮四条出口都没读到协议指纹' });
+    }
+    if (movedOut.length >= servers.length) movedOut.length = 0;
+  }
+  const movedIn = [];
+  for (const [id, rec] of Object.entries(offline)) {
+    if (validSet.has(id) && rec && rec.entry) movedIn.push({ id, entry: rec.entry });
+  }
+  const movedOutIds = new Set(movedOut.map((m) => String(m.entry.id)));
+  const movedInIds = new Set(movedIn.map((m) => String(m.id)));
+
+  // 退休现在指的是**从后台再永久删除**：搬进后台之后仍然连续缺席过线，才算真死。
+  // 本轮刚搬进来的不可能命中（缺席计时才起步），所以这里只遍历上一轮的后台条目。
   const retired = [];
-  for (const s of servers) {
-    if (s.enabled === false) continue;          // 站长停用的条目归人管，不由这里删
-    if (validSet.has(String(s.id))) continue;
-    const p = presence[String(s.id)] || {};
+  for (const [id, rec] of Object.entries(offline)) {
+    if (validSet.has(id)) continue;              // 活过来的不谈退休（它正在搬回前台）
+    const p = presence[id] || {};
     const absent = Date.parse(p.firstAbsentAt || '');
     const refused = Date.parse(p.refusedSince || '');
     let why = '';
@@ -613,16 +663,40 @@ export async function onRequestGet(context) {
     }
     if (!why) continue;
     if (retired.length >= RETIRE_MAX_PER_ROUND) break;
-    retired.push({ id: s.id, name: s.name, url: s.url, why,
-                   lastOkAt: p.lastOkAt || null, absentSince: p.firstAbsentAt || null });
+    const e = rec.entry || {};
+    retired.push({ id, name: e.name, url: e.url, why, offlineSince: rec.offlineSince || null,
+                   lastOkAt: p.lastOkAt || rec.lastOkAt || null, absentSince: p.firstAbsentAt || null });
   }
-  // 保底：绝不让签名清单变空 —— 客户端读到空清单和"这台没了"是两回事，而这一轮的判断本身
-  // 也可能是一片出口故障。宁可留一条僵尸到下一轮再看。
-  if (retired.length > servers.length - 1) retired.length = Math.max(0, servers.length - 1);
+  const retiredIds = new Set(retired.map((r) => String(r.id)));
+
+  // 搬完之后公共清单长这样；转正只在它上面找「（待核）」。
+  const publicNext = servers.filter((s) => !movedOutIds.has(String(s.id)) && !retiredIds.has(String(s.id)))
+    .concat(movedIn.filter((m) => !retiredIds.has(String(m.id))).map((m) => m.entry));
+
+  /** 后台文件的增删要跟着这次发布走：公共清单没发成功就不动后台，否则条目会从两份文件之间掉掉。 */
+  const applyOfflineLedger = async () => {
+    for (const m of movedIn) delete offline[String(m.id)];
+    for (const r of retired) delete offline[String(r.id)];
+    for (const m of movedOut) {
+      const id = String(m.entry.id);
+      offline[id] = { entry: m.entry, reason: m.reason, offlineSince: nowIso,
+                      lastOkAt: (presence[id] || {}).lastOkAt || null };
+    }
+    const keys = Object.keys(offline);
+    if (keys.length > OFFLINE_MAX) {
+      // 超上限丢最老的（它们已经缺席很久，且还能靠重新提交回来）
+      keys.sort((a, b) => Date.parse(offline[a].offlineSince || '') - Date.parse(offline[b].offlineSince || ''));
+      for (const k of keys.slice(0, keys.length - OFFLINE_MAX)) delete offline[k];
+    }
+    await env.R2BUCKET.put(OFFLINE_KEY, JSON.stringify({
+      updated: nowIso, count: Object.keys(offline).length, entries: offline,
+      note: '离线服务器留档：不进公共签名清单，每轮仍随探测，活过来自动搬回；超过 7 天/24 小时确定性拒绝则永久退休',
+    }, null, 2) + '\n', { httpMetadata: { contentType: 'application/json', cacheControl: 'public, max-age=120' } });
+  };
 
   const promoted = [];
-  for (const s of servers) {
-    if (!PENDING_LABEL.test(String(s.name || '')) || !validSet.has(s.id)) continue;
+  for (const s of publicNext) {
+    if (!PENDING_LABEL.test(String(s.name || '')) || !validSet.has(String(s.id))) continue;
     const people = Number((opens[s.id] || {}).people) || 0;
     const since = Date.parse((stable[s.id] || {}).since || '');
     const held = Number.isFinite(since) ? nowMs - since : 0;
@@ -632,34 +706,49 @@ export async function onRequestGet(context) {
     const name = String(s.name).replace(PENDING_LABEL, '').trim() || s.url;
     promoted.push({ id: s.id, from: s.name, to: name, why });
   }
-  // 改名（转正）与摘除（退休）**合一次签名一次发布**：分两次写就要处理两次 baseUpdated，
-  // 中间那次撞并发会静默丢掉，出现"名字改了但死的还留着"这种半截状态。
+  // 改名（转正）、搬进后台、搬回前台、退休（从后台删除）**合一次签名一次发布**：分几次写就要处理
+  // 几次 baseUpdated，中间那次撞并发会静默丢掉，出现"名字改了但死的还留着"这种半截状态。
   let listUpdatedAfter = doc.updated;
-  const retireIds = new Set(retired.map((r) => r.id));
-  if ((promoted.length || retireIds.size) && canSign(env)) {
-    const byId = new Map(promoted.map((p) => [p.id, p]));
-    const nextServers = servers.filter((s) => !retireIds.has(String(s.id)))
-      .map((s) => (byId.has(String(s.id)) ? { ...s, name: byId.get(String(s.id)).to } : s));
-    const signed = nextServers.length ? await signServersDoc({ ...doc, servers: nextServers }, env) : null;
+  const moved = publicNext.length !== servers.length;
+  const changed = promoted.length || moved || retired.length;
+  // via 的取值是有下游的：publish-log 按它过滤（readPublishLog(via)），recentPublishes 也只认
+  // 'auto-submit'，所以"只改名"这一种必须仍然是 'auto-promote'，别自创新名字。
+  const viaParts = [];
+  if (promoted.length) viaParts.push('promote');
+  if (movedOut.length || movedIn.length) viaParts.push('offline');
+  if (retired.length) viaParts.push('retire');
+  const viaTag = 'auto-' + viaParts.join('+');
+  if (changed && canSign(env)) {
+    const byId = new Map(promoted.map((p) => [String(p.id), p]));
+    const signed = publicNext.length || retired.length || movedOut.length
+      ? await signServersDoc({ ...doc,
+          servers: publicNext.map((s) => (byId.has(String(s.id)) ? { ...s, name: byId.get(String(s.id)).to } : s)) }, env)
+      : null;
     const out = signed ? await publishServersDoc(env, signed, {
-      baseUpdated: doc.updated,
-      via: retireIds.size ? (promoted.length ? 'auto-promote-retire' : 'auto-retire') : 'auto-promote',
-      entryId: [...promoted.map((p) => p.id), ...retired.map((r) => r.id)].join(','),
-      entryUrl: [...promoted.map((p) => p.to), ...retired.map((r) => r.url)].join(','),
+      baseUpdated: doc.updated, via: viaTag,
+      entryId: [...promoted.map((p) => p.id), ...movedOut.map((m) => m.entry.id),
+                ...movedIn.map((m) => m.id), ...retired.map((r) => r.id)].join(','),
+      entryUrl: [...promoted.map((p) => p.to), ...movedOut.map((m) => m.entry.url),
+                 ...movedIn.map((m) => m.entry.url), ...retired.map((r) => r.url)].join(','),
       ip: (request.headers.get('cf-connecting-ip') || '').slice(0, 60),
       ua: request.headers.get('user-agent'), country: (request.cf && request.cf.country) || null,
     }) : null;
     if (out && out.ok) {
       listUpdatedAfter = signed.updated;
-      if (retireIds.size) await rememberRetired(env, retired, nowIso);
+      if (moved || retired.length) await applyOfflineLedger();
+      if (retired.length) await rememberRetired(env, retired, nowIso);
     } else {
-      // 撞并发、没配密钥、或签完剩零条：这轮对外什么都不改，别宣布转正也别宣布退休。
+      // 撞并发、没配密钥、或搬完公共清单剩零条：这轮对外什么都不改，也别动后台账本。
       // presence 照本轮观察结果留着（它没被看到这件事与发布成没成无关），下一轮接着算。
       promoted.length = 0;
+      movedOut.length = 0;
+      movedIn.length = 0;
       retired.length = 0;
     }
-  } else if (promoted.length || retireIds.size) {
+  } else if (changed) {
     promoted.length = 0;
+    movedOut.length = 0;
+    movedIn.length = 0;
     retired.length = 0;
   }
 
@@ -678,7 +767,10 @@ export async function onRequestGet(context) {
     opens,                      // 「目前已点击 N 次」+ people（去重人数，只发计数不发键）
     stable: Object.fromEntries(Object.keys(stable).map((k) => [k, stable[k].since])),
     promoted,                   // 这一轮去掉「（待核）」的条目与原因
-    retired,                    // 这一轮从签名清单摘掉的条目与原因（同时进 site/retired.json）
+    retired,                    // 这一轮从后台再永久删除的条目（写进 site/retired.json）
+    moved_out: movedOut.map((m) => ({ id: m.entry.id, name: m.entry.name, url: m.entry.url, reason: m.reason })),
+    moved_in: movedIn.map((m) => ({ id: m.id, name: m.entry.name, url: m.entry.url })),
+    offline_count: Object.keys(offline).length,   // 后台栏里现在压着多少台离线服务器
     presence,                   // 每台最后一次被任何可信出口看到 / 缺席起点 / 拒连起点
     entry_down_rounds: entryDown,
   };
@@ -694,6 +786,10 @@ export async function onRequestGet(context) {
                 entry_dead: entryDead, versionless,
                 promoted: promoted.map((p) => ({ id: p.id, name: p.to, why: p.why })),
                 retired: retired.map((r) => ({ id: r.id, name: r.name, why: r.why })),
+                // 搬进/搬出后台：这一轮公共清单少了谁、多了谁（发布没成功时这里是空的，如实反映）
+                moved_out: movedOut.map((m) => ({ id: m.entry.id, name: m.entry.name, reason: m.reason })),
+                moved_in: movedIn.map((m) => ({ id: m.id, name: m.entry.name })),
+                offline_count: Object.keys(offline).length,
                 // 在路上的：已经有缺席计时但还没到退休线，维护者想复核就看这个数
                 absent_watch: Object.values(presence).filter((p) => p && p.firstAbsentAt).length,
                 tlsProbeHits: Object.keys(tlsFresh).length + Object.keys(tlsAttested).length,

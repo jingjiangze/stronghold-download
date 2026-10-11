@@ -347,6 +347,20 @@
     host.textContent = (item.url || '') + ' · ' + (item.reason || '校验未通过');
     main.appendChild(name);
     main.appendChild(host);
+
+    // 搬进后台的条目**已经不在公共清单里**了：下面那两个按钮改的是 servers.json，对它们点下去
+    // 只会得到"条目不存在"。所以这里按实际情况换成一句诚实说明 —— 活过来会自动回前台，
+    // 要现在就放回，用上方表单重新提交这个地址（会照常走复核与签名）。
+    if (!base.some(function (e) { return String(e.id) === String(item.id); })) {
+      var off = document.createElement('span');
+      off.className = 'sv-ms';
+      off.textContent = '后台';
+      off.title = '已从公共签名清单摘出（玩家与客户端都读不到它）。下一轮探测到它会自己搬回前台；'
+        + '要强行放回请用上方表单重新提交这个地址。连续缺席满 7 天（或 24 小时的确定性拒绝）会永久退休。';
+      div.appendChild(off);
+      div.appendChild(main);
+      return div;
+    }
     // 票数挂在行上：匿名票能把「探不到版本号」的条目放回前台，维护者必须看得见是谁放的，
     // 觉得不对就点「停用」—— 停用是终审，玩家票翻不动（verify.js 里的 disabledIds）。
     var v = lastVouches[item.id];
