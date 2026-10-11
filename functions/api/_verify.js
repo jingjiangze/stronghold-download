@@ -163,7 +163,11 @@ async function safeFetch(url, init, redirects) {
     const detail = String((err && (err.message || err.code || (err.cause && err.cause.code))) || name);
     const cert = /cert|ssl|tls|handshake|self.?signed|unable.?to.?verify|DEPTH_ZERO|UNABLE_TO_VERIFY|ERR_SSL|expired/i.test(name + ' ' + detail);
     if (cert) return { error: '证书校验失败：' + detail.slice(0, 60), certError: true };
-    return { error: name === 'TimeoutError' || name === 'AbortError' ? '探测超时' : '连接失败（' + name + '）' };
+    // 把 syscall 级的错误码也写进理由：退休闸门要靠 ECONNREFUSED / ENOTFOUND 分辨"对端明确
+    // 拒绝、域名已经不存在"和"只是我这侧看不见"，只留 TypeError 就把这个信息丢掉了。
+    const code = String((err && err.code) || (err.cause && err.cause.code) || '');
+    return { error: name === 'TimeoutError' || name === 'AbortError' ? '探测超时'
+      : '连接失败（' + name + (code ? ': ' + code : '') + '）' };
   }
   if (res.status >= 300 && res.status < 400) {
     const location = res.headers.get('location');
