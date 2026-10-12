@@ -1,5 +1,8 @@
 // POST|GET /api/tick —— 让外部闹钟（盒子上的计划任务）能拉起一轮云端采集
 //
+// 采集节拍：**一天一次**（TICK_CRAWL_GAP_HOURS，默认 22 小时；?force=1 可立刻越过）。盒子的任务
+// 仍每小时打进来，节流在这里判定，被节流的那次回 200 + throttled:true（不烧 GitHub 作业）。
+//
 // 为什么不直接用 stronghold-scout Worker 的 /tick：那条地址在 *.workers.dev 上，
 // 国内出口连不上（盒子实测三轮全是「无法连接到远程服务器」，而同轮的清单探测却正常）。
 // dl.jiangjiangze.icu 在国内可达，所以这个入口放在站点侧。
@@ -59,6 +62,20 @@ async function rateLimited(env, ip) {
   }
 }
 
+/** 上一次真正派发出去（没被节流）的采集时刻：优先读 lastCrawlAt，没有就从 history 里倒推。 */
+async function lastCrawlAt(env) {
+  try {
+    const res = await env.R2BUCKET.get(HB_KEY);
+    if (!res) return 0;
+    const doc = JSON.parse(await res.text());
+    const direct = Date.parse(doc.lastCrawlAt || '');
+    if (Number.isFinite(direct)) return direct;
+    const h = Array.isArray(doc.history) ? doc.history : [];
+    return h.reduce((acc, r) => (r && r.ok && !r.throttled && r.target === 'crawl'
+      ? Math.max(acc, Date.parse(r.at || '') || 0) : acc), 0);
+  } catch { return 0; }
+}
+
 async function handle(context) {
   const { request, env, waitUntil } = context;
   const url = new URL(request.url);
@@ -72,6 +89,29 @@ async function handle(context) {
 
   const target = url.searchParams.get('target') || 'crawl';
   if (!ALLOWED.includes(target)) return json({ ok: false, error: 'target 只能是 ' + ALLOWED.join('/') }, 400);
+
+  /* 采集频率：一天一次（2026-10-12 用户改的口径）。盒子那边仍每小时 :26 打进来 —— 那是它自己的
+   * 计划任务，不用登机器改；节流放在这里，一处就同时管住三个源头：盒子的小时闹钟、stronghold-tick
+   * 仓的定时、以及任何漏网的 dispatch。被节流的那次照样顺手复核一次首方直链（下面那步），
+   * 所以下载镜像的保鲜节奏不受影响，只有"采集"降频。想立刻跑就带 ?force=1（口令仍要过）。
+   */
+  const GAP_H = Number(env.TICK_CRAWL_GAP_HOURS) || 22;
+  if (target === 'crawl' && url.searchParams.get('force') !== '1') {
+    const last = await lastCrawlAt(env);
+    if (last && Date.now() - last < GAP_H * 3600e3) {
+      const rec = { ok: true, throttled: true, http: 0, at: new Date().toISOString(), target,
+                    lastCrawlAt: new Date(last).toISOString(),
+                    nextAt: new Date(last + GAP_H * 3600e3).toISOString(),
+                    note: `距上次采集派发不足 ${GAP_H} 小时，本轮不补 run` };
+      await heartbeat(env, rec);
+      if (waitUntil) {
+        waitUntil(fetch(new URL('/api/latest?cb=' + Date.now(), request.url).href, {
+          headers: { 'user-agent': 'stronghold-dl-tick-cdn' },
+        }).then(() => {}, () => {}));
+      }
+      return json(rec, 200);
+    }
+  }
   const digits = (v) => String(v || '').replace(/\D/g, '').slice(0, 3);
   const inputs = { target, dry: url.searchParams.get('dry') === '1',
     pages: digits(url.searchParams.get('pages')), forks: digits(url.searchParams.get('forks')), tick_min: '' };
@@ -110,6 +150,8 @@ async function heartbeat(env, rec) {
     const prev = prevRes ? JSON.parse(await prevRes.text()) : {};
     const doc = Object.assign({ history: [] }, prev);
     if (rec.ok) doc.lastOk = rec.at;
+    // 节流掉的那次不算"派发过"，否则 lastCrawlAt 会被每小时续期，采集永远轮不到
+    if (rec.ok && !rec.throttled && rec.target === 'crawl') doc.lastCrawlAt = rec.at;
     doc.updated = rec.at;
     doc.history = [rec].concat(Array.isArray(doc.history) ? doc.history : []).slice(0, 30);
     await env.R2BUCKET.put(HB_KEY, JSON.stringify(doc, null, 1) + '\n', {
