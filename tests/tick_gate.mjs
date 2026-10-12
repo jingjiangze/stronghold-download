@@ -80,11 +80,19 @@ await ok('窗内再打：回 200 + throttled，不创建 run，也不续期 last
   assert.match(body.nextAt, /^\d{4}-\d{2}-\d{2}T/);
 });
 
-await ok('超过 22 小时窗 → 恢复派发', async () => {
-  const env = makeEnv({ history: [], lastCrawlAt: new Date(Date.now() - 23 * HOUR).toISOString() });
+await ok('超过 11.5 小时窗 → 恢复派发（一天两次的节拍）', async () => {
+  const env = makeEnv({ history: [], lastCrawlAt: new Date(Date.now() - 12 * HOUR).toISOString() });
   const body = await (await ctx(env)).json();
   assert.equal(body.throttled, undefined);
   assert.equal(dispatched(), true);
+  // 11.5 小时之内仍要挡住：24 小时里最多两次，不会变成三次
+});
+
+await ok('刚过 11.5 小时仍算窗内（一天两次的上限靠这个卡住）', async () => {
+  const env = makeEnv({ history: [], lastCrawlAt: new Date(Date.now() - 11 * HOUR).toISOString() });
+  const body = await (await ctx(env)).json();
+  assert.equal(body.throttled, true);
+  assert.equal(dispatched(), false);
 });
 
 await ok('?force=1 立刻越过节流（口令仍要过）', async () => {

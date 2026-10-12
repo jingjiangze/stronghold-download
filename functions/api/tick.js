@@ -1,6 +1,6 @@
 // POST|GET /api/tick —— 让外部闹钟（盒子上的计划任务）能拉起一轮云端采集
 //
-// 采集节拍：**一天一次**（TICK_CRAWL_GAP_HOURS，默认 22 小时；?force=1 可立刻越过）。盒子的任务
+// 采集节拍：**一天两次**（TICK_CRAWL_GAP_HOURS，默认 11.5 小时；?force=1 可立刻越过）。盒子的任务
 // 仍每小时打进来，节流在这里判定，被节流的那次回 200 + throttled:true（不烧 GitHub 作业）。
 //
 // 为什么不直接用 stronghold-scout Worker 的 /tick：那条地址在 *.workers.dev 上，
@@ -90,12 +90,12 @@ async function handle(context) {
   const target = url.searchParams.get('target') || 'crawl';
   if (!ALLOWED.includes(target)) return json({ ok: false, error: 'target 只能是 ' + ALLOWED.join('/') }, 400);
 
-  /* 采集频率：一天一次（2026-10-12 用户改的口径）。盒子那边仍每小时 :26 打进来 —— 那是它自己的
+  /* 采集频率：一天两次（2026-10-12 用户改的口径，先是降到一天一次、同日改成两次）。盒子那边仍每小时 :26 打进来 —— 那是它自己的
    * 计划任务，不用登机器改；节流放在这里，一处就同时管住三个源头：盒子的小时闹钟、stronghold-tick
    * 仓的定时、以及任何漏网的 dispatch。被节流的那次照样顺手复核一次首方直链（下面那步），
    * 所以下载镜像的保鲜节奏不受影响，只有"采集"降频。想立刻跑就带 ?force=1（口令仍要过）。
    */
-  const GAP_H = Number(env.TICK_CRAWL_GAP_HOURS) || 22;
+  const GAP_H = Number(env.TICK_CRAWL_GAP_HOURS) || 11.5;
   if (target === 'crawl' && url.searchParams.get('force') !== '1') {
     const last = await lastCrawlAt(env);
     if (last && Date.now() - last < GAP_H * 3600e3) {
