@@ -33,7 +33,7 @@ let calls = [];
 function stubFetch(status = 204) {
   calls = [];
   globalThis.fetch = async (url, init) => {
-    calls.push({ url: String(url), method: (init && init.method) || 'GET' });
+    calls.push({ url: String(url), method: (init && init.method) || 'GET', body: init && init.body ? String(init.body) : '' });
     // 204 不能带 body（undici 会抛 TypeError），GitHub 的 dispatch 成功就是这么回的
     return new Response(status === 204 ? null : '', { status });
   };
@@ -47,6 +47,7 @@ const post = (search) => new Request('https://dl.jiangjiangze.icu/api/tick' + (s
 const ctx = (env, search) => { stubFetch(); return TICK.onRequestPost({ request: post(search), env, waitUntil: () => {} }); };
 const hb = (env) => JSON.parse(env.__store.get('site/tick.json'));
 const dispatched = () => calls.some((c) => /dispatches$/.test(c.url));
+const dispatchBody = () => (calls.find((c) => /dispatches$/.test(c.url)) || {}).body || '';
 
 await ok('没口令 → 403，且不碰 GitHub', async () => {
   const env = makeEnv();
@@ -91,6 +92,7 @@ await ok('?force=1 立刻越过节流（口令仍要过）', async () => {
   const body = await (await ctx(env, '?force=1')).json();
   assert.equal(body.throttled, undefined);
   assert.equal(dispatched(), true);
+  assert.match(dispatchBody(), /"now":true/, 'force 必须把 workflow 那道一天守门也越过去');
 });
 
 await ok('target=probe 这类非采集打点不受节流影响', async () => {

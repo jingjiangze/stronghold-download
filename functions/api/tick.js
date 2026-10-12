@@ -113,7 +113,10 @@ async function handle(context) {
     }
   }
   const digits = (v) => String(v || '').replace(/\D/g, '').slice(0, 3);
-  const inputs = { target, dry: url.searchParams.get('dry') === '1',
+  const forced = url.searchParams.get('force') === '1';
+  // now:true 必须一起带上：workflow 那边也有一道「一天一轮」的守门（管住自动节拍），
+  // 只越过本站这一道会被它再挡回去，等于 force 无效。
+  const inputs = { target, dry: url.searchParams.get('dry') === '1', now: forced,
     pages: digits(url.searchParams.get('pages')), forks: digits(url.searchParams.get('forks')), tick_min: '' };
 
   let res, note = '';
