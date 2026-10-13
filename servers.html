@@ -6,32 +6,24 @@
   <meta name="theme-color" content="#0c0f0e" />
   <meta name="color-scheme" content="dark" />
   <meta name="format-detection" content="telephone=no" />
-  <meta name="description" content="卫戍协议：盟约 · 公开服务器延迟实测清单" />
-  <title>卫戍协议：盟约 · 服务器清单</title>
+  <meta name="description" content="卫戍协议：盟约 · 服务器清单下线公告" />
+  <title>卫戍协议：盟约 · 服务器清单已下线</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' fill='%230c0f0e'/%3E%3Cpath fill='%234ed8af' d='M5 3h3v2h2V3h4v2h2V3h3v5l-2 2v7l2 2v2H5v-2l2-2v-7L5 8z'/%3E%3C/svg%3E" />
 
-  <!-- 清单与负载数据都在 R2 域名上，握手（实测 1.1 s）不该排在首屏之后现做 -->
-  <link rel="preconnect" href="https://weishucdn.jiangjiangze.icu" crossorigin />
-  <link rel="dns-prefetch" href="https://weishucdn.jiangjiangze.icu" />
-  <!-- 字体全部自托管（fonts/fonts.css + fonts/webfonts-local.css）：以前引 fonts.googleapis.com，
-       国内被劫持重定向到 http 时 Chrome 会把整页判「不安全」（10-08 实测复现）。 -->
+  <!-- Web fonts：全部自托管（fonts/fonts.css + fonts/webfonts-local.css）。以前这里引
+       fonts.googleapis.com —— 国内被劫持重定向到 http 时，Chrome 会把整页判成「不安全」
+       （Mixed Content: insecure stylesheet，10-08 本地劫持模拟实测复现）。站内已无第三方域名。 -->
   <link rel="stylesheet" href="./fonts/fonts.css" />
   <link rel="stylesheet" href="./fonts/webfonts-local.css" />
   <link rel="stylesheet" href="./css/theme.css?v=4" />
   <link rel="stylesheet" href="./css/components.css?v=4" />
   <link rel="stylesheet" href="./css/screens/title.css?v=4" />
   <link rel="stylesheet" href="./css/devices.css?v=4" />
-  <link rel="stylesheet" href="./css/dl.css?v=23" />
-  <link rel="stylesheet" href="./css/servers.css?v=26" />
-  <link rel="stylesheet" href="./css/admin.css?v=9" />
-  <style>
-    /* .sv-ms--shared = 本机还没测出时先顶上的共享探测参考值（≈N ms），调淡示意"非本机实测"。
-       只这个页面用，放内联避免为几个字符动共享的 dl/servers.css 版本号。 */
-    .sv-ms--shared{opacity:.62}
-  </style>
+  <link rel="stylesheet" href="./css/dl.css?v=24" />
 </head>
 <body>
-  <div class="screen title-screen servers-screen">
+<body>
+  <div class="screen title-screen">
     <div class="title-bg" aria-hidden="true">
       <div class="title-bg__glow"></div>
       <div class="title-bg__radar"><div class="title-bg__sweep"></div></div>
@@ -69,69 +61,39 @@
       <div><span class="micro micro--mint">RHODES ISLAND // SIMULATION SERVICE</span><br /><span class="micro">TACTICAL CO-OP NODE · 02</span></div>
     </div>
     <div class="title-corner title-corner--tr">
-      <span class="micro micro--hi">NETWORK STATUS</span><br /><span class="micro">SERVER LIST</span>
+      <span class="micro micro--hi">SERVICE OFFLINE</span><br /><span class="micro">SERVER LIST</span>
     </div>
 
-    <main class="title-main servers-main">
+    <main class="title-main">
+      <div class="emblem" aria-hidden="true">
+        <span class="emblem__bracket emblem__bracket--l"></span>
+        <svg class="emblem__svg" viewBox="-0.5 -0.5 14 15"><circle cx="0.5" cy="0.5" r="0.20" class="d0"/><circle cx="1.5" cy="0.5" r="0.20" class="d1"/><circle cx="2.5" cy="0.5" r="0.20" class="d2"/><circle cx="5.5" cy="0.5" r="0.20" class="d5"/><circle cx="6.5" cy="0.5" r="0.20" class="d6"/><circle cx="7.5" cy="0.5" r="0.20" class="d0"/><circle cx="10.5" cy="0.5" r="0.20" class="d3"/><circle cx="11.5" cy="0.5" r="0.20" class="d4"/><circle cx="12.5" cy="0.5" r="0.20" class="d5"/><circle cx="0.5" cy="1.5" r="0.22" class="d6"/><circle cx="1.5" cy="1.5" r="0.22" class="d0"/><circle cx="2.5" cy="1.5" r="0.22" class="d1"/><circle cx="5.5" cy="1.5" r="0.22" class="d4"/><circle cx="6.5" cy="1.5" r="0.22" class="d5"/><circle cx="7.5" cy="1.5" r="0.22" class="d6"/><circle cx="10.5" cy="1.5" r="0.22" class="d2"/><circle cx="11.5" cy="1.5" r="0.22" class="d3"/><circle cx="12.5" cy="1.5" r="0.22" class="d4"/><circle cx="0.5" cy="2.5" r="0.23" class="d5"/><circle cx="1.5" cy="2.5" r="0.23" class="d6"/><circle cx="2.5" cy="2.5" r="0.23" class="d0"/><circle cx="3.5" cy="2.5" r="0.23" class="d1"/><circle cx="4.5" cy="2.5" r="0.23" class="d2"/><circle cx="5.5" cy="2.5" r="0.23" class="d3"/><circle cx="6.5" cy="2.5" r="0.23" class="d4"/><circle cx="7.5" cy="2.5" r="0.23" class="d5"/><circle cx="8.5" cy="2.5" r="0.23" class="d6"/><circle cx="9.5" cy="2.5" r="0.23" class="d0"/><circle cx="10.5" cy="2.5" r="0.23" class="d1"/><circle cx="11.5" cy="2.5" r="0.23" class="d2"/><circle cx="12.5" cy="2.5" r="0.23" class="d3"/><circle cx="1.5" cy="3.5" r="0.25" class="d5"/><circle cx="2.5" cy="3.5" r="0.25" class="d6"/><circle cx="3.5" cy="3.5" r="0.25" class="d0"/><circle cx="4.5" cy="3.5" r="0.25" class="d1"/><circle cx="5.5" cy="3.5" r="0.25" class="d2"/><circle cx="6.5" cy="3.5" r="0.25" class="d3"/><circle cx="7.5" cy="3.5" r="0.25" class="d4"/><circle cx="8.5" cy="3.5" r="0.25" class="d5"/><circle cx="9.5" cy="3.5" r="0.25" class="d6"/><circle cx="10.5" cy="3.5" r="0.25" class="d0"/><circle cx="11.5" cy="3.5" r="0.25" class="d1"/><circle cx="2.5" cy="4.5" r="0.26" class="d5"/><circle cx="3.5" cy="4.5" r="0.26" class="d6"/><circle cx="4.5" cy="4.5" r="0.26" class="d0"/><circle cx="5.5" cy="4.5" r="0.26" class="d1"/><circle cx="6.5" cy="4.5" r="0.26" class="d2"/><circle cx="7.5" cy="4.5" r="0.26" class="d3"/><circle cx="8.5" cy="4.5" r="0.26" class="d4"/><circle cx="9.5" cy="4.5" r="0.26" class="d5"/><circle cx="10.5" cy="4.5" r="0.26" class="d6"/><circle cx="2.5" cy="5.5" r="0.28" class="d4"/><circle cx="3.5" cy="5.5" r="0.28" class="d5"/><circle cx="4.5" cy="5.5" r="0.28" class="d6"/><circle cx="5.5" cy="5.5" r="0.28" class="d0"/><circle cx="6.5" cy="5.5" r="0.28" class="d1"/><circle cx="7.5" cy="5.5" r="0.28" class="d2"/><circle cx="8.5" cy="5.5" r="0.28" class="d3"/><circle cx="9.5" cy="5.5" r="0.28" class="d4"/><circle cx="10.5" cy="5.5" r="0.28" class="d5"/><circle cx="2.5" cy="6.5" r="0.29" class="d3"/><circle cx="3.5" cy="6.5" r="0.29" class="d4"/><circle cx="4.5" cy="6.5" r="0.29" class="d5"/><circle cx="5.5" cy="6.5" r="0.29" class="is-accent"/><circle cx="7.5" cy="6.5" r="0.29" class="is-accent"/><circle cx="8.5" cy="6.5" r="0.29" class="d2"/><circle cx="9.5" cy="6.5" r="0.29" class="d3"/><circle cx="10.5" cy="6.5" r="0.29" class="d4"/><circle cx="2.5" cy="7.5" r="0.31" class="d2"/><circle cx="3.5" cy="7.5" r="0.31" class="d3"/><circle cx="4.5" cy="7.5" r="0.31" class="d4"/><circle cx="5.5" cy="7.5" r="0.31" class="is-accent"/><circle cx="7.5" cy="7.5" r="0.31" class="is-accent"/><circle cx="8.5" cy="7.5" r="0.31" class="d1"/><circle cx="9.5" cy="7.5" r="0.31" class="d2"/><circle cx="10.5" cy="7.5" r="0.31" class="d3"/><circle cx="2.5" cy="8.5" r="0.32" class="d1"/><circle cx="3.5" cy="8.5" r="0.32" class="d2"/><circle cx="4.5" cy="8.5" r="0.32" class="d3"/><circle cx="5.5" cy="8.5" r="0.32" class="d4"/><circle cx="6.5" cy="8.5" r="0.32" class="d5"/><circle cx="7.5" cy="8.5" r="0.32" class="d6"/><circle cx="8.5" cy="8.5" r="0.32" class="d0"/><circle cx="9.5" cy="8.5" r="0.32" class="d1"/><circle cx="10.5" cy="8.5" r="0.32" class="d2"/><circle cx="2.5" cy="9.5" r="0.34" class="d0"/><circle cx="3.5" cy="9.5" r="0.34" class="d1"/><circle cx="4.5" cy="9.5" r="0.34" class="d2"/><circle cx="5.5" cy="9.5" r="0.34" class="d3"/><circle cx="6.5" cy="9.5" r="0.34" class="d4"/><circle cx="7.5" cy="9.5" r="0.34" class="d5"/><circle cx="8.5" cy="9.5" r="0.34" class="d6"/><circle cx="9.5" cy="9.5" r="0.34" class="d0"/><circle cx="10.5" cy="9.5" r="0.34" class="d1"/><circle cx="2.5" cy="10.5" r="0.35" class="d6"/><circle cx="3.5" cy="10.5" r="0.35" class="d0"/><circle cx="4.5" cy="10.5" r="0.35" class="d1"/><circle cx="5.5" cy="10.5" r="0.35" class="d2"/><circle cx="6.5" cy="10.5" r="0.35" class="d3"/><circle cx="7.5" cy="10.5" r="0.35" class="d4"/><circle cx="8.5" cy="10.5" r="0.35" class="d5"/><circle cx="9.5" cy="10.5" r="0.35" class="d6"/><circle cx="10.5" cy="10.5" r="0.35" class="d0"/><circle cx="1.5" cy="11.5" r="0.37" class="d4"/><circle cx="2.5" cy="11.5" r="0.37" class="d5"/><circle cx="3.5" cy="11.5" r="0.37" class="d6"/><circle cx="4.5" cy="11.5" r="0.37" class="d0"/><circle cx="5.5" cy="11.5" r="0.37" class="d1"/><circle cx="6.5" cy="11.5" r="0.37" class="d2"/><circle cx="7.5" cy="11.5" r="0.37" class="d3"/><circle cx="8.5" cy="11.5" r="0.37" class="d4"/><circle cx="9.5" cy="11.5" r="0.37" class="d5"/><circle cx="10.5" cy="11.5" r="0.37" class="d6"/><circle cx="11.5" cy="11.5" r="0.37" class="d0"/><circle cx="0.5" cy="12.5" r="0.38" class="d2"/><circle cx="1.5" cy="12.5" r="0.38" class="d3"/><circle cx="2.5" cy="12.5" r="0.38" class="d4"/><circle cx="3.5" cy="12.5" r="0.38" class="d5"/><circle cx="4.5" cy="12.5" r="0.38" class="d6"/><circle cx="5.5" cy="12.5" r="0.38" class="d0"/><circle cx="6.5" cy="12.5" r="0.38" class="d1"/><circle cx="7.5" cy="12.5" r="0.38" class="d2"/><circle cx="8.5" cy="12.5" r="0.38" class="d3"/><circle cx="9.5" cy="12.5" r="0.38" class="d4"/><circle cx="10.5" cy="12.5" r="0.38" class="d5"/><circle cx="11.5" cy="12.5" r="0.38" class="d6"/><circle cx="12.5" cy="12.5" r="0.38" class="d0"/><circle cx="0.5" cy="13.5" r="0.40" class="d1"/><circle cx="1.5" cy="13.5" r="0.40" class="d2"/><circle cx="2.5" cy="13.5" r="0.40" class="d3"/><circle cx="3.5" cy="13.5" r="0.40" class="d4"/><circle cx="4.5" cy="13.5" r="0.40" class="d5"/><circle cx="5.5" cy="13.5" r="0.40" class="d6"/><circle cx="6.5" cy="13.5" r="0.40" class="d0"/><circle cx="7.5" cy="13.5" r="0.40" class="d1"/><circle cx="8.5" cy="13.5" r="0.40" class="d2"/><circle cx="9.5" cy="13.5" r="0.40" class="d3"/><circle cx="10.5" cy="13.5" r="0.40" class="d4"/><circle cx="11.5" cy="13.5" r="0.40" class="d5"/><circle cx="12.5" cy="13.5" r="0.40" class="d6"/></svg>
+        <span class="emblem__bracket emblem__bracket--r"></span>
+      </div>
       <div class="title-en">
         <span class="title-en__a">STRONGHOLD PROTOCOL</span>
-        <span class="title-en__b">SERVER STATUS</span>
+        <span class="title-en__b">ALLIANCE</span>
       </div>
-      <h1 class="title-cn">服务器清单</h1>
-      <p class="title-tag">公开服务器延迟实测 · 每 30 分钟自动刷新</p>
+      <h1 class="title-cn">卫戍协议<span class="title-cn__colon">：</span><em>盟约</em></h1>
+      <p class="title-tag">服务器清单下线公告 · 非官方同人作品</p>
 
-      <div class="title-login servers-panel">
-        <div class="servers-head">
-          <span class="micro micro--mint" id="sv-updated">清单加载中…</span>
-          <span class="servers-timer" id="sv-timer"></span>
-          <button type="button" class="btn btn--secondary btn--sm" id="sv-add"><span class="btn__label">提交服务器</span></button>
-          <button type="button" class="btn btn--primary btn--sm" id="sv-refresh"><span class="btn__label">立即测速</span></button>
+      <div class="title-login dl-console">
+        <div class="dl-wx">
+          <p class="dl-wx__title">服务器清单已下线</p>
+          <p class="dl-wx__body">因服务器被频繁打击，为保护服务器作者权益，现下线服务器清单功能。<br />已在游戏内存过地址的服务器仍可正常联机；需要新地址时，请通过服务器作者的社区渠道自行获取。</p>
         </div>
-        <div class="servers-list" id="sv-list" aria-live="polite"></div>
-        <p class="dl-note" id="sv-note">延迟为当前浏览器实测往返时间（每台先预热再取 3 次采样中位数），仅供参考。</p>
-        <div class="sv-modal" id="sv-modal" hidden>
-          <div class="sv-modal__backdrop" data-close="1"></div>
-          <form class="sv-modal__card" id="sv-modal-form" autocomplete="off">
-            <div class="servers-head">
-              <span class="micro micro--mint">提交服务器</span>
-              <button type="button" class="btn btn--ghost btn--sm" data-close="1"><span class="btn__label">关闭</span></button>
-            </div>
-            <div class="admin-grid">
-              <label class="admin-field"><span class="micro">名称（可留空）</span>
-                <input id="sv-add-name" maxlength="24" placeholder="留空则用域名显示" /></label>
-              <label class="admin-field"><span class="micro">地址（三种写法都行）</span>
-                <input id="sv-add-url" inputmode="url" placeholder="dx.example.com:29943 或 https://host/play" required /></label>
-              <label class="admin-field"><span class="micro">探针路径（可留空）</span>
-                <input id="sv-add-probe" maxlength="64" placeholder="留空 = 自动试 /healthz、/api/status…" /></label>
-              <label class="admin-field"><span class="micro">备注（可留空）</span>
-                <input id="sv-add-note" maxlength="24" placeholder="可选" /></label>
-            </div>
-            <p class="admin-err" id="sv-add-err" hidden></p>
-            <div class="admin-actions">
-              <button type="submit" class="btn btn--primary btn--sm" id="sv-add-go"><span class="btn__label">校验并提交</span></button>
-            </div>
-            <p class="dl-note"><b>只有地址必填</b>，名称、探针路径、备注都可以留空。
-              服务端会按 <code>/healthz</code>、<code>/api/status</code>、<code>/api/health</code>、<code>/health</code> 依次实测，
-              确认是卫戍协议服务器就当场进公共清单。
-              若服务端暂时"看不见"它（自签证书、防火墙、路径自定义），提交也不会白报：条目会带证据进暂存区并标注「需要复核」，
-              同时你浏览器这一侧的探测结果会作为第二手证据一并附上 —— 玩家自己点得进去、Cloudflare 却握手失败的那种，就是靠它复核的。</p>
-          </form>
-        </div>
+        <nav class="dl-nav" aria-label="返回与发布渠道">
+          <a class="btn btn--primary btn--sm" href="./index.html" title="返回客户端下载页"><span class="btn__label">返回下载页</span></a>
+        </nav>
         <p class="dl-links">
-          <a href="./index.html">下载客户端</a>
-          <span class="dl-links__sep">·</span>
-          <a href="https://arknights.jiangjiangze.icu/" target="_blank" rel="noopener noreferrer"
-             title="三通道入口页：把同一台服的三条网络通道整理成一个页面，实时显示在线状态、延迟与人数">三通道入口页</a>
-          <span class="dl-links__sep">·</span>
           <a href="https://github.com/sganggs/Stronghold-Protocol" target="_blank" rel="noopener noreferrer">主仓库</a>
           <span class="dl-links__sep">·</span>
           <a href="https://github.com/jingjiangze/Stronghold-Protocol/releases/latest" target="_blank" rel="noopener noreferrer">APK 发布页</a>
+          <span class="dl-links__sep">·</span>
+          <a href="https://qm.qq.com/cgi-bin/qm/qr?groupUin=293032860" target="_blank" rel="noopener noreferrer" title="跳转到 QQ 加群页面">QQ 交流群 293032860</a>
         </p>
       </div>
     </main>
   </div>
-
-  <script src="./js/servers.js?v=46" defer></script>
-  <script src="./js/selfcheck.js?v=2" defer></script>
 </body>
 </html>
