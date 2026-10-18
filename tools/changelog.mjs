@@ -4,8 +4,10 @@
 
    为什么不在页面请求时算：/api/latest 是匿名访问 GitHub 的（本机/大陆出口常 403，边缘出口也有
    60 次/小时的每 IP 限额），而这份日志需要 compare + 每个提交查一次关联 PR —— 十几次调用放在
-   访客路径上必然撞限额。所以放在 mirror-apk 里算（它有 workflow token，本来每次发布就跑），
-   结果落 R2，站点只是读一个对象。
+   访客路径上必然撞限额。原本放在 mirror-apk 里算（它有 workflow token，本来每次发布就跑），
+   结果落 R2，站点只是读一个对象。**R2 上传链已于 2026-10-18 取消**（mirror-apk / prune-r2 两个
+   工作流都已停用），所以 site/changelog.json 停在最后一次发布的版本上：站点 /api/latest 读不到
+   匹配 tag 的日志时会退回 release 正文提炼，不会显示错位日志。要刷新日志得手动跑本脚本并上传。
 
    数据源与取舍：
      compare(prevStableTag...tag).commits  →  每个提交查 /commits/{sha}/pulls
