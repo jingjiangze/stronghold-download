@@ -1,6 +1,6 @@
 {
-  "updated": "2026-10-10",
-  "note": "Third-party accelerators for the download page. Prefix mirrors get the GitHub asset URL appended. Hosts must stay on this list; the page re-validates every built URL against it. The first-party R2 link is NOT configured here: download.js renders it from /api/latest's verified `_cdn` verdict so it always points at the object that was checked against this release. No raw GitHub direct link is offered: the page is for networks where github.com is unusable.",
+  "updated": "2026-10-18",
+  "note": "Third-party accelerators for the download page. Prefix mirrors get the GitHub asset URL appended. Hosts must stay on this list; the page re-validates every built URL against it. No first-party link is offered: the R2 mirror and the mirror-apk upload chain were cancelled on 2026-10-18, so the primary button resolves to a public accelerator (or GitHub itself) instead. No raw GitHub direct link is offered either: the page is for networks where github.com is unusable.",
   "mirrors": [
     {
       "id": "ghfast",

@@ -14,8 +14,7 @@
 //
 // No request input reaches the upstream URL: repo and endpoint are fixed constants.
 
-import { apkAssetOf, cdnHasBuild, SNAPSHOT_ID } from './_asset.js';
-import { kickIfCdnStale, kickLog, kickMirror } from './_cdnkick.js';
+import { SNAPSHOT_ID } from './_asset.js';
 
 const LIST_URL = 'https://api.github.com/repos/jingjiangze/Stronghold-Protocol/releases?per_page=100';
 const SNAPSHOT_REFRESH_MS = 30 * 60 * 1000;
@@ -85,9 +84,9 @@ async function fetchLatest(env) {
 const CHANGELOG_KEY = 'site/changelog.json';
 
 /**
- * 玩家看得懂的更新日志：由 mirror-apk 在每次发布时生成（compare + 关联 PR 的中文标题），
- * 落在 R2。放在访客路径上算是要吃 GitHub 匿名限额（60 次/小时/IP，而且本机出口本来就 403），
- * 所以这里只读一个对象。tag 对不上就当没有 —— 版本错位的日志比没有日志更糟。
+ * 玩家看得懂的更新日志：历史上由 mirror-apk 在每次发布时生成（compare + 关联 PR 的中文标题）
+ * 落在 R2。R2 上传已取消，所以这份对象只会停在最后一次发布的版本上；tag 对不上就当没有 ——
+ * 页面会退回 release 正文提炼，不会崩也不会显示错位日志。
  */
 async function readChangelog(env, tag) {
   if (!env || !env.R2BUCKET || !tag) return null;
@@ -131,19 +130,6 @@ export async function onRequestGet(context) {
   const cache = caches.default;
   const host = new URL(context.request.url).host;
   const key = new Request('https://' + host + '/api/latest');
-  const q = new URL(context.request.url).searchParams;
-
-  // 维护者的催抓口必须走在边缘缓存命中之前：否则 5 分钟内被缓存的那份会把 ?kick/?kicklog
-  // 一起吞成普通 release 载荷，口令门看着像没生效。
-  if (q.get('kick') || q.get('kicklog')) {
-    if (!env.PUBLISH_KEY || (context.request.headers.get('x-admin-key') || '') !== env.PUBLISH_KEY) {
-      return respond({ error: 'unauthorized' }, 0, 401);
-    }
-    if (q.get('kicklog')) return respond(await kickLog(env), 0, 200);
-    const forTag = q.get('tag') || (await fetchLatest(env).then((r) => (r && r.release ? r.release.tag_name : '')));
-    if (!forTag) return respond({ ok: false, skipped: '拿不到可比对的最新 tag' }, 0, 502);
-    return respond(await kickMirror(env, forTag, { force: q.get('force') === '1' }), 0, 200);
-  }
 
   const hit = await cache.match(key).catch(function () { return undefined; });
   const cached = hit ? await hit.json().catch(function () { return null; }) : null;
@@ -153,22 +139,14 @@ export async function onRequestGet(context) {
 
   const fetched = await fetchLatest(env);
   if (fetched) {
-    // Tell the page whether the first-party CDN can serve this exact build, so it can be
-    // honest about the download source instead of silently falling back to GitHub.
-    const apk = apkAssetOf(fetched.release);
-    const cdn = await cdnHasBuild(fetched.release.tag_name, apk && apk.size);
+    // 首方 R2 镜像与自动补抓已随 R2 下线一并取消：这里不再探测 CDN、也不再 dispatch
+    // mirror-apk。下载由 /api/download 直接落到公共加速器（或 GitHub 资产）。
     const changelog = await readChangelog(env, fetched.release.tag_name);
-    // CDN 缺这份构建、**或者这份构建的玩家日志还没生成** → 去催 mirror-apk（同一条链的两步，
-    // 一次 dispatch 都补上）。GitHub 的 cron 在这是饥饿的（实测 `*/10` 五个小时只命中一次，
-    // shell-v2.9.18 发布后挂了整整 2 小时），所以不能只等定时 —— 10-07 就是 shell-v2.9.31
-    // 的 CDN 字节早就躺在 R2 上、日志却没生成，页面只能显示"构建更新（明细见发布页）"。
-    waitUntil(kickIfCdnStale(env, fetched.release.tag_name, cdn, { missingChangelog: !changelog }));
     const payload = Object.assign({}, fetched.release, {
       _cachedAt: Date.now(),
       _stale: false,
       _ghDownloads: fetched.ghDownloads,
       _history: fetched.history || [],
-      _cdn: cdn,
       _changelog: changelog,
     });
     waitUntil(cache.put(key, respond(payload, STALE_KEEP_MS / 1000)));

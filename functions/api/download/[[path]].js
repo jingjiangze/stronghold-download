@@ -1,21 +1,23 @@
 // Pages Function: GET /api/download/<tag>/<file>
 // Counted download redirect for the download page's primary button.
 //
-// Flow: validate the request against a strict allowlist (tag/file patterns, https first-party
-// CDN / GitHub / accelerator hosts only, no private/loopback targets) -> resolve the target
-// (first-party R2 CDN only when it verifiably holds THIS build, otherwise a public
-// accelerator in front of the GitHub asset) -> increment a KV counter -> 302.
+// Flow: validate the request against a strict allowlist (tag/file patterns, https
+// GitHub / accelerator hosts only, no private/loopback targets) -> resolve the target
+// (a public accelerator in front of the GitHub asset, else the GitHub asset itself)
+// -> increment a KV counter -> 302.
 // The counter key is `dlcount/<tag>/<file>`; totals are read by /api/download/total. Users
-// who copy the raw CDN direct link bypass the redirect, so this number is a lower bound.
+// who copy the raw asset link bypass the redirect, so this number is a lower bound.
 //
-// `x-download-source` on the response says which path was taken (cdn / accelerator / github)
+// `x-download-source` on the response says which path was taken (accelerator / github)
 // so the routing decision is auditable from the client without reading this file.
+//
+// 首方 R2 镜像已随 R2 下线取消（2026-10-14）：这里不再探测 CDN，也不再重定向到
+// weishucdn。
 
-import { ACCELERATORS, accelerated, apkAssetOf, cdnHasBuild, githubAsset, R2_HOST, SNAPSHOT_ID } from '../_asset.js';
+import { ACCELERATORS, accelerated, githubAsset } from '../_asset.js';
 
 const ALLOWED_HOSTS = (function () {
   const hosts = { 'github.com': true };
-  hosts[R2_HOST] = true;
   ACCELERATORS.forEach(function (prefix) {
     try { hosts[new URL(prefix).hostname] = true; } catch (err) { /* ignore */ }
   });
@@ -34,30 +36,13 @@ function json(data, status) {
   });
 }
 
-/** The release asset size for `tag`, from the KV snapshot written by /api/latest. Zero means
- *  "we cannot verify what the CDN object contains" — which is treated as not usable. */
-async function expectedSize(env, tag) {
-  try {
-    const raw = await env.SERVER_REVIEW.get(SNAPSHOT_ID);
-    const snap = raw ? JSON.parse(raw) : null;
-    if (!snap || snap.tag_name !== tag) return 0;
-    const apk = apkAssetOf(snap);
-    return (apk && apk.size) || 0;
-  } catch (err) {
-    return 0;
-  }
-}
-
-async function resolveTarget(tag, file, env) {
+async function resolveTarget(tag, file) {
   const gh = githubAsset(tag, file);
   if (file !== 'app-release.apk') return { url: gh, source: 'github', reason: 'not-apk' };
 
-  const cdn = await cdnHasBuild(tag, await expectedSize(env, tag));
-  if (cdn.ok) return { url: cdn.url, source: 'cdn', reason: cdn.reason };
-
   const acc = await accelerated(gh);
-  if (acc.ok) return { url: acc.url, source: 'accelerator', reason: cdn.reason };
-  return { url: gh, source: 'github', reason: cdn.reason };
+  if (acc.ok) return { url: acc.url, source: 'accelerator', reason: 'accelerator' };
+  return { url: gh, source: 'github', reason: 'accelerator-unavailable' };
 }
 
 export async function onRequestGet(context) {
@@ -80,7 +65,7 @@ export async function onRequestGet(context) {
     return json({ ok: false, error: 'invalid tag or file' }, 400);
   }
 
-  const chosen = await resolveTarget(tag, file, env);
+  const chosen = await resolveTarget(tag, file);
   let parsed;
   try { parsed = new URL(chosen.url); } catch { return json({ ok: false, error: 'bad target' }, 500); }
   if (parsed.protocol !== 'https:' || !ALLOWED_HOSTS[parsed.hostname]) {

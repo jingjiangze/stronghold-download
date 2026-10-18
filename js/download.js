@@ -11,7 +11,6 @@
   'use strict';
 
   var REPO = 'jingjiangze/Stronghold-Protocol';
-  var FIRST_PARTY_HOST = 'weishucdn.jiangjiangze.icu'; // our own R2 CDN, not a config entry
   var API_EDGE = '/api/latest';
   var API_LATEST = 'https://api.github.com/repos/' + REPO + '/releases/latest';
   var API_LIST = 'https://api.github.com/repos/' + REPO + '/releases?per_page=10';
@@ -61,24 +60,8 @@
 
   var state = {
     release: null, asset: null, mirrors: [], measured: {}, primaryMirrorId: null,
-    versionSuffix: '', ghDownloads: null, cdn: null, history: null, changelog: null
+    versionSuffix: '', ghDownloads: null, history: null, changelog: null
   };
-
-  var CDN_REASON = {
-    missing: 'CDN加速还没有这个构建',
-    'size-unknown': '无法校验CDN加速上的构建',
-    'probe-failed': 'CDN加速探测超时'
-  };
-
-  /** Why the primary button is not using the first-party CDN, in one readable line. The
-   *  byte counts are printed because "size-mismatch" is only actionable with them. */
-  function cdnNote(cdn) {
-    if (!cdn || cdn.ok !== false) return '';
-    var why = cdn.reason === 'size-mismatch' && cdn.size && cdn.expected
-      ? 'CDN加速上的同名文件与本版本字节数不一致（CDN加速 ' + cdn.size + ' B · 发布 ' + cdn.expected + ' B）'
-      : (CDN_REASON[cdn.reason] || 'CDN加速暂不可用');
-    return why + ' · 主按钮改走公共加速器，也可点上方镜像按钮换源';
-  }
 
   /* ---- changelog (auto-derived from the release notes) --------------------------------
      没有人工维护的日志文件，所以这里从 release 正文自动提炼：稳定 release 里既有"壳版本"
@@ -246,7 +229,6 @@
 
   function allowedHosts() {
     var hosts = { 'github.com': true, 'api.github.com': true };
-    hosts[FIRST_PARTY_HOST] = true;
     state.mirrors.forEach(function (m) {
       [m.prefix, m.template].forEach(function (tpl) {
         if (!tpl) return;
@@ -303,7 +285,6 @@
       // 日志优先用线上给的 _history；它缺席时只用当前这条，绝不混打包快照里的旧列表
       state.history = (Array.isArray(rel._history) && rel._history.length)
         ? rel._history : [logEntryOf(rel)].filter(Boolean);
-      state.cdn = rel._cdn || null;
       if (rel._changelog && rel._changelog.tag) state.changelog = rel._changelog;
       state.versionSuffix = rel._stale ? '（缓存版本）' : '';
       writeOfflineCache(rel);
@@ -352,7 +333,7 @@
   /**
    * 线上答案存一份到本地：打包快照会随仓库变旧，而回访的浏览器手上有一份真实的、
    * 最近一次从线上拿到的 release。线上不可达时它比打包的那份更接近最新。
-   * 只存 release 本身（不带 _cdn / _history —— 那些是这一轮探测的结果，缓存起来就是撒谎）。
+   * 只存 release 本身（不带 _history —— 那是这一轮探测的结果，缓存起来就是撒谎）。
    */
   function writeOfflineCache(rel) {
     if (!rel || !rel.tag_name || rel._stale) return;
@@ -396,39 +377,19 @@
                  external: !!a.external };
       })
     };
-    // Prefer a first-party direct link when the notes carry one (R2 CDN beats the GitHub
-    // asset URL); otherwise keep the .apk release asset. Either way the page shows a
-    // single APK download. The GitHub asset URL is kept separately as `ghAsset` so the
-    // public accelerators (which only proxy GitHub URLs) can still be offered as mirrors.
+    // 正文里的 .apk 直链（out-of-band 发布）：链接照用，尺寸只能从正文文字里取 ——
+    // 这条链接指向的不是 release 资产，资产的大小/哈希描述不了它。
     var notesLink = apkLinkFromBody(rel.body);
     if (notesLink && allowedHostsExt(notesLink)) {
-      var ghApk = null;
-      release.assets.forEach(function (a) { if (!ghApk && /\.apk$/i.test(a.name)) ghApk = a; });
-      // The first-party object is a copy of *this* release asset (mirror-apk checks its
-      // sha256, promote.yml publishes a byte-for-byte copy), so the asset's size and digest
-      // describe exactly what the direct link serves. Replacing the whole asset with the
-      // link used to blank the size line and hide the SHA256 button.
-      var ours = new URL(notesLink).host === FIRST_PARTY_HOST;
-      var size = ours ? ghApk && ghApk.size : null;
-      var digest = ours ? ghApk && ghApk.digest : null;
-      if (!size) { // no release asset to quote (APK shipped out-of-band): trust the notes text
-        var sizeMatch = String(rel.body || '').match(/([\d.]+)\s*(MB|MiB|GB|GiB)/i);
-        size = sizeMatch ? Math.round(parseFloat(sizeMatch[1]) *
-          (sizeMatch[2].toUpperCase().charAt(0) === 'G' ? 1073741824 : 1048576)) : null;
-      }
-      // The edge measured this exact object on this request; its byte length beats the
-      // asset's, and once they differ the release digest is no longer the served file's.
-      var cdn = rel._cdn;
-      if (ours && cdn && cdn.ok && cdn.size) {
-        if (cdn.size !== size) digest = null;
-        size = cdn.size;
-      }
+      var sizeMatch = String(rel.body || '').match(/([\d.]+)\s*(MB|MiB|GB|GiB)/i);
+      var size = sizeMatch ? Math.round(parseFloat(sizeMatch[1]) *
+        (sizeMatch[2].toUpperCase().charAt(0) === 'G' ? 1073741824 : 1048576)) : null;
       release.assets = release.assets.filter(function (a) { return !/\.apk$/i.test(a.name); });
       release.assets.push({
         name: notesLink.split('/').pop().split(/[?#]/)[0] || 'app-release.apk',
         size: size,
         url: notesLink,
-        digest: digest || null,
+        digest: null,
         external: true
       });
     }
@@ -521,46 +482,12 @@
     return span;
   }
 
-  /** First-party R2 link, built from what the edge actually verified (`_cdn`). It leads the
-   *  row because the public accelerators proxy GitHub and can lag or serve cached bytes, so
-   *  only our own object is guaranteed to be the release the page is naming. */
-  function firstPartyButton() {
-    var cdn = state.cdn;
-    if (!cdn || !cdn.ok || !cdn.url) return null;
-    var parsed;
-    try { parsed = new URL(cdn.url); } catch (e) { return null; }
-    if (parsed.protocol !== 'https:' || parsed.hostname !== FIRST_PARTY_HOST) return null;
-
-    var a = document.createElement('a');
-    a.className = 'btn btn--secondary btn--sm dl-mirror is-active';
-    a.href = cdn.url;
-    a.rel = 'noopener';
-    a.referrerPolicy = 'no-referrer';
-    a.title = 'CDN加速（Cloudflare R2 首方直链）· 与本页版本同一构建，支持断点续传';
-    var label = document.createElement('span');
-    label.className = 'btn__label';
-    var name = document.createElement('span');
-    name.textContent = 'CDN加速';
-    label.appendChild(name);
-    a.appendChild(label);
-    var badge = document.createElement('span');
-    badge.className = 'dl-badge dl-badge--gold';
-    badge.textContent = cdn.reason === 'size-close' ? '推荐 · 字节差 ' + (cdn.size - cdn.expected) : '推荐';
-    a.appendChild(badge);
-    return a;
-  }
-
   function renderMirrors() {
     if (!el.mirrors) return;
     el.mirrors.textContent = '';
     // 微信里连镜像按钮也不渲染：每一个都是 .apk 直链，微信正是按这个拦页面。
     if (IN_WECHAT) { el.mirrors.hidden = true; return; }
     var applicable = 0;
-    var firstParty = firstPartyButton();
-    if (firstParty) {
-      el.mirrors.appendChild(firstParty);
-      applicable += 1;
-    }
     state.mirrors.forEach(function (mirror) {
       var url = buildMirrorUrl(mirror, state.asset, state.release.tag);
       if (!url) return;
@@ -580,11 +507,6 @@
     setText(el.size, fmtMB(asset.size));
     setText(el.primaryLabel, '下载 Android 客户端');
 
-    // Be explicit when the primary button cannot use the first-party CDN: the fallback is
-    // slower by design, and silence here is what made "slow download" undiagnosable.
-    var cdnText = cdnNote(state.cdn);
-    if (cdnText) setText(el.note, cdnText);
-
     if (asset.digest && el.hash) {
       el.hash.hidden = false;
       el.hash.dataset.sha = asset.digest;
@@ -600,10 +522,9 @@
   }
 
   /** Primary button always routes through the counting redirect (/api/download/<tag>/<file>).
-   *  The server verifies the first-party CDN copy and answers with a *query-free* CDN URL:
-   *  the R2 custom domain ignores Range as soon as the request carries a query string
-   *  (200 + whole body), so a `?cb=` direct link silently costs users resume support and
-   *  makes multi-connection downloaders refetch the entire file per connection. */
+   *  The server answers with a *query-free* accelerator URL (or the GitHub asset itself):
+   *  public accelerators ignore Range as soon as the request carries a query string
+   *  (200 + whole body), so a `?cb=` direct link silently costs users resume support. */
   function countedUrl() {
     if (!state.release) return null;
     return '/api/download/' + encodeURIComponent(state.release.tag) + '/' + PRIMARY_ASSET;
@@ -631,11 +552,7 @@
     if (chosen) {
       state.primaryMirrorId = chosen.id;
       el.primary.href = counted || url;
-      // The href is a server-side route, so the label must not name a mirror the server may
-      // not pick. Say what is actually decided: verified first-party CDN, or a fallback.
-      el.primary.title = '下载最新版 Android 客户端（' +
-        (!state.cdn ? chosen.name :
-          state.cdn.ok ? 'CDN加速' : 'CDN加速未校验 · 服务端自动选加速器') + '）';
+      el.primary.title = '下载最新版 Android 客户端（' + chosen.name + '）';
     }
     renderMirrors();
   }
@@ -720,8 +637,7 @@
     if (probe && probe.mbps > 0) {
       var m = state.mirrors.filter(function (x) { return x.id === id; })[0];
       setText(el.note, '已实测：' + (m ? m.name : id) + ' ≈ ' + probe.mbps.toFixed(1) +
-        ' MB/s（本次网络）· 支持断点续传；慢时切换其它镜像' +
-        (state.cdn && state.cdn.ok === false ? ' · CDN加速未通过校验，主按钮走加速器' : ''));
+        ' MB/s（本次网络）· 支持断点续传；慢时切换其它镜像');
       var fastest = fastestMirror();
       Object.keys(state.measured).forEach(function (key) { state.measured[key].fastest = false; });
       if (fastest && state.measured[fastest.id]) state.measured[fastest.id].fastest = true;
