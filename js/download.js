@@ -472,9 +472,13 @@
   function badgeFor(mirror) {
     var text = null;
     var gold = false;
-    if (mirror.mode === 'template' && mirror.id === 'r2') { text = '首方'; }
-    if (state.measured[mirror.id] && state.measured[mirror.id].fastest) { text = '实测最快'; gold = true; }
-    else if (state.measured[mirror.id]) { text = state.measured[mirror.id].mbps.toFixed(1) + ' MB/s'; }
+    var probe = state.measured[mirror.id];
+    if (probe && probe.fastest) { text = '实测最快'; gold = true; }
+    else if (probe && probe.mbps > 0) {
+      // `floor` marks the no-cors <img> probe: exact bytes are unreadable on an opaque
+      // response, so the number is a lower bound. Say so rather than implying precision.
+      text = (probe.floor ? '≥' : '') + probe.mbps.toFixed(1) + ' MB/s';
+    }
     if (!text) return null;
     var span = document.createElement('span');
     span.className = 'dl-badge' + (gold ? ' dl-badge--gold' : '');
@@ -521,13 +525,32 @@
     applyPrimary();
   }
 
-  /** Primary button always routes through the counting redirect (/api/download/<tag>/<file>).
-   *  The server answers with a *query-free* accelerator URL (or the GitHub asset itself):
-   *  public accelerators ignore Range as soon as the request carries a query string
-   *  (200 + whole body), so a `?cb=` direct link silently costs users resume support. */
+  /** Server-side counting redirect (/api/download/<tag>/<file>). Used as the primary
+   *  button's href only while the browser has no measurement to go on; the server answers
+   *  with a *query-free* accelerator URL (or the GitHub asset itself), because public
+   *  accelerators ignore Range as soon as the request carries a query string. */
   function countedUrl() {
     if (!state.release) return null;
     return '/api/download/' + encodeURIComponent(state.release.tag) + '/' + PRIMARY_ASSET;
+  }
+
+  /** Primary button href.
+   *
+   * When the browser has measured the mirrors, the fastest one becomes the button itself:
+   * the whole point of measuring is to save the user a click and a wrong guess. The server
+   * route (/api/download/...) is only the fallback for when we could not measure anything —
+   * it does its own race, but that costs a round trip and the user sees a bare redirect.
+   *
+   * The measured URL is used *as built* (no extra query string): public accelerators drop
+   * Range as soon as the request carries a query, and a `?cb=` suffix would silently cost
+   * resume support and make multi-connection downloaders refetch the whole file. */
+  function primaryHref() {
+    var fastest = fastestMirror();
+    if (fastest) {
+      var url = buildMirrorUrl(fastest, state.asset, state.release.tag);
+      if (url) return { href: url, mirror: fastest, via: 'measured' };
+    }
+    return { href: countedUrl(), mirror: null, via: 'counted' };
   }
 
   function applyPrimary() {
@@ -537,23 +560,24 @@
       renderMirrors();
       return;
     }
-    var counted = countedUrl();
-    var url = null;
-    var chosen = null;
-    var fastest = fastestMirror();
-    if (fastest) chosen = fastest;
-    else {
+    if (!state.release || !state.asset) return;
+    var target = primaryHref();
+    var chosen = target.mirror;
+    if (!chosen) {
+      // Nothing measured: label the button after the server-side choice so it never names a
+      // mirror the server may not pick.
       for (var i = 0; i < state.mirrors.length; i += 1) {
         var m = state.mirrors[i];
-        var candidate = buildMirrorUrl(m, state.asset, state.release.tag);
-        if (candidate) { chosen = m; url = candidate; break; }
+        if (buildMirrorUrl(m, state.asset, state.release.tag)) { chosen = m; break; }
       }
     }
-    if (chosen) {
-      state.primaryMirrorId = chosen.id;
-      el.primary.href = counted || url;
-      el.primary.title = '下载最新版 Android 客户端（' + chosen.name + '）';
-    }
+    if (!target.href) return;
+    if (chosen) state.primaryMirrorId = chosen.id;
+    el.primary.href = target.href;
+    // Name what was actually decided: the mirror we measured, or the server-side race that
+    // /api/download runs on click. Never claim a mirror the browser has not verified.
+    el.primary.title = '下载最新版 Android 客户端（' +
+      (target.via === 'measured' ? chosen.name : '服务端自动选加速器') + '）';
     renderMirrors();
   }
 
@@ -570,18 +594,60 @@
     return best;
   }
 
-  /* ---- browser speed probe (only for mirrors that send CORS headers) ---------------- */
+  /* ---- browser speed probe ------------------------------------------------------------
+   * Two techniques, because most of these proxies send no CORS headers:
+   *  - `cors:true` mirrors are measured by streaming bytes through fetch (exact MB/s).
+   *  - everything else is measured with an <img> load, which needs no CORS at all. The image
+   *    never decodes (an APK is not an image), but `load`/`error` still fire once the browser
+   *    has the first bytes, and the elapsed time plus the bytes we asked for gives a
+   *    throughput floor. Opaque responses hide the byte count, so we read the timing only.
+   * Both are best-effort: a mirror that fails to measure simply never wins the primary. */
 
   function probeMirrors() {
     if (navigator.connection && navigator.connection.saveData) return Promise.resolve();
     var targets = state.mirrors.filter(function (m) {
-      return m.cors === true && buildMirrorUrl(m, state.asset, state.release.tag);
+      return buildMirrorUrl(m, state.asset, state.release.tag);
     });
-    var chain = Promise.resolve();
-    targets.forEach(function (mirror) {
-      chain = chain.then(function () { return probeOne(mirror); });
+    // Concurrent on purpose: the old serial chain made the user wait for every candidate's
+    // timeout in turn, which is exactly why the badge often appeared after the click.
+    return Promise.all(targets.map(function (mirror) {
+      return mirror.cors === true ? probeOne(mirror) : probeOpaque(mirror);
+    }));
+  }
+
+  /** no-cors probe for mirrors without CORS headers: time how long an <img> takes to
+   *  resolve. Cannot read bytes, so this yields a floor, not an exact rate — but it is
+   *  enough to tell a 15 MB/s proxy from a 5 KB/s one. */
+  function probeOpaque(mirror) {
+    var url = buildMirrorUrl(mirror, state.asset, state.release.tag);
+    if (!url) return Promise.resolve();
+    var started = Date.now();
+    return new Promise(function (resolve) {
+      var img = new Image();
+      var done = false;
+      function finish(ok) {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        var seconds = Math.max((Date.now() - started) / 1000, 0.05);
+        // Bytes actually requested; on an opaque response we cannot confirm how many
+        // arrived, so treat the full request as the sample and let the floor stand.
+        if (ok) {
+          state.measured[mirror.id] = { mbps: (PROBE_BYTES / 1048576) / seconds, floor: true };
+        } else if (!state.measured[mirror.id]) {
+          state.measured[mirror.id] = { mbps: 0, failed: true };
+        }
+        resolve(state.measured[mirror.id]);
+      }
+      var timer = setTimeout(function () { img.src = ''; finish(false); }, PROBE_TIMEOUT_MS);
+      img.onload = function () { finish(true); };
+      img.onerror = function () {
+        // An APK is not a decodable image, so `error` is the *success* signal here: the
+        // browser got bytes it tried to decode. Only a network-level failure fires early.
+        if (Date.now() - started > 250) finish(true); else finish(false);
+      };
+      img.src = url;
     });
-    return chain;
   }
 
   function probeOne(mirror) {
@@ -638,11 +704,14 @@
       var m = state.mirrors.filter(function (x) { return x.id === id; })[0];
       setText(el.note, '已实测：' + (m ? m.name : id) + ' ≈ ' + probe.mbps.toFixed(1) +
         ' MB/s（本次网络）· 支持断点续传；慢时切换其它镜像');
-      var fastest = fastestMirror();
-      Object.keys(state.measured).forEach(function (key) { state.measured[key].fastest = false; });
-      if (fastest && state.measured[fastest.id]) state.measured[fastest.id].fastest = true;
-      renderMirrors();
     }
+    var fastest = fastestMirror();
+    Object.keys(state.measured).forEach(function (key) { state.measured[key].fastest = false; });
+    if (fastest && state.measured[fastest.id]) state.measured[fastest.id].fastest = true;
+    renderMirrors();
+    // The measurement only exists after this point, so the primary button can only be
+    // pointed at the fastest mirror now — not during the first render.
+    applyPrimary();
   }
 
   /* ---- hash copy ------------------------------------------------------------------- */
