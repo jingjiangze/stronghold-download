@@ -36,6 +36,31 @@ const PENDING_LABEL = /（待核）\s*$/;
 const STABLE_PROMOTE_MS = 24 * 3600 * 1000;
 const PEOPLE_PROMOTE = 5;
 
+/**
+ * 「（待核）」转正后该叫什么。用户 2026-10-20 口径：**名称不能直接是域名**。
+ *
+ * 旧逻辑是 `name.replace(PENDING_LABEL,'')`，于是 `ark.sakusky.com（待核）` 转正成
+ * 光秃秃的 `ark.sakusky.com` —— 比带后缀还糟，玩家根本不知道那是谁。改成与 scout
+ * （scout.mjs 的 entryName）同一套降级：
+ *   ① 名字本身已经是人类可读的（去掉后缀后含汉字，或不是域名形态）→ 原样留；
+ *   ② 否则取主机名首段当牌子（ark.sakusky.com → ark）；
+ *   ③ 首段是通用前缀（www/sp/game/play…）或纯数字（IP）→ 退回「社区服」这类中性称呼。
+ * 纯函数、不碰 env，便于单测。
+ */
+export function promotedName(entry) {
+  const bare = String((entry && entry.name) || '').replace(PENDING_LABEL, '').trim();
+  let host = '';
+  try { host = new URL((entry && entry.url) || '').hostname; } catch { /* 坏 URL：只用 name */ }
+  // ① 已经有个人名：含汉字、或者看起来不像域名（没有点分的 TLD）
+  if (bare && (/[\u4e00-\u9fa5]/.test(bare) || !/^[a-z0-9-]+(\.[a-z0-9-]+)+$/i.test(bare))) return bare;
+  const label = (host.split('.')[0] || '').trim();
+  const generic = /^(www|web|sp|game|play|server|srv|api|app|m|test|node|main|home|panel|status|health)$/i;
+  // ② 主机名首段像个牌子
+  if (label.length >= 2 && !generic.test(label) && !/^\d+$/.test(label) && /[A-Za-z\u4e00-\u9fa5]/.test(label)) return label;
+  // ③ 域名兜底：中性称呼，绝不留裸域名
+  return '社区服';
+}
+
 /* 「退休」闸门。分区只把探不到的条目挪进 invalid —— 页面会藏，但**游戏客户端读的是签名清单**，
    不看分区，所以清单只进不出，旧服会一直堆着（2026-10-11 用户报「很多旧服务器还在」：33 条里
    14 条四条出口都拿不到指纹，只有 7 条被标成 invalid，其余 7 条仍挂在 valid 上）。
@@ -748,7 +773,8 @@ export async function onRequestGet(context) {
     const why = people > PEOPLE_PROMOTE ? `${people} 位玩家点过「打开」`
       : (held >= STABLE_PROMOTE_MS ? '连续校验通过满一天' : '');
     if (!why) continue;
-    const name = String(s.name).replace(PENDING_LABEL, '').trim() || s.url;
+    // 去掉「（待核）」后不能留下裸域名（ark.sakusky.com 没人知道是谁），走 promotedName 降级
+    const name = promotedName(s);
     promoted.push({ id: s.id, from: s.name, to: name, why });
   }
   // 改名（转正）、搬进后台、搬回前台、退休（从后台删除）**合一次签名一次发布**：分几次写就要处理

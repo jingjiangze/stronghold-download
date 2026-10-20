@@ -154,12 +154,12 @@ const pending = (id, name) => ({ id, name: name || `${id}.example（待核）`, 
   const out = await run(env);
   const doc = list(env);
   await ok('去重点击人数 > 5 → 去掉（待核）并重签发布', () => {
-    assert.equal(doc.servers.find((s) => s.id === 'busy').name, 'busy.example');
+    assert.equal(doc.servers.find((s) => s.id === 'busy').name, 'busy');  // 2026-10-20：不能留裸域名
     assert.ok(doc.sig, '改名后必须重签，否则客户端会整份拒收');
     assert.equal(out.body.promoted.find((p) => p.id === 'busy').why, '6 位玩家点过「打开」');
   });
   await ok('连续通过满一天 → 去掉（待核）', () => {
-    assert.equal(doc.servers.find((s) => s.id === 'steady').name, 'steady.example');
+    assert.equal(doc.servers.find((s) => s.id === 'steady').name, 'steady');
     assert.equal(out.body.promoted.find((p) => p.id === 'steady').why, '连续校验通过满一天');
   });
   await ok('两条判据都没够 → 一个字都不改', () => {
