@@ -1,5 +1,5 @@
 {
-  "updated": "2026-10-13T19:30:20.724Z",
+  "updated": "2026-10-13T19:31:39.332Z",
   "servers": [
     {
       "id": "xiaolubao",
@@ -217,5 +217,5 @@
   ],
   "keyId": "sp-2026-10",
   "v": 1,
-  "sig": "QnH6szrpgBqr+SEJ/2OxZXLV9O3ABKepEnJRf2CgCaUmhJmIbp+FCwm+YdU00aqQ9VME+w7Lk7sKWWBkhYOMDg=="
+  "sig": "57ttbRto5cbk06iVkuQo7CgffqVygFnKu7n84cpTWGurzMkohZ/YNP70/Q8UeFvo5j0O/4iNGyERwJuCEITZCA=="
 }

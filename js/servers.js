@@ -15,9 +15,11 @@
 (function () {
   'use strict';
 
+  // 网页版 = 匿名只读快照：只读取仓库内的 data/servers.json（名称已脱敏、用途仅为展示），
+  // 与 APK 端读取的 R2 真清单（含真实地址/名称）完全分离。延迟探测仍用真实 url 跑，但不展示地址。
+  var ANON_WEB = true;
   var LIST_SOURCES = [
-    'https://weishucdn.jiangjiangze.icu/site/servers.json', // hot copy (R2, CORS open)
-    './data/servers.json'                                    // repository fallback snapshot
+    './data/servers.json' // 匿名社区快照（仓库内，与 APK 的 R2 真清单隔离）
   ];
   var VERIFIED_URL = 'https://weishucdn.jiangjiangze.icu/site/verified.json';
   var VERIFY_REFRESH_MS = 30 * 60 * 1000; // 与后端档位一致：整体默认 30 分钟才真打一轮
@@ -137,33 +139,15 @@
   function loadList() {
     var cached = loadListCache();
     if (cached) { prepare(cached); render(); }
-    var gotLive = false;
-    var preparedSources = 0;
-    var grab = function (url, isLive) {
-      return fetchJson(url).catch(function () { return null; }).then(function (data) {
-        if (!data) return null;
-        // 现网值已经到了就别让仓库里那份快照盖回去（快照是手工同步的，可能落后）
-        if (!isLive && gotLive) return data;
-        if (isLive) gotLive = true;
-        var hadList = preparedSources > 0;
-        preparedSources += 1;
-        prepare(data);
-        render();
-        saveListCache(data);
-        // 第二份来源到货：换源带来的新条目要补测（第一份由 boot() 负责；正在跑就排队）
-        if (hadList) {
-          if (state.running) state.reprobe = true;
-          else probeAll(false);
-        }
-        return data;
-      });
-    };
-    var snap = grab(LIST_SOURCES[1], false);
-    var live = grab(LIST_SOURCES[0], true);
-    // boot() 把 verified.json 排在清单之后，所以这里**只等先到的那一路**。
-    // 以前是 Promise.all：10-07 实测 R2 现网值 0.9 s、打包快照 6.9 s，
-    // 负载条和版本判定就被最慢的一路整整拖了 6 秒（首屏 13.7 s 才出现）。
-    return Promise.race([live, snap]);
+    // 匿名只读模式：清单只有一份（仓库内 data/servers.json），不再取 R2 现网值。
+    return fetchJson(LIST_SOURCES[0]).catch(function () { return null; }).then(function (data) {
+      if (!data) return null;
+      prepare(data);
+      render();
+      saveListCache(data);
+      if (!state.running) probeAll(false);
+      return data;
+    });
   }
 
   function prepare(data) {
@@ -794,6 +778,7 @@
     name.textContent = displayName(server);
     // 版本号是**域名的兄弟**，不是域名的孩子：`.sv-host` 带 ellipsis 裁剪，以前把版本 span
     // 塞在它里面，域名一长（game.lingluotoki.dpdns.org）就把 `v0.1.4` 咬成 `v⋯`。
+    // 匿名只读模式：不渲染域名行（避免暴露真实地址）。
     var hostline = document.createElement('span');
     hostline.className = 'sv-hostline';
     var host = document.createElement('span');
@@ -802,7 +787,7 @@
       ? server.url.host
       : '无效地址' + (server.reason ? ' · ' + server.reason : '');
     main.appendChild(name);
-    hostline.appendChild(host);
+    if (!ANON_WEB) hostline.appendChild(host);
     div.appendChild(main);
 
     // Meter = room load (rooms / 1000). Occupancy comes from the shared server-side
@@ -856,8 +841,11 @@
 
     // 大杯=好评、小杯=差评，放在「打开」前面（先给判断再给跳转）。两个都只调排序权重：
     // 净分高的在同版本里往前挪，**不会因为被差评就消失**（理由见 vouch.js 的注释）。
-    var cup = cupGroup(server);
-    div.appendChild(cup);
+    // 匿名只读模式：不展示投票（避免向已禁用的 /api/servers/vouch 发请求）。
+    if (!ANON_WEB) {
+      var cup = cupGroup(server);
+      div.appendChild(cup);
+    }
 
     // 维护者备注（servers.json 的 note，如协同经济说明）：放在「目前已点击」前面，
     // 一行小字，不参与排序或健康判定。
@@ -870,26 +858,29 @@
     }
 
     // 打开跳转的点击数：服务端快照 + 本机刚点过的增量（数字要立刻动，不等 120s 缓存）
-    var oc = document.createElement('span');
-    var on = openCount(server.id);
-    oc.className = 'sv-opencount';
-    oc.hidden = !on.total;
-    oc.textContent = '目前已点击 ' + on.total + ' 次' + (on.people > 1 ? '（' + on.people + ' 人）' : '');
-    oc.title = openTitle(on);
-    main.appendChild(oc);
+    // 匿名只读模式：不展示点击数、不开「打开」链接（避免暴露真实地址、不对已禁用的 /api 发请求）。
+    if (!ANON_WEB) {
+      var oc = document.createElement('span');
+      var on = openCount(server.id);
+      oc.className = 'sv-opencount';
+      oc.hidden = !on.total;
+      oc.textContent = '目前已点击 ' + on.total + ' 次' + (on.people > 1 ? '（' + on.people + ' 人）' : '');
+      oc.title = openTitle(on);
+      main.appendChild(oc);
 
-    if (server.url) {
-      var open = document.createElement('a');
-      open.className = 'btn btn--secondary btn--sm';
-      open.href = server.url.href;
-      open.target = '_blank';
-      open.rel = 'noopener noreferrer';
-      var label = document.createElement('span');
-      label.className = 'btn__label';
-      label.textContent = '打开';
-      open.appendChild(label);
-      open.addEventListener('click', function () { countOpen(server, oc); });
-      div.appendChild(open);
+      if (server.url) {
+        var open = document.createElement('a');
+        open.className = 'btn btn--secondary btn--sm';
+        open.href = server.url.href;
+        open.target = '_blank';
+        open.rel = 'noopener noreferrer';
+        var label = document.createElement('span');
+        label.className = 'btn__label';
+        label.textContent = '打开';
+        open.appendChild(label);
+        open.addEventListener('click', function () { countOpen(server, oc); });
+        div.appendChild(open);
+      }
     }
     return div;
   }
