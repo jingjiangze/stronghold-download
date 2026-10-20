@@ -1,15 +1,7 @@
 {
-  "updated": "2026-10-18",
-  "note": "Third-party accelerators for the download page. Prefix mirrors get the GitHub asset URL appended. Hosts must stay on this list; the page re-validates every built URL against it. No first-party link is offered: the R2 mirror and the mirror-apk upload chain were cancelled on 2026-10-18, so the primary button resolves to a public accelerator (or GitHub itself) instead. No raw GitHub direct link is offered either: the page is for networks where github.com is unusable.",
+  "updated": "2026-10-20",
+  "note": "Third-party accelerators for the download page. Prefix mirrors get the GitHub asset URL appended. Hosts must stay on this list; the page re-validates every built URL against it. No first-party link is offered: the R2 mirror and the mirror-apk upload chain were cancelled on 2026-10-18, so the primary button resolves to a public accelerator (or GitHub itself) instead. No raw GitHub direct link is offered either: the page is for networks where github.com is unusable. 2026-10-20: gh.llkk.cc removed (TCP connect fails from both a proxied and a direct mainland uplink, so it is a dead link) and ghproxy.net removed (it was a typosquat of gh-proxy.com that returned an HTML redirector page, ~5 KB/s when it did answer, and the page already hard-blocks its host). The page now measures every mirror left here, CORS or not, so the button follows the fastest one.",
   "mirrors": [
-    {
-      "id": "ghfast",
-      "name": "ghfast.top",
-      "mode": "prefix",
-      "prefix": "https://ghfast.top/",
-      "cors": false,
-      "range": true
-    },
     {
       "id": "ghproxy",
       "name": "gh-proxy.com",
@@ -19,18 +11,10 @@
       "range": true
     },
     {
-      "id": "llkk",
-      "name": "gh.llkk.cc",
+      "id": "ghfast",
+      "name": "ghfast.top",
       "mode": "prefix",
-      "prefix": "https://gh.llkk.cc/",
-      "cors": false,
-      "range": false
-    },
-    {
-      "id": "ghproxynet",
-      "name": "ghproxy.net",
-      "mode": "prefix",
-      "prefix": "https://ghproxy.net/",
+      "prefix": "https://ghfast.top/",
       "cors": false,
       "range": true
     }

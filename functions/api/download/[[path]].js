@@ -3,18 +3,20 @@
 //
 // Flow: validate the request against a strict allowlist (tag/file patterns, https
 // GitHub / accelerator hosts only, no private/loopback targets) -> resolve the target
-// (a public accelerator in front of the GitHub asset, else the GitHub asset itself)
+// (the fastest accelerator in front of the GitHub asset, else the GitHub asset itself)
 // -> increment a KV counter -> 302.
 // The counter key is `dlcount/<tag>/<file>`; totals are read by /api/download/total. Users
 // who copy the raw asset link bypass the redirect, so this number is a lower bound.
 //
-// `x-download-source` on the response says which path was taken (accelerator / github)
-// so the routing decision is auditable from the client without reading this file.
+// `x-download-source` on the response says which path was taken (accelerator / github),
+// `x-download-mbps` the measured throughput of the winner, and `x-download-reason` carries
+// how many candidates were raced — so the routing decision is auditable from the client
+// without reading this file.
 //
 // 首方 R2 镜像已随 R2 下线取消（2026-10-14）：这里不再探测 CDN，也不再重定向到
 // weishucdn。
 
-import { ACCELERATORS, accelerated, githubAsset } from '../_asset.js';
+import { ACCELERATORS, githubAsset, raceAccelerators } from '../_asset.js';
 
 const ALLOWED_HOSTS = (function () {
   const hosts = { 'github.com': true };
@@ -38,11 +40,21 @@ function json(data, status) {
 
 async function resolveTarget(tag, file) {
   const gh = githubAsset(tag, file);
-  if (file !== 'app-release.apk') return { url: gh, source: 'github', reason: 'not-apk' };
+  if (file !== 'app-release.apk') return { url: gh, source: 'github', reason: 'not-apk', mbps: 0, probed: 0 };
 
-  const acc = await accelerated(gh);
-  if (acc.ok) return { url: acc.url, source: 'accelerator', reason: 'accelerator' };
-  return { url: gh, source: 'github', reason: 'accelerator-unavailable' };
+  // Race the accelerators and keep the fastest that actually streams bytes. The cost is one
+  // candidate's timeout, not the sum, so this stays well inside a click's patience budget.
+  const acc = await raceAccelerators(gh);
+  if (acc.ok) {
+    return {
+      url: acc.url,
+      source: 'accelerator',
+      reason: 'fastest-of-' + acc.probed,
+      mbps: acc.mbps,
+      probed: acc.probed,
+    };
+  }
+  return { url: gh, source: 'github', reason: 'accelerator-unavailable', mbps: 0, probed: 0 };
 }
 
 export async function onRequestGet(context) {
@@ -88,6 +100,10 @@ export async function onRequestGet(context) {
       'cache-control': 'no-store',
       'x-download-source': chosen.source,
       'x-download-reason': chosen.reason || '',
+      // Measured throughput of the winner (MB/s, one decimal). Zero when we fell back to
+      // GitHub itself. Purely informational: it makes the routing decision auditable from
+      // the outside and gives the page something to show next to the button.
+      'x-download-mbps': String(Math.round((chosen.mbps || 0) * 10) / 10),
     },
   });
 }
