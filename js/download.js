@@ -698,20 +698,26 @@
   }
 
   function announceProbe() {
+    var fastest = fastestMirror();
+    Object.keys(state.measured).forEach(function (key) { state.measured[key].fastest = false; });
+    if (fastest && state.measured[fastest.id]) state.measured[fastest.id].fastest = true;
+    // The measurement only exists after this point, so the primary button can only be
+    // pointed at the fastest mirror now — not during the first render.
+    applyPrimary();
+
+    // Describe what the button actually points at, not what it used to point at:
+    // applyPrimary() is what finally resolves primaryMirrorId, so the note has to be
+    // written after it — otherwise the text names one mirror while the button goes to
+    // another, which is exactly the confusion this page is supposed to remove.
     var id = state.primaryMirrorId;
     var probe = id ? state.measured[id] : null;
     if (probe && probe.mbps > 0) {
       var m = state.mirrors.filter(function (x) { return x.id === id; })[0];
-      setText(el.note, '已实测：' + (m ? m.name : id) + ' ≈ ' + probe.mbps.toFixed(1) +
-        ' MB/s（本次网络）· 支持断点续传；慢时切换其它镜像');
+      var name = m ? m.name : id;
+      setText(el.note, '已实测：' + name + ' ≈ ' + (probe.floor ? '≥' : '') +
+        probe.mbps.toFixed(1) + ' MB/s（本次网络）· 支持断点续传；慢时切换其它镜像');
     }
-    var fastest = fastestMirror();
-    Object.keys(state.measured).forEach(function (key) { state.measured[key].fastest = false; });
-    if (fastest && state.measured[fastest.id]) state.measured[fastest.id].fastest = true;
     renderMirrors();
-    // The measurement only exists after this point, so the primary button can only be
-    // pointed at the fastest mirror now — not during the first render.
-    applyPrimary();
   }
 
   /* ---- hash copy ------------------------------------------------------------------- */
