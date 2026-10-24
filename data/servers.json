@@ -1,6 +1,14 @@
 {
-  "updated": "2026-10-13T19:31:39.332Z",
+  "updated": "2026-10-24",
   "servers": [
+    {
+      "id": "superbig",
+      "name": "超大杯",
+      "url": "https://superbig.jiangjiangze.icu/",
+      "probe": "/healthz",
+      "enabled": true,
+      "note": "超大杯服务器"
+    },
     {
       "id": "xiaolubao",
       "name": "小鹿宝",
@@ -217,5 +225,5 @@
   ],
   "keyId": "sp-2026-10",
   "v": 1,
-  "sig": "57ttbRto5cbk06iVkuQo7CgffqVygFnKu7n84cpTWGurzMkohZ/YNP70/Q8UeFvo5j0O/4iNGyERwJuCEITZCA=="
+  "sig": "AoP74WH9WGDpth0LXeigQhe/uaO/gXJ2SGh5SQpDYsUIzKj5/kt+/yqKAmQM2eFmWYzknRJQuKJyiYppqzk+Aw=="
 }
