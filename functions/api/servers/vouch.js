@@ -24,6 +24,8 @@
 // 孤儿票也清得掉，所以这一步走在清单查询之前），"all":true 清整本；GET 读计数台账
 // （只给每台的好/差票数与最后时间，不含来源哈希）。匿名 purge 一律 403，无口令 GET 照旧 405。
 
+import { blobStore } from '../../_store.js';
+
 const LIST_KEY = 'site/servers.json';
 const VOUCH_KEY = 'site/vouches.json';
 const MAX_IDS = 200;
@@ -84,13 +86,13 @@ function trim(oldDoc) {
 
 async function readVouches(env) {
   let doc = { updated: null, vouches: {} };
-  const res = await env.R2BUCKET.get(VOUCH_KEY);
+  const res = await blobStore(env).get(VOUCH_KEY);
   if (res) { try { doc = trim(JSON.parse(await res.text())); } catch { /* 覆盖重来 */ } }
   return doc;
 }
 
 async function writeVouches(env, doc) {
-  await env.R2BUCKET.put(VOUCH_KEY, JSON.stringify(doc, null, 1) + '\n', {
+  await blobStore(env).put(VOUCH_KEY, JSON.stringify(doc, null, 1) + '\n', {
     httpMetadata: { contentType: 'application/json', cacheControl: 'private, no-store' },
   });
 }
@@ -99,7 +101,7 @@ const counts = (rec) => ({ good: (rec && rec.goodCount) || 0, bad: (rec && rec.b
 
 export async function onRequestPost(context) {
   const { request, env } = context;
-  if (!env.R2BUCKET) return json({ ok: false, error: 'R2 binding missing' }, 500);
+  if (!env.DB) return json({ ok: false, error: 'DB binding missing' }, 500);
 
   let body;
   try { body = await request.json(); } catch { return json({ ok: false, error: 'bad json' }, 400); }
@@ -125,7 +127,7 @@ export async function onRequestPost(context) {
                   scope: body.all === true ? '*' : id, ids_left: Object.keys(doc.vouches) });
   }
 
-  const listRes = await env.R2BUCKET.get(LIST_KEY);
+  const listRes = await blobStore(env).get(LIST_KEY);
   if (!listRes) return json({ ok: false, error: 'list missing' }, 500);
   let entry;
   try {
@@ -182,7 +184,7 @@ export async function onRequestGet(context) {
   const { request, env } = context;
   const isAdmin = !!env.PUBLISH_KEY
     && (request.headers.get('x-admin-key') || '') === env.PUBLISH_KEY;
-  if (!isAdmin || !env.R2BUCKET) return json({ ok: false, error: 'POST only' }, 405);
+  if (!isAdmin || !env.DB) return json({ ok: false, error: 'POST only' }, 405);
   const doc = await readVouches(env);
   const ids = {};
   for (const id of Object.keys(doc.vouches)) {

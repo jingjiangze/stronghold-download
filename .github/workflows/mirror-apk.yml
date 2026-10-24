@@ -1,18 +1,14 @@
 name: mirror-apk
 
-# Keeps the first-party R2 copy of the CURRENT release in step with GitHub.
+# 2026-10-24 起本任务只剩一件事：每次发布把「玩家向更新日志」写进 D1（site_blob 表的
+# site/changelog.json 键），供 GET /api/latest 的 _changelog 字段读取。
 #
-# Why: the game repo's own publish job skips content-axis tags, which left the download page
-# without an R2 object for the current release for 24+ minutes (shell-v2.9.3), and before that
-# produced CDN objects that were *different builds* than the release asset (shell-v2.8.4:
-# +4 bytes, three zip entries with different CRCs). Both cases force the page to fall back to
-# third-party accelerators, which is exactly what visitors complain about.
+# 历史：本任务原是「把当前 release 的 APK 逐字节镜像到 R2 首方 CDN（weishucdn.jiangjiangze.icu）」，
+# 后来下载链改走 GitHub + 公共加速器竞速（functions/api/download/[[path]].js 已不读 R2 的 apk/ 键），
+# 2026-10-24 R2 在账号层被禁用（CF API 10042），APK 镜像与 prune 链彻底无家可归，一并下线。
+# 站点 Functions 的存储也已从 R2 迁到 D1（functions/_store.js），所以日志改用 wrangler d1 写入。
 #
-# This job copies the release asset verbatim, so the CDN object is byte-identical to what
-# GitHub publishes (sha256 is checked against the asset digest before uploading). That makes
-# the download page's "prefer the first-party CDN" rule actually hold.
-#
-# Pruning to the newest two APKs is a separate job (.github/workflows/prune-r2.yml).
+# 需要 secrets：CLOUDFLARE_API_TOKEN（D1:Edit）、CLOUDFLARE_ACCOUNT_ID —— 与 deploy-pages 同一对。
 
 on:
   schedule:
@@ -32,9 +28,6 @@ concurrency:
 
 env:
   SRC_REPO: jingjiangze/Stronghold-Protocol
-  BUCKET: stronghold-assets
-  R2_ENDPOINT: https://8641802a2d46497f1cc4e7a4cba365d2.r2.cloudflarestorage.com
-  CDN_HOST: weishucdn.jiangjiangze.icu
   APK_NAME: app-release.apk
 
 jobs:
@@ -63,112 +56,26 @@ jobs:
           fi
           test -n "$meta" || { echo "no stable release with $APK_NAME found"; exit 1; }
           tag=$(echo "$meta" | jq -r .tag)
-          version=${tag#shell-}
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "size=$(echo "$meta" | jq -r .apk.size)" >> "$GITHUB_OUTPUT"
-          echo "digest=$(echo "$meta" | jq -r '.apk.digest // ""')" >> "$GITHUB_OUTPUT"
-          echo "release: $tag (v$version, $(echo "$meta" | jq -r .apk.size) bytes)"
-
-      - name: Check whether the CDN already holds this build
-        id: probe
-        run: |
-          set -euo pipefail
-          ver="${{ steps.rel.outputs.version }}"
-          want="${{ steps.rel.outputs.size }}"
-          # 两个键名都要查：主仓库 promote 链按 tag 传（apk/shell-vX.Y.Z.apk，release 正文里
-          # 广告的就是它），本任务按 versionName 传（apk/stronghold-vX.Y.Z.apk）。
-          # 只看后者会重复上传一整包（518 MB）—— 10-05 的 shell-v2.9.18 就是这样多占了一份。
-          # 带 cache-buster 是必须的：边缘会把某个键的 404 缓存几小时，陈旧 MISS 会让人重复上传。
-          for key in "apk/stronghold-$ver.apk" "apk/shell-$ver.apk"; do
-            url="https://$CDN_HOST/$key"
-            hdr=$(curl -sI --max-time 30 "$url?cb=$(date +%s%N)" || true)
-            code=$(printf '%s' "$hdr" | awk 'NR==1{print $2}')
-            len=$(printf '%s' "$hdr" | awk 'tolower($1)=="content-length:"{gsub(/\r/,"");print $2}')
-            echo "cdn $key: HTTP $code, ${len:-0} bytes (release asset: $want)"
-            if [ "$code" = "200" ] && [ "$len" = "$want" ]; then
-              echo "skip=true" >> "$GITHUB_OUTPUT"
-              echo "already=$key" >> "$GITHUB_OUTPUT"
-              echo "already-cdn-copy present at $key — nothing to mirror"
-              exit 0
-            fi
-          done
-          echo "skip=false" >> "$GITHUB_OUTPUT"
-
-      - name: Install rclone
-        run: |
-          set -euo pipefail
-          curl -fsSL https://downloads.rclone.org/rclone-current-linux-amd64.zip -o rclone.zip
-          unzip -q rclone.zip
-          sudo install -m 0755 rclone-*/rclone /usr/local/bin/rclone
+          echo "release: $tag ($(echo "$meta" | jq -r .apk.size) bytes)"
 
       - name: Publish the player-facing changelog
-        # 每次发布都要跑（哪怕 APK 已在 CDN 上被 skip 掉）：日志和字节上传是两件事
+        # 每轮都跑：日志和（已下线的）字节上传是两件事；发布节奏由 tag 变化自然去重
         env:
           GH_TOKEN: ${{ github.token }}
-          R2_ACCESS_KEY: ${{ secrets.R2_ACCESS_KEY }}
-          R2_SECRET_KEY: ${{ secrets.R2_SECRET_KEY }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           TAG: ${{ steps.rel.outputs.tag }}
         run: |
           set -euo pipefail
           node tools/changelog.mjs --tag "$TAG" --out changelog.json
-          if [ -z "${R2_ACCESS_KEY:-}" ] || [ -z "${R2_SECRET_KEY:-}" ]; then
-            echo "::warning::R2 secrets absent — 只打印日志，不发布 site/changelog.json"
+          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
+            echo "::warning::CLOUDFLARE_API_TOKEN absent — 只打印日志，不写 D1"
             cat changelog.json
             exit 0
           fi
-          rclone config create r2 s3 provider=Cloudflare access_key_id="$R2_ACCESS_KEY" \
-            secret_access_key="$R2_SECRET_KEY" endpoint="$R2_ENDPOINT" acl=private \
-            --non-interactive > /dev/null
-          rclone copyto changelog.json "r2:$BUCKET/site/changelog.json" \
-            --header-upload "Content-Type: application/json" \
-            --header-upload "Cache-Control: public, max-age=300" \
-            --s3-no-check-bucket --stats-one-line -v
-          curl -s --max-time 30 "https://$CDN_HOST/site/changelog.json?cb=$(date +%s%N)" \
-            | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const j=JSON.parse(s);console.log("cdn changelog:",j.version,"·",j.items.length,"条");})'
+          node tools/d1-put-blob.mjs site/changelog.json changelog.json
           {
             echo "## changelog: $(node -e 'const j=require("./changelog.json");console.log(j.version+" · "+j.items.length+" 条")')"
             node -e 'require("./changelog.json").items.forEach(i=>console.log("- "+(i.pr?"PR#"+i.pr+" ":"")+i.text))'
           } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Download, verify and publish to R2
-        if: steps.probe.outputs.skip == 'false'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          R2_ACCESS_KEY: ${{ secrets.R2_ACCESS_KEY }}
-          R2_SECRET_KEY: ${{ secrets.R2_SECRET_KEY }}
-          KEY: apk/stronghold-${{ steps.rel.outputs.version }}.apk
-        run: |
-          set -euo pipefail
-          test -n "$R2_ACCESS_KEY" && test -n "$R2_SECRET_KEY" || { echo "R2 secrets absent"; exit 1; }
-
-          gh release download "${{ steps.rel.outputs.tag }}" -R "$SRC_REPO" -p "$APK_NAME" -D ./dl
-          file="./dl/$APK_NAME"
-          actual=$(sha256sum "$file" | cut -d' ' -f1)
-          size=$(stat -c %s "$file")
-          echo "downloaded $size bytes, sha256 $actual"
-
-          want="${{ steps.rel.outputs.digest }}"
-          want="${want#sha256:}"
-          if [ -n "$want" ] && [ "$actual" != "$want" ]; then
-            echo "::error::asset digest mismatch (want $want, got $actual) — refusing to publish"
-            exit 1
-          fi
-          if [ "$size" != "${{ steps.rel.outputs.size }}" ]; then
-            echo "::error::size mismatch ($size vs ${{ steps.rel.outputs.size }})"
-            exit 1
-          fi
-
-          rclone config create r2 s3 provider=Cloudflare access_key_id="$R2_ACCESS_KEY" \
-            secret_access_key="$R2_SECRET_KEY" endpoint="$R2_ENDPOINT" acl=private \
-            --non-interactive > /dev/null
-          rclone copyto "$file" "r2:$BUCKET/$KEY" \
-            --header-upload "Content-Type: application/vnd.android.package-archive" \
-            --header-upload "Cache-Control: public, max-age=31536000, immutable" \
-            --s3-no-check-bucket --s3-upload-concurrency 4 --stats-one-line --stats 20s -v
-
-          # Confirm what the public domain now serves, then stamp the summary.
-          after=$(curl -sI --max-time 30 "https://$CDN_HOST/$KEY?cb=$(date +%s%N)" \
-            | awk 'tolower($1)=="content-length:"{gsub(/\r/,"");print $2}')
-          echo "published $KEY (cdn now reports $after bytes)"
-          echo "## mirror-apk: ${{ steps.rel.outputs.tag }} → \`$KEY\` ($after bytes, sha256 \`${actual:0:12}…\`)" >> "$GITHUB_STEP_SUMMARY"

@@ -5,6 +5,7 @@
 // keyId sp-2026-10）；缺任一或验不过就不签，退回未签名并把话术留给维护者。
 
 import { canonicalPayload } from './_verify.js';
+import { blobStore } from '../_store.js';
 
 const LIST_KEY = 'site/servers.json';
 const LOG_KEY = 'site/publish-log.json';
@@ -86,7 +87,7 @@ export async function signServersDoc(doc, env) {
  */
 export async function publishServersDoc(env, doc, opts) {
   const meta = opts || {};
-  const current = await env.R2BUCKET.get(LIST_KEY);
+  const current = await blobStore(env).get(LIST_KEY);
   if (current && meta.baseUpdated) {
     let live = null;
     try { live = JSON.parse(await current.text()); } catch { /* 现网坏了就允许覆盖修复 */ }
@@ -95,7 +96,7 @@ export async function publishServersDoc(env, doc, opts) {
     }
   }
   const body = JSON.stringify(doc, null, 2) + '\n';
-  await env.R2BUCKET.put(LIST_KEY, body, {
+  await blobStore(env).put(LIST_KEY, body, {
     httpMetadata: { contentType: 'application/json', cacheControl: 'public, max-age=60' },
   });
   await appendPublishLog(env, doc, meta);
@@ -104,7 +105,7 @@ export async function publishServersDoc(env, doc, opts) {
 
 async function appendPublishLog(env, doc, meta) {
   try {
-    const prev = await env.R2BUCKET.get(LOG_KEY);
+    const prev = await blobStore(env).get(LOG_KEY);
     let log = prev ? JSON.parse(await prev.text()) : { entries: [] };
     if (!log || !Array.isArray(log.entries)) log = { entries: [] };
     log.entries.push({
@@ -119,7 +120,7 @@ async function appendPublishLog(env, doc, meta) {
       country: meta.country || null,
     });
     if (log.entries.length > 300) log.entries = log.entries.slice(-300);
-    await env.R2BUCKET.put(LOG_KEY, JSON.stringify(log, null, 1) + '\n', {
+    await blobStore(env).put(LOG_KEY, JSON.stringify(log, null, 1) + '\n', {
       httpMetadata: { contentType: 'application/json', cacheControl: 'private, no-store' },
     });
   } catch { /* 审计写失败不挡发布 */ }
@@ -128,7 +129,7 @@ async function appendPublishLog(env, doc, meta) {
 /** 发布审计的最近若干条（可按 via 过滤），给维护者查"谁匿名上线了什么"。 */
 export async function readPublishLog(env, limit, via) {
   try {
-    const prev = await env.R2BUCKET.get(LOG_KEY);
+    const prev = await blobStore(env).get(LOG_KEY);
     if (!prev) return [];
     const log = JSON.parse(await prev.text());
     const entries = Array.isArray(log.entries) ? log.entries : [];
@@ -142,7 +143,7 @@ export async function readPublishLog(env, limit, via) {
  *  维护者自己的 PUT/审核发布不算在内，否则管理动作会吃掉访客额度。 */
 export async function recentPublishes(env, ip, windowMs) {
   try {
-    const prev = await env.R2BUCKET.get(LOG_KEY);
+    const prev = await blobStore(env).get(LOG_KEY);
     if (!prev) return 0;
     const log = JSON.parse(await prev.text());
     const since = Date.now() - windowMs;

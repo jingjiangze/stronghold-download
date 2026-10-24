@@ -15,6 +15,7 @@
 // No request input reaches the upstream URL: repo and endpoint are fixed constants.
 
 import { SNAPSHOT_ID } from './_asset.js';
+import { blobStore } from '../_store.js';
 
 const LIST_URL = 'https://api.github.com/repos/jingjiangze/Stronghold-Protocol/releases?per_page=100';
 const SNAPSHOT_REFRESH_MS = 30 * 60 * 1000;
@@ -89,9 +90,9 @@ const CHANGELOG_KEY = 'site/changelog.json';
  * 页面会退回 release 正文提炼，不会崩也不会显示错位日志。
  */
 async function readChangelog(env, tag) {
-  if (!env || !env.R2BUCKET || !tag) return null;
+  if (!env || !env.DB || !tag) return null;
   try {
-    const res = await env.R2BUCKET.get(CHANGELOG_KEY);
+    const res = await blobStore(env).get(CHANGELOG_KEY);
     if (!res) return null;
     const doc = JSON.parse(await res.text());
     return doc && doc.tag === tag && Array.isArray(doc.items) ? doc : null;

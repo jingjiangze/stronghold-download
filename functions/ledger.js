@@ -7,6 +7,8 @@
 // 边界：同一把 x-scout-key 口令；只接本站域名；写前必须能 JSON.parse，且上限 900 KB ——
 // 半截的台账比没有台账更坏（下一轮会拿它当"这台已经投过"的证据）。
 
+import { blobStore } from './_store.js';
+
 const STATE_KEY = 'scout/state.json';
 const MAX_BYTES = 900000;
 
@@ -30,7 +32,7 @@ function allowed(context) {
 
 export async function onRequestGet(context) {
   if (!allowed(context)) return json({ ok: false, error: 'forbidden' }, 403);
-  const obj = await context.env.R2BUCKET.get(STATE_KEY);
+  const obj = await context.blobStore(env).get(STATE_KEY);
   if (!obj) return new Response('{}', { headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } });
   // R2 对象上是 .text()/.json()/.body（流），没有 .body() —— 写成 body() 会让整条请求 1101。
   return new Response(await obj.text(), {
@@ -43,6 +45,6 @@ export async function onRequestPost(context) {
   const body = await context.request.text();
   if (body.length > MAX_BYTES) return json({ ok: false, error: 'state 太大' }, 413);
   try { JSON.parse(body); } catch { return json({ ok: false, error: 'state 不是合法 JSON' }, 400); }
-  await context.env.R2BUCKET.put(STATE_KEY, body, { httpMetadata: { contentType: 'application/json' } });
+  await context.blobStore(env).put(STATE_KEY, body, { httpMetadata: { contentType: 'application/json' } });
   return json({ ok: true, bytes: body.length, at: new Date().toISOString() });
 }

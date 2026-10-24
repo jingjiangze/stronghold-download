@@ -6,6 +6,8 @@
 
 // 只有协议号（PROTOCOL_VERSION，上游 shared/constants.js）参与门禁；
 // 发布号（APP_VERSION）一律只记录不判定 —— 上游一发新版，写死版本会把已升级的好服集体误杀。
+import { blobStore } from '../_store.js';
+
 const VERIFY = { version: 1 };
 
 const PRIVATE_V4 = [/^127\./, /^10\./, /^192\.168\./, /^169\.254\./, /^0\./,
@@ -83,9 +85,9 @@ export async function readProbeReports(env) {
   // attested（7 天内、探针曾验活过，仅作"这台是真的、边缘看不见不等于死"的免死依据）。
   const fresh = {};
   const attested = {};
-  if (!env || !env.R2BUCKET) return { fresh, attested };
+  if (!env || !env.DB) return { fresh, attested };
   let res;
-  try { res = await env.R2BUCKET.get(PROBE_REPORT_KEY); } catch { return { fresh, attested }; }
+  try { res = await blobStore(env).get(PROBE_REPORT_KEY); } catch { return { fresh, attested }; }
   if (!res) return { fresh, attested };
   let doc;
   try { doc = JSON.parse(await res.text()); } catch { return { fresh, attested }; }
@@ -127,9 +129,9 @@ export async function readProbeReports(env) {
  */
 export async function rememberRecheck(env, url, probe, maxItems) {
   const key = probeKey(url);
-  if (!key || !env || !env.R2BUCKET) return false;
+  if (!key || !env || !env.DB) return false;
   try {
-    const res = await env.R2BUCKET.get(RECHECK_KEY);
+    const res = await blobStore(env).get(RECHECK_KEY);
     let doc = null;
     try { doc = res ? JSON.parse(await res.text()) : null; } catch { doc = null; }
     const items = Array.isArray(doc && doc.items) ? doc.items : [];
@@ -139,7 +141,7 @@ export async function rememberRecheck(env, url, probe, maxItems) {
     else items.unshift({ url: key, probe: probe || null, at, tries: 1 });
     const cap = maxItems || 200;
     while (items.length > cap) items.pop();
-    await env.R2BUCKET.put(RECHECK_KEY, JSON.stringify({ updated: at, items }, null, 2) + '\n', {
+    await blobStore(env).put(RECHECK_KEY, JSON.stringify({ updated: at, items }, null, 2) + '\n', {
       httpMetadata: { contentType: 'application/json', cacheControl: 'public, max-age=120' },
     });
     return true;

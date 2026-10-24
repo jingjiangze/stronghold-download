@@ -13,8 +13,9 @@ name: prune-r2
 # 手动触发默认**干跑**（只看会删什么）；定时触发按 apply 真删。
 
 on:
-  schedule:
-    - cron: '17 * * * *' # hourly
+  # 2026-10-24：R2 在账号层被禁用（CF API 10042），桶里已无对象可清，定时档撤销以免每小时
+  # 空转报错。APK 下载链早在改走 GitHub + 加速器竞速时就不读 R2 的 apk/ 键；若日后 R2 恢复，
+  # 把 schedule 加回来并确认 tools/prune-r2.mjs 的指针口径仍然成立。
   workflow_dispatch:
     inputs:
       mode:

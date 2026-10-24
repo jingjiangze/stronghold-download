@@ -12,11 +12,12 @@
 //     no localhost/loopback/private/link-local/reserved hosts;
 //   - probe, when present, must be a relative path (leading "/");
 //
-// R2 access uses the Pages R2 binding declared in wrangler.toml (binding name R2BUCKET).
+// Blob storage goes through the D1-backed blobStore() layer (functions/_store.js);
+// the old R2 binding was removed when R2 got disabled at the account level (2026-10-24).
 
 import { signServersDoc } from './_publish.js';
+import { blobStore } from '../_store.js';
 
-const BUCKET = 'R2BUCKET';
 const LIST_KEY = 'site/servers.json';
 const MAX_ENTRIES = 64;
 const MAX_BODY_BYTES = 256 * 1024;
@@ -63,8 +64,8 @@ export async function onRequestPut(context) {
   if (!env.PUBLISH_KEY || !key || key !== env.PUBLISH_KEY) {
     return json({ ok: false, error: 'unauthorized' }, 401);
   }
-  const bucket = env[BUCKET];
-  if (!bucket) return json({ ok: false, error: 'R2 binding missing' }, 500);
+  const bucket = blobStore(env);
+  if (!bucket) return json({ ok: false, error: 'DB binding missing' }, 500);
 
   const raw = await request.text();
   if (!raw.length || raw.length > MAX_BODY_BYTES) {

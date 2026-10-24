@@ -13,6 +13,8 @@
 // （17 台 × 4320 轮/天 ≈ 13 万次/天）。所以：快档只扫上次应答过的源（今天 3 台），
 // 每 30 分钟或清单变更时才全量重扫一次，响应永远先回快照。
 
+import { blobStore } from '../_store.js';
+
 const CORS = {
   'access-control-allow-origin': '*',
   'access-control-allow-methods': 'GET, OPTIONS',
@@ -122,7 +124,7 @@ export async function onRequestGet(context) {
   const want = url.searchParams.get('id');
   const force = url.searchParams.get('fresh') === '1';
 
-  const liveRes = await env.R2BUCKET.get(LIST_KEY);
+  const liveRes = await blobStore(env).get(LIST_KEY);
   if (!liveRes) return json({ ok: false, error: '清单读不到' }, 503);
   let list;
   try { list = JSON.parse(await liveRes.text()); } catch { return json({ ok: false, error: '清单解析失败' }, 500); }
@@ -162,7 +164,7 @@ export async function onRequestGet(context) {
         + ' 只取第一页；status 常见 waiting|full|playing|closed；部分站点加入是房主审批制。',
     };
     if (persist) {
-      await env.R2BUCKET.put(CACHE_KEY, JSON.stringify(doc, null, 2) + '\n', {
+      await blobStore(env).put(CACHE_KEY, JSON.stringify(doc, null, 2) + '\n', {
         httpMetadata: { contentType: 'application/json', cacheControl: 'public, max-age=20' },
       });
     }
@@ -170,7 +172,7 @@ export async function onRequestGet(context) {
   };
 
   let snap = null;
-  try { const c = await env.R2BUCKET.get(CACHE_KEY); if (c) snap = JSON.parse(await c.text()); } catch { /* 坏了就重扫 */ }
+  try { const c = await blobStore(env).get(CACHE_KEY); if (c) snap = JSON.parse(await c.text()); } catch { /* 坏了就重扫 */ }
 
   if (want) {
     const doc = await run(snap, false);   // 单台查询不写快照：否则会拿一台的结果覆掉聚合

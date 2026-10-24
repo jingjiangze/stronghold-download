@@ -13,6 +13,8 @@
 //                  盒子 sp_cn_probe.ps1 用的就是头，收口不影响它）
 //   GH_TICK_TOKEN —— 真正能创建 GitHub run 的口令，只待在 Pages secret 里
 // 另外每 IP 限 6 次/分钟（含口令错的尝试），猜口令拿不到无限机会。
+import { blobStore } from '../_store.js';
+
 const DISPATCH = 'https://api.github.com/repos/jingjiangze/stronghold-scout'
   + '/actions/workflows/scout-schedule.yml/dispatches';
 const ALLOWED = ['crawl', 'run', 'probe', 'bili'];
@@ -43,7 +45,7 @@ async function rateLimited(env, ip) {
   try {
     const now = Date.now();
     const bucket = await ipBucket(ip);
-    const prev = await env.R2BUCKET.get(HIT_KEY);
+    const prev = await blobStore(env).get(HIT_KEY);
     const doc = prev ? JSON.parse(await prev.text()) : {};
     const recent = (Array.isArray(doc[bucket]) ? doc[bucket] : []).filter((t) => now - Number(t) < RATE_WINDOW_MS);
     if (recent.length >= RATE_MAX) return true;
@@ -53,7 +55,7 @@ async function rateLimited(env, ip) {
       const keep = (Array.isArray(doc[k]) ? doc[k] : []).filter((t) => now - Number(t) < RATE_WINDOW_MS * 5);
       if (keep.length) doc[k] = keep; else delete doc[k];
     }
-    await env.R2BUCKET.put(HIT_KEY, JSON.stringify(doc), {
+    await blobStore(env).put(HIT_KEY, JSON.stringify(doc), {
       httpMetadata: { contentType: 'application/json', cacheControl: 'private, no-store' },
     });
     return false;
@@ -65,7 +67,7 @@ async function rateLimited(env, ip) {
 /** 上一次真正派发出去（没被节流）的采集时刻：优先读 lastCrawlAt，没有就从 history 里倒推。 */
 async function lastCrawlAt(env) {
   try {
-    const res = await env.R2BUCKET.get(HB_KEY);
+    const res = await blobStore(env).get(HB_KEY);
     if (!res) return 0;
     const doc = JSON.parse(await res.text());
     const direct = Date.parse(doc.lastCrawlAt || '');
@@ -80,7 +82,7 @@ async function handle(context) {
   const { request, env, waitUntil } = context;
   const url = new URL(request.url);
   const ip = request.headers.get('cf-connecting-ip') || 'unknown';
-  if (env.R2BUCKET && await rateLimited(env, ip)) {
+  if (env.DB && await rateLimited(env, ip)) {
     return json({ ok: false, error: 'too many requests' }, 429, { 'retry-after': '60' });
   }
   const key = request.headers.get('x-tick-key') || '';
@@ -149,7 +151,7 @@ async function handle(context) {
 async function heartbeat(env, rec) {
   // 心跳落 R2：「闹钟到底有没有在打」变成一个可直接查的数，不用登机器翻日志
   try {
-    const prevRes = await env.R2BUCKET.get(HB_KEY);
+    const prevRes = await blobStore(env).get(HB_KEY);
     const prev = prevRes ? JSON.parse(await prevRes.text()) : {};
     const doc = Object.assign({ history: [] }, prev);
     if (rec.ok) doc.lastOk = rec.at;
@@ -157,7 +159,7 @@ async function heartbeat(env, rec) {
     if (rec.ok && !rec.throttled && rec.target === 'crawl') doc.lastCrawlAt = rec.at;
     doc.updated = rec.at;
     doc.history = [rec].concat(Array.isArray(doc.history) ? doc.history : []).slice(0, 30);
-    await env.R2BUCKET.put(HB_KEY, JSON.stringify(doc, null, 1) + '\n', {
+    await blobStore(env).put(HB_KEY, JSON.stringify(doc, null, 1) + '\n', {
       httpMetadata: { contentType: 'application/json', cacheControl: 'public, max-age=30' },
     });
   } catch (e) { /* 心跳失败不影响打点本身 */ }

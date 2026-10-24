@@ -18,6 +18,7 @@
 
 import { checkEntryUrl, listCollision, looksLikeClientPage, normalizeTarget, probeKey, readProbeReports, rememberRecheck, sanitizeBrowserVerify, validateEntries, verifyServerHealth } from '../_verify.js';
 import { canSign, publishServersDoc, readPublishLog, recentPublishes, signServersDoc } from '../_publish.js';
+import { blobStore } from '../../_store.js';
 
 const MAX_PENDING = 100;
 // 匿名提交现在直接进签名清单，所以给每个 IP 一个刷屏上限：一小时内最多自动上线 3 条，
@@ -62,7 +63,7 @@ function pickExtras(raw, isAdmin) {
 export async function onRequestPost(context) {
   const { request, env } = context;
 
-  if (!env.SERVER_REVIEW || !env.R2BUCKET) return json({ ok: false, error: '提交队列未配置' }, 500);
+  if (!env.SERVER_REVIEW || !env.DB) return json({ ok: false, error: '提交队列未配置' }, 500);
 
   let doc;
   try { doc = await request.json(); } catch { return json({ ok: false, error: '请求不是有效 JSON' }, 400); }
@@ -136,7 +137,7 @@ export async function onRequestPost(context) {
   const index = await readIndex(env);
   if (index.length >= MAX_PENDING) return json({ ok: false, error: '待审核队列已满，请稍后再试' }, 429);
 
-  const liveRes = await env.R2BUCKET.get('site/servers.json');
+  const liveRes = await blobStore(env).get('site/servers.json');
   let liveDoc = null;
   if (liveRes) { try { liveDoc = JSON.parse(await liveRes.text()); } catch { /* 现网坏了就只入队 */ } }
   const servers = liveDoc && Array.isArray(liveDoc.servers) ? liveDoc.servers : [];

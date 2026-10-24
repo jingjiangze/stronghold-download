@@ -3,6 +3,7 @@
 // 不打真实网络：globalThis.fetch 换成路由桩，R2/KV 用内存 Map。
 
 import assert from 'node:assert/strict';
+import { makeDb } from './_db-stub.mjs';
 
 let pass = 0;
 const results = [];
@@ -60,10 +61,7 @@ function makeEnv(overrides, seed) {
     PUBLISH_KEY: 'pub-key',
     SP_SIGN_KEY: pkcs8,
     SP_PUB_KEY: spki,
-    R2BUCKET: {
-      get: async (k) => (store.has(k) ? { text: async () => store.get(k) } : null),
-      put: async (k, v) => { store.set(k, typeof v === 'string' ? v : String(v)); return { key: k }; },
-    },
+    DB: makeDb(store),
     SERVER_REVIEW: {
       get: async (k) => (kv.has(k) ? kv.get(k) : null),
       put: async (k, v) => { kv.set(k, String(v)); },

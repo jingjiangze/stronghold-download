@@ -4,6 +4,7 @@
 // ?force=1 能立刻越过。不打网络：fetch 换成路由桩，R2 用内存 Map。
 
 import assert from 'node:assert/strict';
+import { makeDb } from './_db-stub.mjs';
 
 const TICK = await import(new URL('../functions/api/tick.js', import.meta.url).href);
 
@@ -21,10 +22,7 @@ function makeEnv(historyDoc) {
   const store = new Map();
   if (historyDoc) store.set('site/tick.json', JSON.stringify(historyDoc));
   return {
-    TICK_KEY: KEY, GH_TICK_TOKEN: 'gh', R2BUCKET: {
-      get: async (k) => (store.has(k) ? { text: async () => store.get(k) } : null),
-      put: async (k, v) => { store.set(k, String(v)); },
-    },
+    TICK_KEY: KEY, GH_TICK_TOKEN: 'gh', DB: makeDb(store),
     __store: store,
   };
 }

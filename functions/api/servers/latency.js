@@ -14,6 +14,8 @@
 //
 // 这条链**不影响任何台显不显示**：显示/隐藏只由健康端点探测与站长停用决定（见 verify.js）。
 
+import { blobStore } from '../../_store.js';
+
 const LIST_KEY = 'site/servers.json';
 const LAT_KEY = 'site/latency.json';
 const MAX_IDS = 200;
@@ -64,7 +66,7 @@ function clean(oldDoc, nowMs) {
 
 export async function onRequestPost(context) {
   const { request, env } = context;
-  if (!env.R2BUCKET) return json({ ok: false, error: 'R2 binding missing' }, 500);
+  if (!env.DB) return json({ ok: false, error: 'DB binding missing' }, 500);
 
   let body;
   try { body = await request.json(); } catch { return json({ ok: false, error: 'bad json' }, 400); }
@@ -72,7 +74,7 @@ export async function onRequestPost(context) {
   if (!raw.length) return json({ ok: false, error: 'samples[] 不能为空' }, 400);
   const samples = raw.slice(0, MAX_BATCH);
 
-  const listRes = await env.R2BUCKET.get(LIST_KEY);
+  const listRes = await blobStore(env).get(LIST_KEY);
   if (!listRes) return json({ ok: false, error: 'list missing' }, 500);
   let ids;
   try {
@@ -86,7 +88,7 @@ export async function onRequestPost(context) {
   const day = now.toISOString().slice(0, 10);
 
   let doc = { updated: null, lat: {} };
-  const prev = await env.R2BUCKET.get(LAT_KEY);
+  const prev = await blobStore(env).get(LAT_KEY);
   if (prev) { try { doc = clean(JSON.parse(await prev.text()), now.getTime()); } catch { /* 覆盖重来 */ } }
 
   let wrote = 0;
@@ -108,7 +110,7 @@ export async function onRequestPost(context) {
 
   doc = clean(doc, now.getTime());
   doc.updated = now.toISOString();
-  await env.R2BUCKET.put(LAT_KEY, JSON.stringify(doc, null, 1) + '\n', {
+  await blobStore(env).put(LAT_KEY, JSON.stringify(doc, null, 1) + '\n', {
     httpMetadata: { contentType: 'application/json', cacheControl: 'private, no-store' },
   });
   return json({ ok: true, accepted: wrote, ids: Object.keys(doc.lat).length });

@@ -4,6 +4,8 @@
 // 「不在清单列表」。这里直接吐 R2 里那份现网清单（带签名），并在 R2 不可用时
 // 退回打包在站点里的快照。
 
+import { blobStore } from './_store.js';
+
 const LIST_KEY = 'site/servers.json';
 
 const HEADERS = {
@@ -15,8 +17,8 @@ const HEADERS = {
 export async function onRequestGet(context) {
   const { env, request } = context;
   try {
-    if (env.R2BUCKET) {
-      const obj = await env.R2BUCKET.get(LIST_KEY);
+    if (env.DB) {
+      const obj = await blobStore(env).get(LIST_KEY);
       if (obj) return new Response(await obj.text(), { status: 200, headers: HEADERS });
     }
   } catch { /* 落到快照 */ }

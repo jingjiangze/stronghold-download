@@ -19,6 +19,8 @@
 //
 // 只收录 enabled 且在 verified.valid 里的条目（与页面隐藏未通过校验者一致）。
 
+import { blobStore } from '../../_store.js';
+
 const CORS = {
   'access-control-allow-origin': '*',
   'access-control-allow-methods': 'GET, OPTIONS',
@@ -163,16 +165,16 @@ export async function onRequestOptions() {
 
 export async function onRequestGet(context) {
   const { env } = context;
-  if (!env.R2BUCKET) return json({ ok: false, error: 'R2 binding missing' }, 500);
+  if (!env.DB) return json({ ok: false, error: 'DB binding missing' }, 500);
 
   let listDoc = null;
   let verDoc = null;
   try {
-    const r = await env.R2BUCKET.get(LIST_KEY);
+    const r = await blobStore(env).get(LIST_KEY);
     if (r) listDoc = JSON.parse(await r.text());
   } catch { /* 下面统一报不可用 */ }
   try {
-    const r = await env.R2BUCKET.get(VERIFIED_KEY);
+    const r = await blobStore(env).get(VERIFIED_KEY);
     if (r) verDoc = JSON.parse(await r.text());
   } catch { /* verified 缺席不致命：只是没有延迟/人数/票数，排序退化成版本+清单序 */ }
 

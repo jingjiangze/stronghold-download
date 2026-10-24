@@ -15,6 +15,7 @@
 //   - 只接本站自己的域名，防止别人把这里当成任意 URL 的转发器（SSRF）。
 
 import { canSign, publishServersDoc, signServersDoc } from './api/_publish.js';
+import { blobStore } from './_store.js';
 
 const LIST_KEY = 'site/servers.json';
 const MAX_ITEMS = 10;
@@ -87,7 +88,7 @@ export async function onRequestPost(context) {
       let sha = rev.body.canonicalSha256 || null;
       // approve 那条路径自己有 SP_SIGN_KEY 就会签；没签成功时这里补一次（不改内容，只盖章）。
       if (!signed && canSign(env)) {
-        const held = await env.R2BUCKET.get(LIST_KEY);
+        const held = await blobStore(env).get(LIST_KEY);
         const live = held ? JSON.parse(await held.text()) : null;
         if (live && Array.isArray(live.servers)) {
           const doc = await signServersDoc(live, env);

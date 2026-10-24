@@ -2,9 +2,13 @@ name = "stronghold-download"
 compatibility_date = "2026-09-01"
 pages_build_output_dir = "."
 
-[[r2_buckets]]
-binding = "R2BUCKET"
-bucket_name = "stronghold-assets"
+# 2026-10-24: R2 账号层被禁用（CF API 报 10042），R2BUCKET 绑定在 Pages 部署期校验直接失败。
+# 原 R2 的全部对象键（site/*、scout/*）迁到 D1 单表 site_blob（functions/_store.js），
+# 键空间与读写语义不变。
+[[d1_databases]]
+binding = "DB"
+database_name = "stronghold-download"
+database_id = "bf884007-d536-49c8-b095-29c14cf1f9ec"
 
 [[kv_namespaces]]
 binding = "SERVER_REVIEW"

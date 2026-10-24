@@ -6,6 +6,7 @@
 //   ④ 没够判据的不动，撞并发时不改名。
 
 import assert from 'node:assert/strict';
+import { makeDb } from './_db-stub.mjs';
 
 let pass = 0;
 const results = [];
@@ -33,16 +34,13 @@ function stubFetch(blind) {
   };
 }
 
-function makeEnv(servers, extras) {
+function makeEnv(servers, extras, { onPut } = {}) {
   const store = new Map();
   store.set('site/servers.json', JSON.stringify({ updated: 'L1', v: 1, keyId: 'sp-2026-10', servers }, null, 2));
   for (const k of Object.keys(extras || {})) store.set(k, typeof extras[k] === 'string' ? extras[k] : JSON.stringify(extras[k]));
   const env = {
     SP_SIGN_KEY: pkcs8, SP_PUB_KEY: spki,
-    R2BUCKET: {
-      get: async (k) => (store.has(k) ? { text: async () => store.get(k) } : null),
-      put: async (k, v) => { store.set(k, typeof v === 'string' ? v : String(v)); },
-    },
+    DB: makeDb(store, { onPut }),
     __store: store,
   };
   return env;
@@ -184,17 +182,16 @@ const pending = (id, name) => ({ id, name: name || `${id}.example（待核）`, 
   stubFetch([]);
   const env = makeEnv([pending('busy')], {
     'site/opens.json': { opens: { busy: { total: 9, today: 2, day: new Date().toISOString().slice(0, 10), at: null, seen: seen(9) } } },
+  }, {
+    onPut(k) {
+      if (k === 'site/stable.json') {
+        // 模拟"上一轮之后有人改了清单"：把 servers.json 的 updated 换掉
+        const doc = JSON.parse(env.__store.get('site/servers.json'));
+        doc.updated = 'SOMEBODY-ELSE';
+        env.__store.set('site/servers.json', JSON.stringify(doc));
+      }
+    },
   });
-  const put = env.R2BUCKET.put;
-  env.R2BUCKET.put = async (k, v) => {
-    if (k === 'site/stable.json') {
-      // 模拟"上一轮之后有人改了清单"：把 servers.json 的 updated 换掉
-      const doc = JSON.parse(env.__store.get('site/servers.json'));
-      doc.updated = 'SOMEBODY-ELSE';
-      env.__store.set('site/servers.json', JSON.stringify(doc));
-    }
-    return put(k, v);
-  };
   const out = await run(env);
   await ok('撞并发时不改名也不宣布转正', () => {
     assert.equal(list(env).servers[0].name, 'busy.example（待核）');

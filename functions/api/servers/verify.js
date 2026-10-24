@@ -23,6 +23,7 @@
 
 import { checkEntryUrl, probeKey, readProbeReports, verifyServerHealth } from '../_verify.js';
 import { canSign, publishServersDoc, signServersDoc } from '../_publish.js';
+import { blobStore } from '../../_store.js';
 
 const LIST_KEY = 'site/servers.json';
 const VERIFIED_KEY = 'site/verified.json';
@@ -90,7 +91,7 @@ const OFFLINE_MAX = 60;            // 后台留 60 台，更老的按退休处�
 /** 退休记录：只追加不覆盖，保留每台最后一次被看到的时间，出事时能一条条回溯"为什么删了它"。 */
 async function rememberRetired(env, retired, nowIso) {
   try {
-    const held = await env.R2BUCKET.get(RETIRE_KEY);
+    const held = await blobStore(env).get(RETIRE_KEY);
     const log = held ? JSON.parse(await held.text()) : null;
     const entries = Array.isArray(log && log.entries) ? log.entries : [];
     for (const r of retired) {
@@ -99,7 +100,7 @@ async function rememberRetired(env, retired, nowIso) {
       const first = entries.findIndex((e) => e && e.id === r.id && e.retiredAt !== nowIso);
       if (first >= 0) entries.splice(first, 1);
     }
-    await env.R2BUCKET.put(RETIRE_KEY, JSON.stringify({
+    await blobStore(env).put(RETIRE_KEY, JSON.stringify({
       updated: nowIso, entries: entries.slice(-RETIRE_LOG_MAX),
       revive: '重新提交该地址即可复活：/ingest 或管理页点「通过」都会走 submit→approve 并重新签名',
     }, null, 2) + '\n', { httpMetadata: { contentType: 'application/json', cacheControl: 'private, no-store' } });
@@ -115,9 +116,9 @@ function json(data, status) {
 
 export async function onRequestGet(context) {
   const { env, request } = context;
-  if (!env.R2BUCKET) return json({ ok: false, error: 'R2 binding missing' }, 500);
+  if (!env.DB) return json({ ok: false, error: 'DB binding missing' }, 500);
 
-  const listRes = await env.R2BUCKET.get(LIST_KEY);
+  const listRes = await blobStore(env).get(LIST_KEY);
   if (!listRes) return json({ ok: false, error: 'list missing' }, 404);
   let doc;
   try { doc = JSON.parse(await listRes.text()); } catch { return json({ ok: false, error: 'list corrupt' }, 500); }
@@ -126,7 +127,7 @@ export async function onRequestGet(context) {
   // 后台清单：上一轮被判离线、已经从公共签名清单里摘出去的条目。
   let offline = {};
   try {
-    const oRes = await env.R2BUCKET.get(OFFLINE_KEY);
+    const oRes = await blobStore(env).get(OFFLINE_KEY);
     const od = oRes ? JSON.parse(await oRes.text()) : null;
     offline = (od && od.entries && typeof od.entries === 'object' && !Array.isArray(od.entries)) ? od.entries : {};
   } catch { offline = {}; }
@@ -143,13 +144,13 @@ export async function onRequestGet(context) {
   // Previous verdict: entries whose fresh check fails due to *our* timeout/verification
   // infra keep their last known state instead of being quarantined on a flaky round.
   let previous = { valid: [], invalid: [], occupancy: {} };
-  const prevRes = await env.R2BUCKET.get(VERIFIED_KEY);
+  const prevRes = await blobStore(env).get(VERIFIED_KEY);
   if (prevRes) { try { previous = JSON.parse(await prevRes.text()); } catch { /* ignore */ } }
   // 玩家浏览器的实测回执：服务端校验只有海外出口，而国内 IDC / 云防火墙会把海外入站直接丢掉
   // （sp.rainya.me:10166 就是这样：国内 163ms 200，CF 边缘超时）。所以「24 小时内有玩家连上过」
   // 是一条正向证据，不必靠人手工打 direct_cn 标记。
   let pings = {};
-  const pingRes = await env.R2BUCKET.get(PINGS_KEY);
+  const pingRes = await blobStore(env).get(PINGS_KEY);
   if (pingRes) { try { pings = (JSON.parse(await pingRes.text()) || {}).pings || {}; } catch { /* 无回执 */ } }
   // 回执里带房间/版本时（玩家浏览器 CORS 读到了 /healthz），直接拿它当 occupancy
   const pingOccupancy = (p) => {
@@ -186,7 +187,7 @@ export async function onRequestGet(context) {
   // 往后挪是可逆的，藏掉是不可逆的。所以这里只把票数当**元数据**发布（verified.json 的 vouches），
   // 排序交给页面（js/servers.js 的 rankOf），隐藏与否仍只由探测与维护者决定。
   let vouches = {};
-  const vouchRes = await env.R2BUCKET.get(VOUCH_KEY);
+  const vouchRes = await blobStore(env).get(VOUCH_KEY);
   if (vouchRes) { try { vouches = (JSON.parse(await vouchRes.text()) || {}).vouches || {}; } catch { /* 没人投过 */ } }
   const VOUCH_TTL_MS = 7 * 24 * 3600e3;
   const sideCount = (v, side) => {
@@ -229,7 +230,7 @@ export async function onRequestGet(context) {
   const sharedLatency = async () => {
     const out = {};
     const stamp = Date.now();
-    const res = await env.R2BUCKET.get(LAT_KEY);
+    const res = await blobStore(env).get(LAT_KEY);
     if (res) {
       try {
         const ld = JSON.parse(await res.text());
@@ -266,7 +267,7 @@ export async function onRequestGet(context) {
    *  玩家点了「打开」要等下一轮真探（30 分钟）才在别人屏幕上显示出来。 */
   const readOpens = async () => {
     const out = {};
-    const res = await env.R2BUCKET.get(OPEN_KEY);
+    const res = await blobStore(env).get(OPEN_KEY);
     if (!res) return out;
     try {
       const od = JSON.parse(await res.text());
@@ -321,7 +322,7 @@ export async function onRequestGet(context) {
     const staleOpens = JSON.stringify(previous.opens || {}) !== JSON.stringify(opensNow);
     const staleLat = JSON.stringify(previous.latency || {}) !== JSON.stringify(latNow);
     if (staleShot || staleOpens || staleLat) {
-      await env.R2BUCKET.put(VERIFIED_KEY, JSON.stringify({
+      await blobStore(env).put(VERIFIED_KEY, JSON.stringify({
         updated: previous.updated, listUpdated: previous.listUpdated,
         valid: validArr, invalid: invalidArr, occupancy: occ,
         backoff: previous.backoff || {}, evidence: previous.evidence || {},
@@ -615,7 +616,7 @@ export async function onRequestGet(context) {
   let stable = {};
   const nowIso = new Date(nowMs).toISOString();
   try {
-    const s = await env.R2BUCKET.get(STABLE_KEY);
+    const s = await blobStore(env).get(STABLE_KEY);
     const parsed = s ? JSON.parse(await s.text()) : null;
     // 写出去的是 { updated, stable:{id:{since}} }，读的时候两种形态都认（老数据/手工改过）
     stable = (parsed && parsed.stable && typeof parsed.stable === 'object') ? parsed.stable
@@ -625,7 +626,7 @@ export async function onRequestGet(context) {
   const validSet = new Set(valid);
   for (const id of validSet) if (!stable[id] || !Date.parse(stable[id].since || '')) stable[id] = { since: nowIso };
   for (const k of Object.keys(stable)) if (!validSet.has(k) || !liveIds.has(k)) delete stable[k];
-  await env.R2BUCKET.put(STABLE_KEY, JSON.stringify({ updated: nowIso, stable }, null, 1) + '\n', {
+  await blobStore(env).put(STABLE_KEY, JSON.stringify({ updated: nowIso, stable }, null, 1) + '\n', {
     httpMetadata: { contentType: 'application/json', cacheControl: 'public, max-age=300' },
   });
 
@@ -758,7 +759,7 @@ export async function onRequestGet(context) {
       keys.sort((a, b) => Date.parse(offline[a].offlineSince || '') - Date.parse(offline[b].offlineSince || ''));
       for (const k of keys.slice(0, keys.length - OFFLINE_MAX)) delete offline[k];
     }
-    await env.R2BUCKET.put(OFFLINE_KEY, JSON.stringify({
+    await blobStore(env).put(OFFLINE_KEY, JSON.stringify({
       updated: nowIso, count: Object.keys(offline).length, entries: offline,
       note: '离线服务器留档：不进公共签名清单，每轮仍随探测，活过来自动搬回；同时已排进管理页的待复核队列。连续缺席满 7 天（或 24 小时确定性拒绝）则永久退休。',
     }, null, 2) + '\n', { httpMetadata: { contentType: 'application/json', cacheControl: 'public, max-age=120' } });
@@ -858,7 +859,7 @@ export async function onRequestGet(context) {
     presence,                   // 每台最后一次被任何可信出口看到 / 缺席起点 / 拒连起点
     entry_down_rounds: entryDown,
   };
-  await env.R2BUCKET.put(VERIFIED_KEY, JSON.stringify(verifiedDoc, null, 2) + '\n', {
+  await blobStore(env).put(VERIFIED_KEY, JSON.stringify(verifiedDoc, null, 2) + '\n', {
     httpMetadata: { contentType: 'application/json', cacheControl: 'public, max-age=120' },
   });
 

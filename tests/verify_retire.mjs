@@ -8,6 +8,7 @@
 // 不打真实网络：globalThis.fetch 换成路由桩，R2 用内存 Map。
 
 import assert from 'node:assert/strict';
+import { makeDb } from './_db-stub.mjs';
 
 const VERIFY = await import(new URL('../functions/api/servers/verify.js', import.meta.url).href);
 
@@ -26,7 +27,7 @@ const spki = hex(await crypto.subtle.exportKey('spki', pair.publicKey)).slice(24
 const GOOD = () => ({ ok: true, version: 1, app: '0.1.4', uptimeSec: 100, sockets: 1, sessions: 1,
   rooms: 3, matches: 1, humans: 5, bots: 0 });
 
-function makeEnv(servers, extras) {
+function makeEnv(servers, extras, { onPut } = {}) {
   const store = new Map();
   const kv = new Map();
   store.set('site/servers.json', JSON.stringify({ updated: 'L1', v: 1, keyId: 'sp-2026-10', servers }, null, 2));
@@ -35,10 +36,7 @@ function makeEnv(servers, extras) {
   }
   return {
     SP_SIGN_KEY: pkcs8, SP_PUB_KEY: spki,
-    R2BUCKET: {
-      get: async (k) => (store.has(k) ? { text: async () => store.get(k) } : null),
-      put: async (k, v) => { store.set(k, String(v)); },
-    },
+    DB: makeDb(store, { onPut }),
     SERVER_REVIEW: {
       get: async (k) => (kv.has(k) ? kv.get(k) : null),
       put: async (k, v) => { kv.set(k, String(v)); },
@@ -199,16 +197,15 @@ stubRefused(['cdead']);
 {
   const env = makeEnv([entry('cdead'), entry('calive')], {
     'site/offline.json': { updated: ago(1000), count: 0, entries: {} },
+  }, {
+    onPut(k) {
+      if (k === 'site/stable.json') {
+        const doc = JSON.parse(env.__store.get('site/servers.json'));
+        doc.updated = 'SOMEBODY-ELSE';           // 模拟"这一轮期间有人改了清单"
+        env.__store.set('site/servers.json', JSON.stringify(doc));
+      }
+    },
   });
-  const put = env.R2BUCKET.put.bind(env.R2BUCKET);
-  env.R2BUCKET.put = async (k, v) => {
-    if (k === 'site/stable.json') {
-      const doc = JSON.parse(env.__store.get('site/servers.json'));
-      doc.updated = 'SOMEBODY-ELSE';           // 模拟"这一轮期间有人改了清单"
-      env.__store.set('site/servers.json', JSON.stringify(doc));
-    }
-    return put(k, v);
-  };
   const out = await run(env);
   await ok('撞并发时既不搬公共清单也不写后台账本（条目不能从两份文件之间掉掉）', () => {
     assert.deepEqual(out.body.moved_out, []);

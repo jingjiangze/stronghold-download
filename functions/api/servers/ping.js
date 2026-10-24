@@ -7,6 +7,8 @@
 // 匿名可写，但只接受清单里真实存在的 id、只有三个字段、每台每 10 分钟由客户端自己限流，
 // 服务端再按 id 数量封顶；写的是 R2（Class B 写额度远够用），不进 KV。
 
+import { blobStore } from '../../_store.js';
+
 const LIST_KEY = 'site/servers.json';
 const PINGS_KEY = 'site/pings.json';
 const MAX_IDS = 200;
@@ -20,7 +22,7 @@ function json(data, status) {
 
 export async function onRequestPost(context) {
   const { request, env } = context;
-  if (!env.R2BUCKET) return json({ ok: false, error: 'R2 binding missing' }, 500);
+  if (!env.DB) return json({ ok: false, error: 'DB binding missing' }, 500);
 
   let body;
   try { body = await request.json(); } catch { return json({ ok: false, error: 'bad json' }, 400); }
@@ -31,7 +33,7 @@ export async function onRequestPost(context) {
   if (!Number.isFinite(ms) || ms < 0) ms = null; else ms = Math.min(Math.round(ms), 60000);
 
   // 只认清单里存在的 id，避免这里变成任意键值的写入接口
-  const listRes = await env.R2BUCKET.get(LIST_KEY);
+  const listRes = await blobStore(env).get(LIST_KEY);
   if (!listRes) return json({ ok: false, error: 'list missing' }, 500);
   let ids;
   try {
@@ -41,7 +43,7 @@ export async function onRequestPost(context) {
   if (!ids.has(id)) return json({ ok: false, error: 'unknown id' }, 404);
 
   let doc = { updated: null, pings: {} };
-  const prevRes = await env.R2BUCKET.get(PINGS_KEY);
+  const prevRes = await blobStore(env).get(PINGS_KEY);
   if (prevRes) { try { doc = JSON.parse(await prevRes.text()); } catch { /* 覆盖重来 */ } }
   if (!doc.pings || typeof doc.pings !== 'object') doc.pings = {};
 
@@ -94,7 +96,7 @@ export async function onRequestPost(context) {
       .forEach((k) => delete doc.pings[k]);
   }
   doc.updated = rec.at;
-  await env.R2BUCKET.put(PINGS_KEY, JSON.stringify(doc, null, 1) + '\n', {
+  await blobStore(env).put(PINGS_KEY, JSON.stringify(doc, null, 1) + '\n', {
     httpMetadata: { contentType: 'application/json', cacheControl: 'private, no-store' },
   });
   return json({ ok: true, id, recorded: { ok: rec.ok, cn: rec.cn, okHits: rec.okHits } });

@@ -4,6 +4,7 @@
 // 语义沿用 Worker 版：同一把 x-scout-key、只接本站域名、写前必须能 JSON.parse、上限 900 KB。
 
 import assert from 'node:assert/strict';
+import { makeDb } from './_db-stub.mjs';
 
 const LEDGER = await import(new URL('../functions/ledger.js', import.meta.url).href);
 
@@ -22,10 +23,7 @@ function makeEnv(seed) {
   const writes = [];
   const env = {
     SCOUT_TOKEN: SCOUT,
-    R2BUCKET: {
-      get: async (k) => (store.has(k) ? { text: async () => String(store.get(k)) } : null),
-      put: async (k, v) => { store.set(k, String(v)); writes.push(k); return { key: k }; },
-    },
+    DB: makeDb(store, { onPut: (k) => writes.push(k) }),
   };
   env.__writes = writes;
   env.__store = store;

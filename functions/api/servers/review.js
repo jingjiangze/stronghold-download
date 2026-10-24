@@ -13,6 +13,7 @@
 
 import { checkEntryUrl, listCollision, payloadSha256, probeKey, readProbeReports, verifyServerHealth } from '../_verify.js';
 import { publishServersDoc, signServersDoc } from '../_publish.js';
+import { blobStore } from '../../_store.js';
 
 function json(data, status) {
   return new Response(JSON.stringify(data), {
@@ -34,7 +35,7 @@ export async function onRequestPost(context) {
   if (!env.PUBLISH_KEY || !key || key !== env.PUBLISH_KEY) {
     return json({ ok: false, error: 'unauthorized' }, 401);
   }
-  if (!env.SERVER_REVIEW || !env.R2BUCKET) return json({ ok: false, error: 'bindings missing' }, 500);
+  if (!env.SERVER_REVIEW || !env.DB) return json({ ok: false, error: 'bindings missing' }, 500);
 
   let doc;
   try { doc = await request.json(); } catch { return json({ ok: false, error: 'bad json' }, 400); }
@@ -100,7 +101,7 @@ export async function onRequestPost(context) {
   }
   await dequeue();
 
-  const liveRes = await env.R2BUCKET.get('site/servers.json');
+  const liveRes = await blobStore(env).get('site/servers.json');
   let live = { updated: new Date().toISOString(), servers: [] };
   if (liveRes) {
     try { live = JSON.parse(await liveRes.text()); } catch { /* 坏了就重建骨架 */ }

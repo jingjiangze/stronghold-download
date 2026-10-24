@@ -9,6 +9,8 @@
 // 数字由 /api/servers/verify 并进 site/verified.json，页面读那一份就够 —— 在又慢又抖的链路上
 // 少一次往返比多一个接口值钱。
 
+import { blobStore } from '../../_store.js';
+
 const LIST_KEY = 'site/servers.json';
 const OPEN_KEY = 'site/opens.json';
 const MAX_IDS = 200;
@@ -50,7 +52,7 @@ function trim(oldDoc) {
 
 export async function onRequestPost(context) {
   const { request, env } = context;
-  if (!env.R2BUCKET) return json({ ok: false, error: 'R2 binding missing' }, 500);
+  if (!env.DB) return json({ ok: false, error: 'DB binding missing' }, 500);
 
   let body;
   try { body = await request.json(); } catch { return json({ ok: false, error: 'bad json' }, 400); }
@@ -58,7 +60,7 @@ export async function onRequestPost(context) {
   if (!/^[a-zA-Z0-9_-]{1,48}$/.test(id)) return json({ ok: false, error: 'bad id' }, 400);
 
   // 只认清单里真实存在的 id：不接受任意键，否则这里会变成任意计数写入口
-  const listRes = await env.R2BUCKET.get(LIST_KEY);
+  const listRes = await blobStore(env).get(LIST_KEY);
   if (!listRes) return json({ ok: false, error: 'list missing' }, 500);
   let entry;
   try {
@@ -72,7 +74,7 @@ export async function onRequestPost(context) {
   const tag = await ipTag(request.headers.get('cf-connecting-ip') || 'unknown', id);
 
   let doc = { updated: null, opens: {} };
-  const prev = await env.R2BUCKET.get(OPEN_KEY);
+  const prev = await blobStore(env).get(OPEN_KEY);
   if (prev) { try { doc = trim(JSON.parse(await prev.text())); } catch { /* 覆盖重来 */ } }
   const rec = doc.opens[id] || { total: 0, today: 0, day, at: null, seen: {} };
   if (!rec.seen || typeof rec.seen !== 'object') rec.seen = {};
@@ -94,7 +96,7 @@ export async function onRequestPost(context) {
   doc.opens[id] = rec;
   doc = trim(doc);
   doc.updated = now.toISOString();
-  await env.R2BUCKET.put(OPEN_KEY, JSON.stringify(doc, null, 1) + '\n', {
+  await blobStore(env).put(OPEN_KEY, JSON.stringify(doc, null, 1) + '\n', {
     httpMetadata: { contentType: 'application/json', cacheControl: 'private, no-store' },
   });
   const saved = doc.opens[id] || rec;
