@@ -1,0 +1,52 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "arknights-gateway",
+  "account_id": "8641802a2d46497f1cc4e7a4cba365d2",
+  "main": "src/index.js",
+  // 2026-09-28 是本机 wrangler 4.138.0 的 workerd 支持的最新日期，本地 dev 与线上都吃这个日期。
+  "compatibility_date": "2026-09-28",
+  "workers_dev": true,
+  "preview_urls": false,
+
+  // 静态资源走 ASSETS 绑定。run_worker_first: true —— 让所有请求先过 Worker，
+  // 才能在静态资源上补缓存头与安全头（Worker 的静态资源默认不吃 _headers）。
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": true,
+    "not_found_handling": "none"
+  },
+
+  // 自定义域名：wrangler 会自动建 DNS 记录并签发证书。
+  "routes": [
+    { "pattern": "arknights.jiangjiangze.icu", "custom_domain": true }
+  ],
+
+  // 盒子探针回传的服务器实时快照（/api/ingest 写、/api/status 读）。
+  // 探针在盒子上做（那里就是那台游戏服本身，直接读 127.0.0.1:3000 的本机 /healthz +
+  // 进程采样，不发任何外部请求、不消耗任何探测额度），Worker 只负责存与发。
+  // 延迟改为玩家浏览器自主探测，本 Worker 不再做/转发任何服务端探测。
+  "kv_namespaces": [
+    {
+      "binding": "NODES",
+      "id": "824458fe52034f22b49486100e7bbbc7"
+    },
+    {
+      "binding": "FEEDBACK",
+      "id": "51ef426c766a41218e974a531a3133fd"
+    }
+  ],
+
+  // 让 /api/status 的 s-maxage 真正生效（并发访客共享同一次调用）。
+  "cache": { "enabled": true },
+
+  // 反馈 → GitHub Issue 自动转交：在玩家常玩时段批量触发（北京时间 12:00 / 17:00 / 21:00 / 24:00，
+  // 即 UTC 04:00 / 09:00 / 13:00 / 16:00），一天四次，每次把暂存的反馈汇总转交。
+  // 触发器走 Cloudflare 边缘；GH_TOKEN（repo 权限）作为 secret 注入本 Worker，
+  // 仅 scheduled 内调用 GitHub API 使用，不出现在任何面向浏览器的响应里。
+  "triggers": {
+    "crons": ["0 4,9,13,16 * * *"]
+  },
+
+  "observability": { "enabled": true }
+}

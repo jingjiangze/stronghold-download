@@ -1,0 +1,42 @@
+# Pages serves these headers for static assets only; /api/* answers from Functions with its own.
+/style.css
+  Cache-Control: public, max-age=31536000, immutable
+
+/app.js
+  Cache-Control: public, max-age=31536000, immutable
+
+/admin.js
+  Cache-Control: public, max-age=31536000, immutable
+
+# HTML is short-lived edge-cacheable now: a revisit hits the nearest PoP instead of always
+# going back to origin (which sat behind a slow international link). 60s fresh + 300s
+# stale-while-revalidate keeps content near-fresh while hiding origin latency from the visitor.
+# ⚠ 2026-10-19: **only the exact '/'**. Pages answers /index.html with a **308 permanent
+# redirect** to '/'; giving 3xx a max-age makes browsers cache the redirect forever and a stale
+# reverse entry then produces ERR_TOO_MANY_REDIRECTS. So 3xx must never carry cache headers —
+# /index.html gets no-store, and the Zone cache rule only matches path == '/'.
+/
+  Cache-Control: public, max-age=60, stale-while-revalidate=300
+
+/admin/
+  Cache-Control: public, max-age=60, stale-while-revalidate=300
+
+/index.html
+  Cache-Control: no-store
+
+# 覆盖 Pages 对**任何** .html 的美化重定向（如 /admin/index.html → /admin/ 的 308）。
+# 3xx 一律不缓存；浏览器对 308 按「永久」处理，缓存住就只能等用户清。
+/*.html
+  Cache-Control: no-store
+
+# 2026-10-26: two third-party origins are now explicitly allowed (both were rejected by CSP in the
+# console; the browser reports them but the page never showed an error):
+#   script-src  static.cloudflareinsights.com — Cloudflare Web Analytics beacon injected by the
+#               platform into the HTML (not present in our source). Allowing the origin is a no-op
+#               when Web Analytics is off.
+#   connect-src ganxiemingdan.jiangjiangze.icu — the thanks-roll upstream refresh (app.js:178);
+#               public/data/thanks.json stays the primary source, so a failure changes nothing.
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Content-Security-Policy: default-src 'self'; script-src 'self' https://static.cloudflareinsights.com; style-src 'self'; connect-src 'self' https://ganxiemingdan.jiangjiangze.icu; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'

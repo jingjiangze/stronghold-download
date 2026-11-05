@@ -1,0 +1,6 @@
+{
+  "ingestToken": "<INGEST_TOKEN: box/config.json 的 ingestToken>",
+  "msToken": "<ModelScope 平台令牌: stronghold-server 的 ms 远端里那份>",
+  "port": 8910,
+  "host": "127.0.0.1"
+}

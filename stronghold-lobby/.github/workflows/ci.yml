@@ -1,0 +1,27 @@
+name: ci
+
+# 单元测试（与主仓同款：node 22/24 双矩阵；纯 node --test，零依赖）。
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '${{ matrix.node }}'
+      - name: Unit tests (board / relay / api / match / page)
+        run: node --test

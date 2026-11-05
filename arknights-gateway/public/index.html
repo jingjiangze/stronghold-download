@@ -1,0 +1,372 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0c0f0e" />
+  <meta name="color-scheme" content="dark" />
+  <meta name="format-detection" content="telephone=no" />
+  <meta name="description" content="卫戍协议：盟约 · 三通道入口 —— 同一台游戏服的三条独立网络通道，任选一条进入。" />
+  <title>卫戍协议：盟约 · 三通道入口</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' fill='%230c0f0e'/%3E%3Cpath fill='%234ed8af' d='M5 3h3v2h2V3h4v2h2V3h3v5l-2 2v7l2 2v2H5v-2l2-2v-7L5 8z'/%3E%3C/svg%3E" />
+
+  <!-- 样式与字体全部自托管（dl 站 2026-10-08 的结论，见其 fonts/webfonts-local.css 注释 ——
+       第三方字体 CDN 被劫持会把整页判成「不安全」）。
+       页面只引用三通道 origin（玩家浏览器对它们自主测延迟），其余静态资源全站自托管；
+       CSP 的 connect-src 是 'self' + 三通道 origin（在 Worker 里按 channels.json 动态拼接）。 -->
+  <link rel="stylesheet" href="./fonts/fonts.css" />
+  <link rel="stylesheet" href="./fonts/webfonts-local.css" />
+  <link rel="stylesheet" href="./css/theme.css" />
+  <link rel="stylesheet" href="./css/components.css" />
+  <link rel="stylesheet" href="./css/screens/title.css" />
+  <link rel="stylesheet" href="./css/gate.css?v=9" />
+</head>
+<body>
+  <div class="app-bg" aria-hidden="true"></div>
+
+  <a class="skip-link" href="#channels-section">跳到通道列表</a>
+
+  <header class="gk-topbar">
+    <div class="container gk-topbar-inner">
+      <a class="brand" href="./">
+        <span class="brand-mark" aria-hidden="true">SP</span>
+        <span class="brand-text">卫戍协议 <b>·</b> 盟约<small>STRONGHOLD PROTOCOL</small></span>
+      </a>
+      <nav class="navigation" aria-label="主导航">
+        <a href="#announcements-section">公告</a>
+        <a href="#channels-section">通道</a>
+        <a href="#server-section">我的服务器</a>
+        <a href="#gameplay-section">当前玩法</a>
+        <a href="#lobby-section">线上大厅</a>
+        <a href="#guide-section">游玩指南</a>
+        <a href="#about-section">关于</a>
+        <a href="#feedback-section">反馈</a>
+      </nav>
+      <a class="nav-side" rel="noopener noreferrer" referrerpolicy="no-referrer" href="https://dl.jiangjiangze.icu/" title="Android 客户端下载与服务器清单">客户端下载</a>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="hero" aria-labelledby="page-title">
+      <div class="title-bg" aria-hidden="true">
+        <div class="title-bg__glow"></div>
+        <div class="title-bg__radar"><div class="title-bg__sweep"></div></div>
+        <svg class="title-bg__ridges" viewBox="0 0 1920 420" preserveAspectRatio="none">
+          <defs>
+            <linearGradient id="ridge-far" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#16231f" /><stop offset="1" stop-color="#0a0e0d" />
+            </linearGradient>
+            <linearGradient id="ridge-near" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#0f1714" /><stop offset=".6" stop-color="#080b0a" />
+            </linearGradient>
+            <linearGradient id="ridge-edge" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0" stop-color="#17f9b7" stop-opacity="0" />
+              <stop offset=".3" stop-color="#17f9b7" stop-opacity=".55" />
+              <stop offset=".7" stop-color="#17f9b7" stop-opacity=".55" />
+              <stop offset="1" stop-color="#17f9b7" stop-opacity="0" />
+            </linearGradient>
+          </defs>
+          <path class="ridge ridge--far" fill="url(#ridge-far)" stroke="url(#ridge-edge)"
+            d="M0 420V250l120-40 90 30 90-70 60 20 80-70 80 55 80-25 90 70 90-20 80 50 100-15 90 25 90-55 90-55 70-55 70 45 80-20 90 65 80-20 100 55 100-20 100 40v180z" />
+          <path class="ridge ridge--near" fill="url(#ridge-near)" stroke="url(#ridge-edge)"
+            d="M0 420V322l160-32 100 20 120-50 90 40 130-20 120 50 140-30 140 35 120-35 140 20 140-50 120 30 120-20 120 40 160-20v147z" />
+        </svg>
+        <div class="title-bg__haze"></div>
+        <span class="cross" style="left:6%;top:26%"></span>
+        <span class="cross" style="left:94%;top:18%"></span>
+        <span class="cross" style="left:12%;top:74%"></span>
+        <span class="cross" style="left:89%;top:66%"></span>
+      </div>
+
+      <div class="hero-inner">
+        <p class="eyebrow micro micro--mint">TRI-CHANNEL ACCESS GATEWAY</p>
+        <h1 id="page-title">三通道入口</h1>
+        <p class="hero-en display">STRONGHOLD PROTOCOL · ALLIANCE</p>
+        <p class="hero-description">同一台游戏服，三条互相独立的网络通道。任选一条进入；某条不通时，换另一条即可。</p>
+        <div class="quick-stats" aria-label="通道概览">
+          <span><strong id="statChannels">—</strong> 在线通道</span>
+          <span><strong id="statPlayers">—</strong> 在线玩家</span>
+          <span><strong id="statRooms">—</strong> 进行中对局</span>
+          <span><strong id="statRegion">—</strong> 你的延迟 ms</span>
+        </div>
+        <p class="hero-note micro" id="statusNote">正在探测通道状态…</p>
+        <p class="hero-note micro" id="baselineMeta" hidden></p>
+      </div>
+    </section>
+
+    <!-- 布局取自 game.rainya.me 的 #announcements-section：左侧轮播公告卡 + 右侧「游玩提醒」，
+         下方历史公告弹窗。公告数据来自本站 /data/announcements.json（本地静态，无外部请求）。 -->
+    <section class="notice-section" id="announcements-section" aria-labelledby="announcements-heading">
+      <div class="notice-heading">
+        <div class="notice-heading-title">
+          <span class="notice-heading-mark" aria-hidden="true"></span>
+          <h2 id="announcements-heading">站点公告</h2>
+          <span id="announcementStatus" class="notice-status" role="status">同步中</span>
+        </div>
+        <div class="notice-heading-tools">
+          <button type="button" class="notice-history" id="announcementHistoryBtn" aria-haspopup="dialog">历史公告</button>
+          <a class="notice-dynamic" rel="noopener noreferrer" referrerpolicy="no-referrer" href="https://dl.jiangjiangze.icu/servers.html">服务器清单</a>
+        </div>
+      </div>
+      <div class="notice-grid">
+        <div class="notice-main">
+          <article class="announcement" id="announcement" hidden aria-roledescription="轮播公告" aria-label="站点公告">
+            <div class="announcement-viewport" id="announcementViewport">
+              <ol class="announcement-track" id="announcementTrack"></ol>
+            </div>
+            <div class="announcement-controls" id="announcementControls" hidden>
+              <button type="button" class="announcement-nav" id="announcementPrev" aria-label="上一条公告">‹</button>
+              <div class="announcement-dots" id="announcementDots"></div>
+              <button type="button" class="announcement-nav" id="announcementNext" aria-label="下一条公告">›</button>
+              <button type="button" class="announcement-expand" id="announcementExpand" hidden aria-expanded="false" aria-controls="announcementViewport"><span>展开</span><i aria-hidden="true">›</i></button>
+            </div>
+          </article>
+          <div class="notice-empty" id="announcementEmpty">
+            <span class="notice-empty-icon" aria-hidden="true">!</span>
+            <div><h3 id="announcementEmptyTitle">正在同步公告</h3><p id="announcementEmptyText">请稍候，最新站点通知将在这里显示。</p></div>
+          </div>
+        </div>
+        <aside class="notice-reminders" aria-labelledby="notice-reminders-title">
+          <h3 id="notice-reminders-title">游玩提醒</h3>
+          <ul>
+            <li><p>三条通道指向<b>同一台游戏服</b>，进度与房间互通，随时可换通道。</p></li>
+            <li><p>进服前先看卡片上的<b>你的延迟</b>；数字越小越顺。它由你的浏览器现场实测（几次轻量连接取中位数），<b>代表你自己的网络路径</b>，别人的数字不代表你的体验。</p></li>
+            <li><p>尽量避免创建 <b>AI 队友</b>，减少服务器 CPU 占用。</p></li>
+          </ul>
+        </aside>
+      </div>
+      <dialog class="history-dialog" id="announcementHistoryDialog" aria-labelledby="announcementHistoryTitle">
+        <div class="history-dialog-heading">
+          <h3 id="announcementHistoryTitle">历史公告</h3>
+          <button type="button" class="text-button" id="announcementHistoryClose">关闭</button>
+        </div>
+        <ol class="history-list" id="announcementHistoryList"></ol>
+        <p class="history-empty" id="announcementHistoryEmpty">暂无历史公告。公告结束后，会自动归档在这里。</p>
+      </dialog>
+    </section>
+
+    <section class="section" id="channels-section" aria-labelledby="channels-title">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow micro">01 / 选择入口</p>
+          <h2 id="channels-title">通道</h2>
+        </div>
+        <p class="section-note" id="channelsNote">状态每 15 秒刷新一次</p>
+      </div>
+      <div class="channel-grid" id="channelGrid" aria-busy="true"></div>
+      <p class="channel-hint">
+        <strong>三端互通</strong>：三条通道指向<strong>同一台游戏服</strong>、
+        同一份服务端状态（同 build、同运行时长）——房间、对局与进度三端互通，
+        随时换一条进去都落在同一个服上，不需要重新开房。
+      </p>
+      <p class="channel-hint">
+        山东、湖南、海外三个方向各有一条入口，按你所在网络挑一条通常最快的即可；
+        某条打不开就换另一条。桌面浏览器打开后会直接进入游戏主界面。
+      </p>
+    </section>
+
+    <!-- 我的服务器：三条通道指向同一台游戏服，所以服务器级数值（人数/房间/运行时长/内存/CPU）
+         只在这里显示一份，不在三张通道卡上重复（「重复内容合并」）。
+         数值由盒子（服务器本机）每 5 分钟读 /healthz + 进程采样后回传，Worker 只转发。
+         延迟不在这里——延迟在每张通道卡上，由玩家浏览器自主实测。 -->
+    <section class="section" id="server-section" aria-labelledby="server-title">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow micro">02 / 我的服务器</p>
+          <h2 id="server-title">我的服务器</h2>
+        </div>
+        <p class="section-note" id="serverNote">正在同步服务器状态…</p>
+      </div>
+
+      <div class="server-stats" id="serverStats" aria-live="polite">
+        <div class="server-stats-head">
+          <h3>卫戍协议：盟约 · 本站主服</h3>
+          <p class="server-stats-sub" id="serverStatsSub">等待首次探测…</p>
+        </div>
+        <dl class="server-stats-grid">
+          <div><dt>在线玩家</dt><dd class="num" data-field="srvHumans">—</dd></div>
+          <div><dt>会话</dt><dd class="num" data-field="srvSessions">—</dd></div>
+          <div><dt>房间</dt><dd class="num" data-field="srvRooms">—</dd></div>
+          <div><dt>对局</dt><dd class="num" data-field="srvMatches">—</dd></div>
+          <div><dt>连接</dt><dd class="num" data-field="srvSockets">—</dd></div>
+          <div><dt>运行时长</dt><dd class="num" data-field="srvUptime">—</dd></div>
+          <div><dt>内存占用</dt><dd class="num" data-field="srvMem">—</dd></div>
+          <div><dt>CPU 占用</dt><dd class="num" data-field="srvCpu">—</dd></div>
+        </dl>
+        <p class="server-stats-meta">三条通道指向同一台游戏服，上面是同一份服务端状态，不是三条通道相加。内存与 CPU 是游戏服进程的实时占用。</p>
+      </div>
+    </section>
+
+    <section class="section" id="gameplay-section" aria-labelledby="gameplay-title">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow micro">03 / 当前服务器玩法</p>
+          <h2 id="gameplay-title">当前服务器的特有玩法</h2>
+        </div>
+        <p class="section-note">协同共竞 · 合作经济（仅本服务器开启）</p>
+      </div>
+
+      <div class="gameplay-intro">
+        <p>这台游戏服在官方合作模式的基础上，额外开启了一套<strong>协同共竞</strong>经济规则（玩家间互助、团队资金与兜底回报）。三条通道指向的<strong>同一台服务器</strong>，所以下面的玩法在任何一条通道进入都生效。</p>
+        <p class="gameplay-ref">玩法设计依据《Stronghold Protocol 新经济玩法设计审计》（2026-10-09 定稿，已并入 <code>master-play</code> 的 PR #111 / #112 / #113）。</p>
+      </div>
+
+      <div class="gameplay-grid">
+        <article class="gameplay-card">
+          <h3>借钱 / 支援</h3>
+          <p>准备阶段可向队友借资金（每笔 1、每人每回合有额度，全队有上限，请求 30 秒有效）。借款<strong>不跨回合结转</strong>：下回合开局会从你的收入里还（借 1 还 1，本金必还），还不上只作废、不会利滚利。</p>
+          <p>AI 队友会被借钱也<strong>会主动借钱</strong>；它是否同意按随机率判定——你越落后（在场干员少、更不容易阵亡）它越可能借，上限 50%；遇到升级 / 买精锐缺钱的关键节点，随机率可到 80%。被一人拒绝后可向他人再借。</p>
+        </article>
+
+        <article class="gameplay-card">
+          <h3>兜底利息（PvE 回报）</h3>
+          <p>联防时你替全队挡下来的漏怪，会计入<strong>兜底覆盖率</strong>（你的兜底击杀 ÷ 本局计划怪量，个人独立、整数百分比）。</p>
+          <p>队友还钱那一刻，利息按<strong>各兜底者的覆盖率之比</strong>分给所有替他兜过底的人（借款人本人不参分）。池子封顶在<strong>本金</strong>——一资金最多变两资金；金币只发整额，零头累计到下次。借给「落后者」的款享受 <strong>×2 溢价</strong>。</p>
+          <p>数学约束：前 9 回合最多只刷约一半的怪，覆盖率上不了 100%，所以「借 1 收回 ≥2」在前 9 回合<strong>不可能</strong>。</p>
+        </article>
+
+        <article class="gameplay-card">
+          <h3>阵亡分红</h3>
+          <p>队友被淘汰（阵亡或中途退出）时，他本该下回合拿到的收入会作为奖池，按<strong>骰子点数比例</strong>分给存活队友，总量不超过奖池本身。欠款随阵亡一并作废。</p>
+        </article>
+
+        <article class="gameplay-card">
+          <h3>团队储备与救济</h3>
+          <p>每回合休整期末的结余可转化为<strong>团队储备</strong>；全员无伤过关触发<strong>完美作战奖励</strong>注入储备。储备可花在<strong>应急仓储</strong>（提高个人缓冲，但会压低结余转化——二者抢同一笔零钱，是刻意的取舍）与<strong>后勤调度</strong>（提高全队每回合的借钱额度）。</p>
+          <p>当队友濒临出局（LP 低于阈值）时，可直接从储备<strong>划拨救济</strong>给他——只借不还，受每回合上限约束。</p>
+        </article>
+
+        <article class="gameplay-card">
+          <h3>为什么愿意帮落后的队友</h3>
+          <p>三件事构成一个闭环：① 借给落后者有 ×2 利息溢价，覆盖他更高的阵亡风险；② 兜底覆盖率越高、借钱收益越高（越会兜底的人越愿意借）；③ 队友活着才有联防与兜底击杀——把落后队友借活，是保住你自己兜底率的长线理由。</p>
+        </article>
+
+        <article class="gameplay-card">
+          <h3>快速上手要点</h3>
+          <p>金币每回合清零（坎诺特阵营例外，剩 ≥5 时每回合 +1）。借款额度受下回合收入约束，所以<strong>债务永远还得起</strong>。截图与描述越具体，下面的反馈通道越能帮到你。</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section" id="lobby-section" aria-labelledby="lobby-title">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow micro">04 / 线上大厅</p>
+          <h2 id="lobby-title">线上大厅</h2>
+        </div>
+        <p class="section-note" id="lobbyNote">正在同步房间列表…</p>
+      </div>
+      <div class="lobby-list" id="lobbyList" aria-busy="true"></div>
+      <p class="lobby-hint">
+        下面是当前开放的房间牌（玩家建房后登记，10 分钟有效）。点「加入」会先测三条通道的延迟，
+        自动从<strong>你这边最快的一条</strong>进游戏并带上房间码；也可以先选好通道再进。
+        没有房间就先进游戏开一个，把房间码发给队友即可。
+      </p>
+    </section>
+
+    <section class="section" id="guide-section" aria-labelledby="guide-title">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow micro">05 / 上手</p>
+          <h2 id="guide-title">游玩指南</h2>
+        </div>
+      </div>
+      <ol class="guide-list">
+        <li><b>选通道</b><span>按延迟挑一条，点「进入游戏」。首次进入需要下载游戏资源，之后会走浏览器缓存。</span></li>
+        <li><b>建房间或加入</b><span>在游戏内创建房间，把房间码发给队友；对方从任意一条通道进入后加入即可。</span></li>
+        <li><b>卡住了就换通道</b><span>通道之间互相独立，换一条刷新页面即可继续，进度不受影响。</span></li>
+      </ol>
+    </section>
+
+    <section class="section about" id="about-section" aria-labelledby="about-title">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow micro">06 / 了解本站</p>
+          <h2 id="about-title">关于</h2>
+        </div>
+      </div>
+      <div class="about-list">
+        <div class="about-row">
+          <h3>这个页面是什么</h3>
+          <div class="about-body">
+            <p>「卫戍协议：盟约」是一款非官方同人作品。本站只是把它的<b>三条网络通道</b>整理成一个入口页：显示每条通道的在线状态与延迟、服务器的实时数值，点一下就进游戏。本站不修改游戏内容，也不保存任何账号或存档。</p>
+            <p>服务器数值（人数 / 房间 / 对局 / 连接 / 运行时长 / 内存 / CPU）由本站采集端在服务器本机直接读取 <code>/healthz</code> 与进程状态后回传，每 5 分钟一轮；游戏服本身不开放跨域读取，所以这些数字由服务端中转，不经过任何第三方。</p>
+            <p><b>延迟由你的浏览器实测</b>：页面会对你所在网络到每条通道的端口做几次轻量连接计时（不读取任何响应内容、不携带任何个人信息），取中位数显示为「你的延迟」。这是<b>你这条网络路径</b>的真实往返，比任何第三方探测点都更贴近你的实际体验。测一次约几 KB，不持续占用流量。</p>
+            <p>注意：自签名证书的隧道（山东那条）第一次需要你点「进入游戏」在浏览器里接受一次证书，之后本页就能测到它的延迟。</p>
+          </div>
+        </div>
+        <div class="about-row">
+          <h3>关于三条通道</h3>
+          <div class="about-body">
+            <p>三条通道指向<b>同一台服务器</b>（同一份对局状态、同一个在线人数），区别只在网络路径：一条走 Cloudflare 自有域名，两条走第三方内网穿透隧道。哪条快、哪条通，取决于你所在网络。</p>
+            <p>三条通道的人数与运行时长读的是<b>同一份</b>服务端状态（由本站采集端直接读服务器本机），所以三条显示的数字一致——它们是同一台服，不是三个独立的服。</p>
+          </div>
+        </div>
+        <div class="about-row">
+          <h3>反馈</h3>
+          <div class="about-body">
+            <p>遇到问题请走页面底部的 <a href="#feedback-section">反馈</a> 通道：填写具体现象、附上截图、选好你用的通道即可提交（截图直接传到本站，不经由任何图床）。客户端下载与服务器清单在 <a rel="noopener noreferrer" referrerpolicy="no-referrer" href="https://dl.jiangjiangze.icu/">dl.jiangjiangze.icu</a>，联机大厅在 <a rel="noopener noreferrer" referrerpolicy="no-referrer" href="https://sp-lobby.jiangjiangze.icu/">sp-lobby.jiangjiangze.icu</a>，素材 CDN 与一键包在 <a rel="noopener noreferrer" referrerpolicy="no-referrer" href="https://downcdn.jiangjiangze.icu/">downcdn.jiangjiangze.icu</a>。</p>
+          </div>
+        </div>
+      </div>
+      <p class="disclaimer">免责声明：本站为《卫戍协议：盟约》非官方同人项目的辅助入口页，仅供学习交流与个人体验使用，与游戏官方无关，不得用于任何商业用途；游戏内容版权归原作者所有。</p>
+    </section>
+
+    <section class="section" id="feedback-section" aria-labelledby="feedback-title">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow micro">07 / 反馈</p>
+          <h2 id="feedback-title">提交 bug 反馈</h2>
+        </div>
+        <p class="section-note">描述 + 截图 + 你所在通道，让问题更容易复现</p>
+      </div>
+
+      <p class="feedback-note">提交后反馈会先暂存在本站，每天在常玩时段（约中午 12 点、下午 5 点、晚上 9 点、凌晨 0 点）由自动触发器分四批汇总转交到游戏仓库
+        <a rel="noopener noreferrer" referrerpolicy="no-referrer" href="https://github.com/jingjiangze/Stronghold-Protocol/issues">Stronghold-Protocol</a>
+        的 Issue（最多保留一天，转交成功后自动清除）。请善用描述与截图，方便开发者复现。</p>
+
+      <form class="feedback-form" id="feedbackForm" novalidate>
+        <div class="feedback-field">
+          <label for="fbChannel">你用的通道</label>
+          <select id="fbChannel" name="channel">
+            <option value="">不确定 / 其他</option>
+            <option value="cf">Cloudflare 主通道</option>
+            <option value="sakura">山东（樱花隧道）</option>
+            <option value="hunan">湖南（隧道）</option>
+            <option value="overseas">海外（隧道）</option>
+          </select>
+        </div>
+        <div class="feedback-field">
+          <label for="fbDesc">具体遇到的问题</label>
+          <textarea id="fbDesc" name="description" rows="5" maxlength="2000" required
+            placeholder="请尽量具体：做了什么操作、期望怎样、实际怎样。例：用山东通道进入后，建房页面点「创建」没反应，刷新后仍在原页面。"></textarea>
+          <p class="feedback-hint">至少 5 个字。越具体（步骤 + 现象 + 时间）越容易定位。</p>
+        </div>
+        <div class="feedback-field">
+          <label for="fbShot">截图（可选，≤3MB，PNG/JPEG/WebP）</label>
+          <input type="file" id="fbShot" name="screenshot" accept="image/png,image/jpeg,image/webp" />
+          <p class="feedback-hint">一张能看清问题的画面即可；不用上传到任何图床，直接随表单提交到本站。</p>
+        </div>
+        <div class="feedback-field">
+          <label for="fbContact">联系方式（可选）</label>
+          <input type="text" id="fbContact" name="contact" maxlength="120"
+            placeholder="留个能联系到你的方式（如邮箱 / 社交账号），方便回复；不填也行" />
+        </div>
+        <div class="feedback-actions">
+          <button type="submit" class="btn btn--primary" id="fbSubmit">提交反馈</button>
+          <span class="feedback-status" id="fbStatus" role="status" aria-live="polite"></span>
+        </div>
+      </form>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="container footer-inner">
+      <div><span class="footer-brand">卫戍协议 · 盟约</span><a href="#about-section">关于本站</a></div>
+      <div><span id="foot">正在同步…</span></div>
+    </div>
+  </footer>
+
+  <script type="module" src="./js/gate.js?v=18"></script>
+</body>
+</html>

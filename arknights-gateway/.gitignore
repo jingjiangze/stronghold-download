@@ -1,0 +1,15 @@
+.wrangler/
+node_modules/
+*.png
+.mimosa/
+
+# 采集器配置里放着 ingest 令牌，不上库；盒子那边用 box/config.example.json 复制一份
+box/config.json
+box/push-*.ps1
+# 线上通道清单的本地副本（regional.mjs 取不到线上时的兜底缓存）
+box/channels-regional.json
+
+# 工作笔记（task_plan / findings / progress，planning-with-files 用）
+task_plan.md
+findings.md
+progress.md

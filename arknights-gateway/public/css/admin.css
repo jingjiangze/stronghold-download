@@ -1,0 +1,262 @@
+/* ==========================================================================================
+   admin.css — 服务器后台（public/admin.html）。
+
+   设计语言与入口页 index.html 保持一致：布局类（.container / .gk-topbar / .hero /
+   .section / .panel …）全部直接复用 gate.css + components.css，本文件只补后台私有的增量。
+   新增类名统一 gk- 前缀 —— tools/check.mjs 的「类名冲突」检查会把与 theme.css /
+   components.css / screens/title.css 同名、又不在 REUSED 白名单里的类判为冲突。
+
+   单位口径：本页根字号是主题自带的 clamp(40px, min(100vw/19.2, 100vh/10.8), 240px)，
+   所以所有尺寸都用 rem，颜色只用 var(--*) 令牌，和入口页一样随视口缩放；不写 px / 十六进制色值。
+   ========================================================================================== */
+
+/* ---- 顶栏：后台页多两个入口，比入口页宽一点也能放下 ------------------------------------- */
+.gk-topbar-inner { min-height: .78rem; }
+
+/* ---- Hero 概览下的读取状态：与 hero-note 同语义，接入 status pill -------------------------- */
+#status-note[data-state="ok"] { color: var(--mint-500); }
+#status-note[data-state="err"] { color: var(--red-premium); }
+
+/* ---- 实时状态卡片（对齐首页通道卡的视觉语言） ----------------------------------------------
+   一张卡 = 一台服务器。卡面只放关键数值，全部字段折叠在 <details> 里。
+   离线不是错误，是「这台没在回传」：卡整体降饱和，状态点转灰，不写成红错误。 */
+.spad-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(3.6rem, 1fr));
+  gap: .18rem;
+}
+.spad-empty {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: .3rem;
+  border: 1px dashed var(--line);
+  border-radius: 9px;
+  color: var(--text-lo);
+  text-align: center;
+  font-size: .125rem;
+}
+.spad-card {
+  display: flex;
+  flex-direction: column;
+  gap: .12rem;
+  padding: .18rem;
+}
+.spad-card[data-online="0"] { opacity: .72; }
+.spad-card-head {
+  display: flex;
+  align-items: center;
+  gap: .09rem;
+  min-width: 0;
+}
+.spad-card-name {
+  margin: 0;
+  font-size: .145rem;
+  color: var(--text-hi);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.spad-dot {
+  width: .085rem;
+  height: .085rem;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  background: var(--text-dim);
+}
+.spad-dot[data-state="up"] { background: var(--mint-400); box-shadow: 0 0 0 3px var(--mint-a20); }
+.spad-dot[data-state="down"] { background: var(--red-premium); box-shadow: 0 0 0 3px var(--red-a20); }
+.spad-dot[data-state="idle"] { background: var(--text-dim); }
+.spad-state {
+  margin-left: auto;
+  flex: 0 0 auto;
+  padding: .02rem .09rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: .1rem;
+  letter-spacing: .06em;
+  color: var(--text-lo);
+}
+.spad-state[data-state="up"] { color: var(--mint-500); border-color: var(--mint-a20); }
+.spad-state[data-state="down"] { color: var(--red-premium); border-color: var(--red-a20); }
+.spad-state[data-state="idle"] { color: var(--text-dim); }
+.spad-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .1rem .16rem;
+  margin: 0;
+}
+.spad-metrics dt {
+  color: var(--text-lo);
+  font-size: .105rem;
+  letter-spacing: .04em;
+}
+.spad-metrics dd {
+  margin: .01rem 0 0;
+  color: var(--text-hi);
+  font-size: .17rem;
+  font-variant-numeric: tabular-nums;
+}
+.spad-ident {
+  margin: 0;
+  color: var(--text-dim);
+  font-family: var(--font-display);
+  letter-spacing: .02em;
+  word-break: break-all;
+}
+.spad-fields { border-top: 1px solid var(--line); padding-top: .09rem; }
+.spad-fields > summary {
+  cursor: pointer;
+  color: var(--text-lo);
+  font-size: .11rem;
+  letter-spacing: .04em;
+}
+.spad-fields > summary:hover { color: var(--mint-400); }
+.spad-fields-list {
+  margin: .09rem 0 0;
+  display: grid;
+  gap: .05rem;
+  max-height: 3.4rem;
+  overflow-y: auto;
+}
+.spad-field-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: .12rem;
+  border-bottom: 1px dashed rgba(255, 255, 255, .05);
+  padding-bottom: .03rem;
+}
+.spad-field-row dt {
+  color: var(--text-lo);
+  font-family: var(--font-display);
+  font-size: .1rem;
+  letter-spacing: .02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.spad-field-row dd {
+  margin: 0;
+  color: var(--text-md);
+  font-size: .115rem;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  word-break: break-all;
+}
+.spad-field-row dd[data-tone="ok"] { color: var(--mint-400); }
+.spad-field-row dd[data-tone="warn"] { color: var(--amber); }
+.spad-field-row dd[data-tone="bad"] { color: var(--red-premium); }
+/* 一条通道都没有在线时给整表打 degraded：数值全部退成暗色。
+   没有这段的话，19 行亮色「—」会让「探针没回传」看起来像「页面坏了」。 */
+.gk-empty {
+  padding: .2rem .12rem;
+  color: var(--text-dim);
+  text-align: center;
+}
+
+/* 表尾一行：更新时间 / 访客归属 / 原始 JSON */
+.gk-foot {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .1rem;
+  margin: .1rem 0 0;
+  color: var(--text-dim);
+  font-size: .105rem;
+  letter-spacing: .04em;
+}
+.gk-dot {
+  width: .03rem;
+  height: .03rem;
+  border-radius: 50%;
+  background: var(--line-3);
+}
+.gk-link { color: var(--mint-400); text-decoration: none; }
+.gk-link:hover { color: var(--mint-glow); text-decoration: underline; }
+
+/* ---- 公告管理：登录 / 编辑 ---------------------------------------------------------------- */
+/* 登录态左侧表单、右侧说明链路（写 → 读 → 生效），两边各占一半，
+   免得旧版那样一张小卡孤零零撑满整个面板。 */
+.gk-login {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: .24rem;
+  align-items: start;
+}
+.gk-login-aside {
+  border-left: 1px solid var(--line);
+  padding-left: .24rem;
+}
+.gk-login-line {
+  margin: 0 0 .1rem;
+  color: var(--text-lo);
+  font-size: .115rem;
+  line-height: 1.7;
+}
+.gk-login-line strong {
+  display: inline-block;
+  margin-right: .08rem;
+  border: 1px solid var(--mint-a35);
+  border-radius: 4px;
+  padding: 0 .06rem;
+}
+.gk-field { display: flex; flex-direction: column; gap: .06rem; max-width: 6.2rem; }
+.gk-row { display: flex; align-items: center; gap: .1rem; flex-wrap: wrap; }
+.gk-row--between { justify-content: space-between; margin-bottom: .12rem; }
+.gk-meta { margin: 0; }
+
+/* 输入框沿用 feedback-field 的口径（bg-2 底 + line 描边 + focus 薄荷边），
+   这里只补后台特有的 .gk-input（等宽数字 / 全宽正文）。 */
+.gk-input {
+  box-sizing: border-box;
+  padding: .1rem .12rem;
+  font: inherit;
+  font-size: .13rem;
+  color: var(--text-hi);
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+}
+.gk-input::placeholder { color: var(--text-dim); }
+.gk-input:focus { outline: none; border-color: var(--mint-600); }
+.gk-input--title { flex: 1 1 3rem; font-weight: 600; }
+.gk-input--date { flex: 0 0 1.6rem; }
+.gk-input--level { flex: 0 0 1.5rem; }
+.gk-input--body { width: 100%; resize: vertical; line-height: 1.8; }
+
+/* 公告卡片：一条一个面板，序号用 --mint 的 micro 标 */
+.gk-list {
+  list-style: none;
+  margin: 0 0 .14rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: .14rem;
+}
+.gk-card {
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: rgba(12, 15, 14, .5);
+  padding: .14rem;
+}
+.gk-card-head { display: flex; align-items: center; gap: .1rem; margin-bottom: .1rem; }
+.gk-card-idx { color: var(--mint-700); flex: none; }
+.gk-card .gk-row { margin-bottom: .1rem; }
+.gk-empty {
+  margin: .04rem 0 .14rem;
+  color: var(--text-dim);
+  font-size: .12rem;
+}
+
+/* ---- 窄屏 ---------------------------------------------------------------------------------- */
+@media (max-width: 640px) {
+  .gk-topbar-inner { min-height: auto; padding: .1rem 0; flex-wrap: wrap; }
+  .gk-login { grid-template-columns: minmax(0, 1fr); }
+  .gk-login-aside { border-left: 0; border-top: 1px solid var(--line); padding: .14rem 0 0; }
+  .gk-input--title { flex-basis: 100%; }
+  .gk-input--date, .gk-input--level { flex: 1 1 1.2rem; }
+}
+
+/* ---- 未发布提示 -------------------------------------------------------------------------- */
+/* 草稿与线上不一致时给发布按钮描一圈琥珀边 —— 一眼看出「有东西没发出去」。 */
+.btn[data-dirty] { border-color: var(--amber); }

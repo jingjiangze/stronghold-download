@@ -1,0 +1,42 @@
+{
+  "_comment": "三条通道的唯一真源：前端渲染卡片用这份，Worker 的 /api/status 也从这里读（经 env.ASSETS）。新增/改通道只改这个文件。origin 必须是 https 且是公网主机（Worker 侧会校验，拒绝环回/私网/保留地址）；它同时会进 CSP 的 connect-src，因为延迟改由玩家浏览器对 origin 做 no-cors 连接计时。三条通道指向同一台游戏服（server 同为 sp-main），所以服务器级数值只在「我的服务器」里出现一份，不按通道重复。region 只是卡片上给玩家看的「方向」标签（山东 / 湖南 / 海外），不再用于任何服务端探测。",
+  "updatedAt": "2026-10-09",
+  "channels": [
+    {
+      "id": "weishu",
+      "name": "卫戍云通道 · 海外",
+      "tier": "primary",
+      "tag": "主通道",
+      "origin": "https://weishu.jiangjiangze.icu",
+      "host": "weishu.jiangjiangze.icu",
+      "cert": "valid",
+      "note": "本站自有域名，走 Cloudflare 边缘，是海外方向的入口。海外玩家一般最稳。",
+      "server": "sp-main",
+      "region": { "label": "海外" }
+    },
+    {
+      "id": "nyat",
+      "name": "NYAT 隧道 · 湖南",
+      "tier": "backup",
+      "tag": "备用 1",
+      "origin": "https://www.u712507.nyat.app:45038",
+      "host": "www.u712507.nyat.app",
+      "cert": "valid",
+      "note": "第三方内网穿透隧道，非标准端口 45038。湖南方向的入口。",
+      "server": "sp-main",
+      "region": { "label": "湖南" }
+    },
+    {
+      "id": "sakura",
+      "name": "SakuraFRP 隧道 · 山东",
+      "tier": "backup",
+      "tag": "备用 2",
+      "origin": "https://frp-box.com:38916",
+      "host": "frp-box.com",
+      "cert": "self-signed",
+      "note": "第三方 SakuraFRP 隧道，非标准端口 38916。山东方向的入口。自签名证书，第一次需点「进入游戏」在浏览器里接受一次证书。",
+      "server": "sp-main",
+      "region": { "label": "山东" }
+    }
+  ]
+}

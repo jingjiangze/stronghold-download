@@ -1,0 +1,4 @@
+{
+  "ingestUrl": "https://arknights.jiangjiangze.icu/api/ingest",
+  "ingestToken": "在 Worker 侧设置的 INGEST_TOKEN，用 wrangler secret put 写入"
+}

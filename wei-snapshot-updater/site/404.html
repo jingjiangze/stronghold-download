@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>页面不存在 · 卫戍协议：盟约</title>
+<link rel="stylesheet" href="/style.css">
+<!--
+  2026-10-26: this file must exist at the deployment root. Cloudflare Pages docs
+  (configuration/serving-pages): "If your project does not include a top-level 404.html file,
+  Pages assumes that you are deploying a single-page application" and answers EVERY unmatched
+  path — including /api/* — with a 200 + index.html. That is how /api/servers silently started
+  returning HTML instead of JSON and broke the list. With this file in place, unmatched paths
+  answer 404 and a mistyped/removed API route fails loudly instead of looking like the app shell.
+-->
+<meta http-equiv="refresh" content="4;url=/">
+</head>
+<body class="rl">
+<main class="rl-dir">
+  <div class="rl-notice rl-alert">页面不存在（404）。4 秒后自动返回 <a href="/">服务器列表</a>。</div>
+</main>
+</body>
+</html>

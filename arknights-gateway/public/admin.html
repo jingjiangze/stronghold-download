@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0c0f0e" />
+  <meta name="color-scheme" content="dark" />
+  <meta name="format-detection" content="telephone=no" />
+  <meta name="robots" content="noindex, nofollow" />
+  <meta name="description" content="卫戍协议：盟约 · 服务器后台 —— 实时状态与公告管理。" />
+  <title>服务器后台 · 卫戍协议：盟约</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' fill='%230c0f0e'/%3E%3Cpath fill='%234ed8af' d='M5 3h3v2h2V3h4v2h2V3h3v5l-2 2v7l2 2v2H5v-2l2-2v-7L5 8z'/%3E%3C/svg%3E" />
+
+  <!-- 与入口页 index.html 完全同序：theme → components → screens/title → gate。
+       admin.css 放最后，只做后台私有增量；类名统一 gk- 前缀，避免与 gate.css 同名
+       （同名且不在 tools/check.mjs 的 REUSED 白名单里会被判冲突）。 -->
+  <link rel="stylesheet" href="./fonts/fonts.css" />
+  <link rel="stylesheet" href="./fonts/webfonts-local.css" />
+  <link rel="stylesheet" href="./css/theme.css" />
+  <link rel="stylesheet" href="./css/components.css" />
+  <link rel="stylesheet" href="./css/screens/title.css" />
+  <link rel="stylesheet" href="./css/gate.css?v=9" />
+  <link rel="stylesheet" href="./css/admin.css?v=3" />
+</head>
+<body>
+  <div class="app-bg" aria-hidden="true"></div>
+
+  <a class="skip-link" href="#status-section">跳到实时状态</a>
+
+  <header class="gk-topbar">
+    <div class="container gk-topbar-inner">
+      <a class="brand" href="./">
+        <span class="brand-mark" aria-hidden="true">SP</span>
+        <span class="brand-text">卫戍协议 <b>·</b> 盟约<small>STRONGHOLD PROTOCOL</small></span>
+      </a>
+      <nav class="navigation" aria-label="后台导航">
+        <a href="#status-section">实时状态</a>
+        <a href="#ann-section">公告管理</a>
+      </nav>
+      <a class="nav-side" href="./">返回入口页</a>
+    </div>
+  </header>
+
+  <main class="container">
+
+    <!-- ===== Hero：与入口页同一结构，只换文案 ===== -->
+    <section class="hero" aria-labelledby="page-title">
+      <div class="title-bg" aria-hidden="true">
+        <div class="title-bg__glow"></div>
+        <div class="title-bg__radar"><div class="title-bg__sweep"></div></div>
+        <svg class="title-bg__ridges" viewBox="0 0 1920 420" preserveAspectRatio="none">
+          <defs>
+            <linearGradient id="ridge-far" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#16231f" /><stop offset="1" stop-color="#0a0e0d" />
+            </linearGradient>
+            <linearGradient id="ridge-near" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#0f1714" /><stop offset=".6" stop-color="#080b0a" />
+            </linearGradient>
+            <linearGradient id="ridge-edge" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#17f9b7" stop-opacity="0" />
+              <stop offset=".3" stop-color="#17f9b7" stop-opacity=".55" />
+              <stop offset=".7" stop-color="#17f9b7" stop-opacity=".55" />
+              <stop offset="1" stop-color="#17f9b7" stop-opacity="0" />
+            </linearGradient>
+          </defs>
+          <path class="ridge ridge--far" fill="url(#ridge-far)" stroke="url(#ridge-edge)"
+            d="M0 420V250l120-40 90 30 90-70 60 20 80-70 80 55 80-25 90 70 90-20 80 50 100-15 90 25 90-55 90-55 70-55 70 45 80-20 90 65 80-20 100 55 100-20 100 40v180z" />
+          <path class="ridge ridge--near" fill="url(#ridge-near)" stroke="url(#ridge-edge)"
+            d="M0 420V322l160-32 100 20 120-50 90 40 130-20 120 50 140-30 140 35 120-35 140 20 140-50 120 30 120-20 120 40 160-20v147z" />
+        </svg>
+        <div class="title-bg__haze"></div>
+        <span class="cross" style="left:6%;top:26%"></span>
+        <span class="cross" style="left:94%;top:18%"></span>
+        <span class="cross" style="left:12%;top:74%"></span>
+        <span class="cross" style="left:89%;top:66%"></span>
+      </div>
+
+      <div class="hero-inner">
+        <p class="eyebrow micro micro--mint">OPERATIONS CONSOLE</p>
+        <h1 id="page-title">服务器后台</h1>
+        <p class="hero-en display">STRONGHOLD PROTOCOL · OPS</p>
+        <!-- 实例标识：同一份代码跑两个实例（创空间服 / 盒子服），域名相同但后台必须能分清
+             你正在操作的是哪一台，避免改错公告或误重建。数据来自 /api/status 的 instance 字段。 -->
+        <p class="hero-instance micro" id="instance-badge" hidden>
+          <span class="spad-instance-chip" id="instance-chip">—</span>
+          <span id="instance-detail" class="micro"></span>
+        </p>
+        <p class="hero-description">
+          同一台游戏服的实时读数与公告发布。数值由游戏服本机每 5 分钟回传，本站只做转发与展示。
+        </p>
+        <div class="quick-stats" aria-label="概览">
+          <span><strong id="hero-channels" class="num">—</strong> 在线通道</span>
+          <span><strong id="hero-humans" class="num">—</strong> 真人玩家</span>
+          <span><strong id="hero-matches" class="num">—</strong> 进行中对局</span>
+        </div>
+        <p class="hero-note micro" id="status-note">正在读取…</p>
+      </div>
+    </section>
+
+    <!-- ===== 实时状态 ===== -->
+    <section class="section" id="status-section" aria-labelledby="status-title">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow micro micro--hi">LIVE STATE</p>
+          <h2 id="status-title">实时状态</h2>
+        </div>
+        <p class="section-note" id="status-pill">读取中…</p>
+      </div>
+      <p class="channel-hint">
+        每张卡是一台服务器；卡面给关键数值，展开「全部字段」可看到 <code>/api/status</code>
+        返回的<strong>每一个</strong>字段（含本次为空的），没有隐藏项。
+      </p>
+
+      <div class="spad-cards" id="status-cards">
+        <p class="spad-empty">读取中…</p>
+      </div>
+      <p class="gk-foot">
+        <span id="status-updated">—</span>
+        <span class="gk-dot" aria-hidden="true"></span>
+        <span id="status-visitor">—</span>
+        <a href="/api/status" class="gk-link">原始 JSON</a>
+      </p>
+    </section>
+
+    <!-- ===== 公告管理 ===== -->
+    <section class="section" id="ann-section" aria-labelledby="ann-title">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow micro micro--hi">ANNOUNCEMENTS</p>
+          <h2 id="ann-title">游戏服公告管理</h2>
+        </div>
+        <p class="section-note" id="ann-pill">未登录</p>
+      </div>
+      <p class="channel-hint">
+        这份公告显示在<strong>游戏服大厅</strong>的公告板，不是本站首页那条轮播。
+        发布后游戏服最多 60 秒自动拉取、玩家端自动弹出 —— <strong>不用重新部署</strong>。
+      </p>
+
+      <div class="panel panel--gold">
+        <div class="panel__body">
+          <!-- 未登录：令牌框 + 发布链路说明并排，省得一张小卡孤零零占满一屏 -->
+          <div id="login-view" class="gk-login">
+            <div class="gk-field">
+              <label for="token-input">管理令牌</label>
+              <div class="gk-row">
+                <input class="gk-input" id="token-input" type="password" autocomplete="current-password"
+                       placeholder="INGEST_TOKEN" spellcheck="false" />
+                <button class="btn btn--primary" type="button" id="login-btn">登录</button>
+              </div>
+              <p class="feedback-hint">令牌只保存在本页内存里（不写 localStorage、不随链接外传），刷新即失效。</p>
+            </div>
+            <div class="gk-login-aside">
+              <p class="gk-login-line"><strong class="micro micro--mint">写</strong> 在后台改完点「发布」</p>
+              <p class="gk-login-line"><strong class="micro micro--mint">读</strong> 游戏服每 60 秒自动拉一次</p>
+              <p class="gk-login-line"><strong class="micro micro--mint">生效</strong> 玩家端公告板自动弹出</p>
+              <p class="gk-login-line">全程不用重新部署、不用重新打包。</p>
+            </div>
+          </div>
+
+          <!-- 已登录 -->
+          <div id="editor-view" hidden>
+            <div class="gk-row gk-row--between">
+              <p class="feedback-hint gk-meta" id="ann-meta">—</p>
+              <div class="gk-row">
+                <button class="btn btn--ghost" type="button" id="draft-btn" hidden>恢复未发布草稿</button>
+                <button class="btn btn--secondary" type="button" id="reload-btn">重新载入</button>
+                <button class="btn btn--ghost" type="button" id="logout-btn">退出</button>
+              </div>
+            </div>
+
+            <ol class="gk-list" id="ann-list"></ol>
+            <p class="gk-empty" id="ann-empty" hidden>还没有公告。点「新增一条」开始。</p>
+
+            <div class="gk-row">
+              <button class="btn btn--secondary" type="button" id="add-btn">＋ 新增一条</button>
+              <button class="btn btn--primary" type="button" id="publish-btn">发布到游戏服</button>
+            </div>
+            <p class="feedback-status" id="publish-note" role="status" data-state=""></p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card" id="game-section">
+      <div class="card-head"><h2 id="game-title">游戏服运行（开关与部署）</h2></div>
+      <div class="card-body">
+        <p class="hint">开关只写"意图"到本站，游戏服自己来读——所以改开关<strong>不需要重建</strong>。
+          重新部署会重建容器（2–4 分钟），<strong>正在跑的对局会被清空</strong>，所以场上有局时会被拒绝。</p>
+        <p class="feedback-status" id="game-note" role="status" data-state="">填令牌并载入后显示</p>
+        <div class="gk-table" id="game-over-wrap" hidden>
+          <div class="gk-row"><span>进程 CPU</span><b id="game-over-cpu">—</b></div>
+          <div class="gk-row"><span>常驻内存</span><b id="game-over-rss">—</b></div>
+          <div class="gk-row"><span>主线程活跃度</span><b id="game-over-elu">—</b></div>
+          <div class="gk-row"><span>事件循环 P95</span><b id="game-over-p95">—</b></div>
+          <p class="hint" id="game-over-note">进程 CPU：100% = 1 核 · 每 10 秒采样</p>
+        </div>
+        <div class="gk-row">
+          <button class="btn btn--secondary" type="button" id="game-load">载入状态</button>
+          <button class="btn btn--secondary" type="button" id="game-hot">热装载：—</button>
+          <button class="btn btn--primary" type="button" id="game-deploy">一键重新部署</button>
+        </div>
+        <p class="feedback-status" id="game-result" role="status" data-state=""></p>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="footer">
+    <div class="container footer-inner">
+      <div><span class="footer-brand">卫戍协议 · 盟约</span><a href="./">返回入口页</a></div>
+      <div><span id="foot">服务器后台</span></div>
+    </div>
+  </footer>
+
+  <script src="./js/admin.js?v=3" type="module"></script>
+</body>
+</html>

@@ -1,0 +1,75 @@
+# sp-lobby-board — the online-lobby room board ("房间牌") + the cross-server match queue: one Worker
+# + TWO singleton Durable Objects (Board / MatchQueue, separate storage). State lives in Durable
+# Object storage — never in Workers KV — and is reached through `idFromName('board')` /
+# `idFromName('match')` in src/index.js. No outbound network I/O anywhere.
+
+name = "sp-lobby-board"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+# Keep the workers.dev URL alive as a fallback: devices whose hot-updated content still points at it
+# must keep working until they pick up the custom-domain build. The custom domain below is the
+# primary route (reachable from mainland China).
+workers_dev = true
+
+# Workers Cache（2026-10-07）：让本 Worker 的响应参与 CF 边缘缓存 —— 命中时**不再触发 Worker**
+# （真正的额度省法：并发访客共享同一次调用）。缓存语义完全由响应头决定：
+#   /              → public, max-age=60                    → 缓存 60s
+#   /api           → public, max-age=3600                  → 端点索引，长缓存
+#   /api/community → public, max-age=10, s-maxage=120,
+#                    stale-while-revalidate=600            → 缓存 120s（部分失败 10s）
+#   /api/lobby     → public, max-age=5, s-maxage=15,
+#                    stale-while-revalidate=60             → 缓存 15s（带实时房间牌）
+#   /api/rooms 等  → no-store                              → 永不缓存（房间牌必须实时）
+# v7.2（2026-10-08）：中转 s-maxage 60 → 120 并加 SWR —— 页面每 300s 才拉一次，60s 的缓存
+# 意味着每次轮询都是 MISS、每个访客都替上游付一次往返。见 README「抓取链路与缓存」。
+# cross_version_cache 关闭（默认）：换版本即失效，避免旧响应跨版本残留。
+[cache]
+enabled = true
+
+[durable_objects]
+bindings = [
+  { name = "BOARD", class_name = "Board" },
+  { name = "MATCH", class_name = "MatchQueue" },
+]
+
+# First migration for class "Board". SQLite-backed DO storage is the current default and works on the
+# free plan; if your wrangler/account cannot use it yet, switch `new_sqlite_classes` to `new_classes`
+# (KV-backed Durable Objects — paid plan; the src/index.js code is identical either way).
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Board"]
+
+# v2 (2026-10-05): the cross-server match queue in its own singleton DO (idFromName('match')).
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["MatchQueue"]
+
+# Custom domain (2026-10-04): *.workers.dev is frequently unreachable from mainland China, which made
+# the lobby's room submit fail with a network error on phones. Serving the same Worker from our own
+# zone fixes reachability (CF provisions the DNS record + certificate automatically on deploy).
+[[routes]]
+pattern = "sp-lobby.jiangjiangze.icu"
+custom_domain = true
+
+# ---------------------------------------------------------------------------------------------------
+# DEPLOY (run from tools/apk/lobby-worker/)
+#   export CLOUDFLARE_API_TOKEN=...      # credentials come from the environment ONLY — never commit
+#   export CLOUDFLARE_ACCOUNT_ID=...     # (and set CLOUDFLARE_API_TOKEN via `npx wrangler login` fallback)
+#   npx wrangler deploy
+#
+# The first deploy lands on the workers.dev route:  https://sp-lobby-board.<your-subdomain>.workers.dev
+# (workers_dev stays enabled by default). Self-check after deploy:
+#   curl -s https://sp-lobby-board.<your-subdomain>.workers.dev/api/health
+#   => {"ok":true,"now":...}
+#
+# A custom domain / route can be added later — suggested (keep the /api/* path the lobby client uses):
+#   [routes]
+#   pattern = "lobby.example.com/api/*"
+#   zone_name = "example.com"
+#   # or a custom domain instead of a route:
+#   # [[routes]]
+#   # pattern = "lobby.example.com"
+#   # custom_domain = true
+# Then set the lobby client constant `BOARD` (tools/apk/extras/public/js/lobby.js) to the deployed
+# origin, e.g. "https://sp-lobby-board.<your-subdomain>.workers.dev" — its host joins ALLOWED_HOSTS.
+# ---------------------------------------------------------------------------------------------------

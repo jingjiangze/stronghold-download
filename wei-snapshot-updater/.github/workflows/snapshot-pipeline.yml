@@ -1,0 +1,266 @@
+name: update-snapshot # triggers: schedule + dispatch
+
+# 每 10 分钟拉一次上游服务器列表，更新静态快照并重新部署 Pages。
+# （内容级跳过：无实质变化不 commit 不 deploy，所以最坏 144 次/天、实际远低于此。）
+# 快照即「列表」唯一数据源（前端不再走 /api/servers），pin 一律绿 + 并行直探真实人数。
+# Workers/Pages Functions 只留给后台管理与投票。
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch: {}
+  repository_dispatch:
+    types: [admin-save]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-snapshot
+  cancel-in-progress: true
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch upstream and refresh snapshot
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          # 主源：上游 IP 直连（GitHub 机房可访问裸 IP，无 CF 的 403 限制）
+          # 备源：上游域名（走 CF，链路更稳时用它）
+          # Retry transient upstream failures (504 / connection refused / timeout). There were no
+          # retries at all before: one 504 from the origin froze the snapshot for that whole tick
+          # (observed 2026-10-26 12:17Z -> run 40321377147).
+          CURL_OPTS="-fsS --connect-timeout 5 --max-time 20 --retry 3 --retry-delay 2 --retry-connrefused"
+          if curl $CURL_OPTS "http://121.4.51.247/api/servers" -o /tmp/up.json; then
+            SRC="http://121.4.51.247 (origin direct)"
+          elif curl $CURL_OPTS "https://wei.isomer319.xyz/api/servers" -o /tmp/up.json; then
+            SRC="https://wei.isomer319.xyz (domain)"
+          else
+            echo "::warning::both upstream sources unreachable; keeping existing snapshot"
+            exit 0
+          fi
+          SRC="$SRC" node - <<'JS'
+          (async () => {
+          const fs = require('fs');
+          const up = JSON.parse(fs.readFileSync('/tmp/up.json', 'utf8'));
+          if (!Array.isArray(up.servers) || !up.servers.length) {
+            // Same outcome as "unreachable": keep the previous snapshot. This used to exit 1, so a
+            // reachable-but-empty upstream turned the run red while still changing nothing.
+            console.log('::error::upstream payload has no servers; keeping existing snapshot');
+            process.exit(0);
+          }
+          const out = {
+            servers: up.servers,
+            pollSeconds: up.pollSeconds || 30,
+            serverTime: Date.now(),
+            snapshot: true,
+            snapshotSource: process.env.SRC || 'unknown',
+          };
+
+          // ---- our KV config is AUTHORITATIVE over upstream ----
+          // The admin backend writes to CF KV; the upstream IP knows nothing about those edits, so
+          // merging only the other way round makes a save invisible until upstream happens to agree.
+          // Overlay our records onto upstream's list: same id → keep our title/region/maintainer/notes/
+          // tags/url/statusPath/enabled/order (upstream supplies nothing but live status), upstream-only
+          // ids stay (十服 etc.), our-only ids are appended. Best-effort: no token/no KV = unchanged.
+          try {
+            const NS = '2602ec2630514725a31d115c0aa9fb1b';
+            const r = await fetch(`https://api.cloudflare.com/client/v4/accounts/${process.env.CLOUDFLARE_ACCOUNT_ID}/storage/kv/namespaces/${NS}/values/config`, {
+              headers: { authorization: `Bearer ${process.env.CLOUDFLARE_API_TOKEN}` },
+              signal: AbortSignal.timeout(15000),
+            });
+            if (r.ok) {
+              const doc = await r.json();
+              const ours = Array.isArray(doc?.servers) ? doc.servers : [];
+              if (ours.length) {
+                const byId = new Map(ours.map((s) => [s.id, s]));
+                for (const s of out.servers) {
+                  const mine = byId.get(s.id);
+                  if (!mine) continue;
+                  byId.delete(s.id);
+                  // Our editable fields win; upstream's live status survives under the same id.
+                  for (const k of ['title', 'region', 'maintainer', 'version', 'notes', 'notice', 'url', 'tags', 'statusPath', 'enabled', 'order']) {
+                    if (mine[k] !== undefined) s[k] = mine[k];
+                  }
+                  console.log('kv override applied:', s.id);
+                }
+                for (const s of byId.values()) { out.servers.push(s); console.log('kv-only entry appended:', s.id); }
+                out.servers.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+                console.log('kv merge:', ours.length, 'local records; list now', out.servers.length);
+              }
+            } else {
+              console.log('kv read skipped (status', r.status + ') — upstream list used as-is');
+            }
+          } catch (err) {
+            console.log('kv read failed (', String((err && err.message) || err).slice(0, 80), ') — upstream list used as-is');
+          }
+
+          // ---- pin: 全部服务器 ----
+          // 列表展示层已改为「快照即数据源」，实时 API 与本地探测都不再参与；任何服务器只要
+          // healthz 探不到（出口被拦、跨墙超时、CF 故障…）都不应再把「探不到」显示成离线。
+          // 因此对每一台：并行直探真值（runner 出口，国内/海外服都够得到），徽章一律绿；
+          // 探到 → 带真实 online/rooms/matches；探不到 → 数字保持上游原值或 0（不编造人数）。
+          const probeOne = async (s) => {
+            let real = null; let latencyMs = null;
+            try {
+              const base = String(s.url || '').endsWith('/') ? String(s.url || '') : String(s.url || '') + '/';
+              const path = String(s.statusPath || '/healthz');
+              const u = new URL(path.startsWith('/') ? path.slice(1) : path, base);
+              const t0 = Date.now();
+              const r = await fetch(u.href, {
+                signal: AbortSignal.timeout(8000),
+                headers: { 'user-agent': 'wei-snapshot/1.0', 'cache-control': 'no-cache' },
+              });
+              latencyMs = Date.now() - t0;
+              if (r.ok) {
+                const d = await r.json();
+                if (d && (d.ok === true || typeof d.online === 'number')) real = d;
+              }
+            } catch (err) {
+              console.log('pin probe failed for', s.id, ':', String((err && err.message) || err).slice(0, 80));
+            }
+            s.status = {
+              ...(s.status || {}),
+              state: 'online', error: null, httpStatus: null, forced: true,
+              checkedAt: Date.now(), latencyMs,
+              countKind: (s.status && s.status.countKind) || 'connections',
+            };
+            if (real) {
+              s.status.online = Number(real.online ?? real.humans ?? real.sockets ?? 0) || 0;
+              s.status.rooms = Number(real.rooms ?? 0) || 0;
+              s.status.matches = Number(real.matches ?? 0) || 0;
+              if (real.app) s.status.version = real.app;
+              console.log('pin', s.id, s.title, 'real:', JSON.stringify({ online: s.status.online, rooms: s.status.rooms, matches: s.status.matches, latencyMs }));
+            } else {
+              if (s.status.online == null) s.status.online = 0;
+              console.log('pin', s.id, s.title, 'green (no real probe)');
+            }
+            if (Array.isArray(s.history24h)) s.history24h = s.history24h.map(([t, on]) => [t, on ?? 1, 1]);
+            s.uptime24h = 100;
+            // Our own probe tally (option B, 2026-10-21): upstream's history is mirrored above, but this
+            // records what OUR runner actually observed — the one metric an upstream outage can't fake.
+            s.probe = { ok: real ? 1 : 0 }; // folded into 30-min buckets right after all probes finish
+          };
+          await Promise.all(out.servers.map(probeOne));
+
+          // ---- option B: fold this run's probe result into 30-min buckets (kept in the snapshot) ----
+          // 48 buckets = 24h. Carried forward from the previous snapshot so history survives runs.
+          // probeHistory24h[i] = [bucketStartMs, samples, oks]; probeUptime24h = ok/samples over 24h.
+          const BUCKET_MS = 30 * 60 * 1000;
+          const BUCKETS = 48;
+          let prevProbe = {};
+          try {
+            const p = JSON.parse(fs.readFileSync('site/data/servers-snapshot.json', 'utf8'));
+            for (const s of p.servers || []) if (s.probeHistory24h) prevProbe[s.id] = s.probeHistory24h;
+          } catch {}
+          const nowBucket = Math.floor(Date.now() / BUCKET_MS) * BUCKET_MS;
+          for (const s of out.servers) {
+            const ok = s.probe && s.probe.ok ? 1 : 0;
+            const carry = Array.isArray(prevProbe[s.id]) ? prevProbe[s.id] : [];
+            const buckets = new Map();
+            for (const b of carry) if (Array.isArray(b) && b.length === 3) buckets.set(Number(b[0]), [Number(b[0]), Number(b[1]) || 0, Number(b[2]) || 0]);
+            const cur = buckets.get(nowBucket) || [nowBucket, 0, 0];
+            cur[1] += 1; cur[2] += ok;
+            buckets.set(nowBucket, cur);
+            const keep = [...buckets.keys()].sort((a, b) => b - a).slice(0, BUCKETS);
+            const arr = keep.map((k) => buckets.get(k)).sort((a, b) => a[0] - b[0]);
+            s.probeHistory24h = arr;
+            const samples = arr.reduce((n, b) => n + b[1], 0);
+            const oks = arr.reduce((n, b) => n + b[2], 0);
+            s.probeUptime24h = samples ? Math.round((oks / samples) * 1000) / 10 : null;
+            delete s.probe;
+          }
+
+          // Skip the write when the ONLY difference from the last committed snapshot is timing
+          // (checkedAt/latencyMs/serverTime) or our probe tallies (they advance every run by design).
+          // The "Commit if changed" step then sees a clean diff and skips both the commit and the
+          // Pages deploy — otherwise option B's ever-growing counters would force 288 deploys/day.
+          const stripTimes = (o) => {
+            const c = JSON.parse(JSON.stringify(o));
+            delete c.serverTime;
+            (c.servers || []).forEach((s) => {
+              if (s.status) { delete s.status.checkedAt; delete s.status.latencyMs; }
+              delete s.probeHistory24h; delete s.probeUptime24h;
+              delete s.uptime7d; // not rendered by app.js — pure decimal jitter (82.5 -> 82.4)
+            });
+            return c;
+          };
+          let prev = null;
+          try { prev = JSON.parse(fs.readFileSync('site/data/servers-snapshot.json', 'utf8')); } catch {}
+          // The probe tally is the one field allowed to force a write while content is stable — but
+          // only once per 30-min bucket (the first run in it), so max 48 writes/day instead of 288.
+          const tallyAdvanced = !prev || !(prev.servers || []).every(
+            (s) => Array.isArray(s.probeHistory24h) && Number(s.probeHistory24h.at(-1)?.[0]) === nowBucket,
+          );
+          const contentSame = prev && JSON.stringify(stripTimes(prev)) === JSON.stringify(stripTimes(out));
+          if (contentSame && !tallyAdvanced) {
+            console.log('snapshot unchanged (content stable, bucket already sampled); skipping rewrite/commit/deploy');
+            process.exit(0);
+          }
+
+          // ---- publish throttle: at most one deploy per THROTTLE_MIN minutes ----
+          // Live counters (status.online/rooms/matches, history24h, uptime24h) really do change on
+          // every poll, so gating on content equality alone published ~288x/day (user decision
+          // 2026-10-26: settle for ~10 min). A STRUCTURAL change — a server added/removed, or any
+          // admin-editable field — always publishes immediately.
+          const structural = (o) => JSON.stringify((o && o.servers ? o.servers : []).map((s) => ({
+            id: s.id, title: s.title, url: s.url, statusPath: s.statusPath, enabled: s.enabled,
+            order: s.order, version: s.version, region: s.region, maintainer: s.maintainer,
+            tags: s.tags, notice: s.notice, notes: s.notes,
+          })));
+          // Must stay below the Worker cron period (api-worker: */10) so a run always publishes;
+          // otherwise an early run is throttled and the next one lands a full period late.
+          const THROTTLE_MIN = 8;
+          const structuralChanged = !prev || structural(prev) !== structural(out);
+          const sincePublishMin = (Date.now() - (Number(prev && prev.serverTime) || 0)) / 60000;
+          if (!structuralChanged && sincePublishMin < THROTTLE_MIN) {
+            console.log(`throttled: ${sincePublishMin.toFixed(1)} min since last publish (<${THROTTLE_MIN}); live-counter drift not published`);
+            process.exit(0);
+          }
+          fs.writeFileSync('site/data/servers-snapshot.json', JSON.stringify(out));
+          console.log('snapshot written:', out.servers.length, 'servers from', out.snapshotSource);
+          })();
+          JS
+          echo "SRC=$SRC" >> "$GITHUB_ENV"
+
+      - name: Commit if changed
+        id: commit
+        run: |
+          git config user.name "wei-snapshot-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add site/data/servers-snapshot.json
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "snapshot unchanged; skipping commit"
+          else
+            git commit -m "snapshot refresh ($(date -u '+%Y-%m-%d %H:%M UTC') from ${SRC})"
+            git push
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # ?v= must never be reused: Cloudflare serves /app.js with `immutable` and a stale copy
+      # cached under a given query string survives a deploy. Derive it from the file hash instead.
+      - name: Stamp asset version
+        if: steps.commit.outputs.changed == 'true' || github.event_name == 'workflow_dispatch'
+        run: |
+          node -e '
+          const fs=require("fs"),crypto=require("crypto");
+          const v="h"+crypto.createHash("sha1").update(fs.readFileSync("site/app.js")).digest("hex").slice(0,8);
+          const src=fs.readFileSync("site/index.html","utf8");
+          const hits=(src.match(/\/app\.js\?v=[^"]*/g)||[]).length;
+          if(hits!==1){console.error("stamp: expected 1 app.js?v= anchor, found "+hits);process.exit(1);}
+          const out=src.replace(/\/app\.js\?v=[^"]*/g,"/app.js?v="+v);
+          if(out!==src){fs.writeFileSync("site/index.html",out);console.log("stamped app.js?v="+v);}
+          else{console.log("asset version already "+v);}
+          '
+      - name: Deploy to Cloudflare Pages
+        if: steps.commit.outputs.changed == 'true' || github.event_name == 'workflow_dispatch'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+        run: npx --yes wrangler@4 pages deploy site --project-name=wei-servers --branch=main --commit-dirty=true

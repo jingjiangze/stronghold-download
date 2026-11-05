@@ -1,0 +1,41 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#ecebe7"><meta name="robots" content="noindex,nofollow"><title>服务器管理 · 卫戍协议：盟约</title><link rel="stylesheet" href="/style.css?v=20261019-r4"><script src="/admin.js?v=20261020-r5"></script></head><body class="rl rl-admin">
+<div class="rl-frame" aria-hidden="true"><div class="rl-grid"></div><div class="rl-water">CONTROL</div><div class="rl-vline"></div><i class="rl-dot"></i></div>
+<header class="rl-top"><a class="rl-brand" href="/" aria-label="返回服务器列表"><b>STRONGHOLD</b><small>SERVER DIRECTORY</small><span>ADMIN <b>OS</b></span></a><div class="rl-top-actions"><button class="rl-theme" id="theme" type="button" aria-label="切换到夜间模式" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><g class="sun" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4.2"/><path d="M12 2v2.6M12 19.4V22M2 12h2.6M19.4 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"/></g><path class="moon" fill="currentColor" d="M20.5 14.6A8.6 8.6 0 0 1 9.4 3.5a8.6 8.6 0 1 0 11.1 11.1z"/></svg><span id="themeText">夜间</span></button><a class="rl-enter" href="/">← 返回列表</a></div></header>
+<main class="rl-main rl-admin-main">
+<div id="message" class="rl-notice hidden" role="status"></div>
+<section id="login-panel" class="rl-login">
+ <div class="rl-section-tile" aria-hidden="true"><small>SECTION</small><strong>ADM<br>CTRL</strong><em>CONTROL CENTER SECTION</em></div>
+ <div class="rl-panel">
+  <span class="rl-code">CONTROL CENTER / ACCESS PERMISSION REQUIRED</span>
+  <h1>登录后台</h1>
+  <p class="rl-muted">维护服务器信息，添加节点与更新玩法说明。</p>
+  <form id="login-form"><label>账号<input name="username" autocomplete="username" value="admin" required></label><label>密码<input name="password" type="password" autocomplete="current-password" required></label><button class="rl-btn rl-join" type="submit">登录 →</button></form>
+ </div>
+</section>
+<section id="dashboard" class="hidden">
+ <div class="rl-head"><div><span class="rl-code">CONTROL CENTER / 配置即时保存</span><h2>管理服务器</h2></div><div class="rl-actions"><button id="add" class="rl-btn rl-join" type="button">＋ 添加服务器</button><button id="logout" class="rl-btn" type="button">退出登录</button></div></div>
+ <div class="rl-admin-grid">
+  <div>
+   <div id="records" class="rl-records"></div>
+   <details class="rl-panel rl-password"><summary>修改后台密码</summary><form id="password-form"><label>当前密码<input name="current" type="password" autocomplete="current-password" required></label><label>新密码<input name="password" type="password" autocomplete="new-password" minlength="12" required></label><button class="rl-btn" type="submit">修改并重新登录</button></form></details>
+  </div>
+  <section class="rl-panel rl-editor">
+   <span class="rl-code">NODE CONFIGURATION</span>
+   <h2 id="editor-title">添加服务器</h2>
+   <form id="editor-form"><input type="hidden" name="id">
+    <div class="rl-form-row"><label>服务器名称<input name="title" maxlength="60" placeholder="例如：六服" required></label><label>地区<input name="region" maxlength="80" placeholder="例如：上海"></label></div>
+    <label>维护者<input name="maintainer" maxlength="80" required></label>
+    <label>游戏地址<input name="url" type="url" placeholder="https://example.com" required></label>
+    <div class="rl-form-row"><label>版本说明<input name="version" maxlength="40" placeholder="0.2.1"></label><label>排序（数字越小越靠前）<input name="order" type="number" min="0" max="9999" value="100" required></label></div>
+    <label>特色标签（用逗号分隔）<input name="tags" placeholder="无限火力 Beta, 仅浏览器"></label>
+    <label>玩法 / 维护说明<textarea name="notes" rows="4" maxlength="1000"></textarea></label>
+    <label>人数状态接口路径<input name="statusPath" value="/healthz" maxlength="150" required><small>需要返回 JSON。默认读取 online；旧版本读取 sockets。</small></label>
+    <label class="rl-check"><input name="enabled" type="checkbox" checked><span>自动检测可用状态（关闭后展示“维护中”）</span></label>
+    <div class="rl-actions"><button class="rl-btn rl-join" type="submit">保存服务器</button><button id="reset" class="rl-btn" type="button">清空 / 新建</button></div>
+   </form>
+  </section>
+ </div>
+</section>
+</main>
+<footer class="rl-footer"><span>卫戍协议：盟约 · 社区服务器导航 · 管理员后台</span><span>POWERED BY <b>COMMUNITY</b> —</span></footer>
+</body></html>

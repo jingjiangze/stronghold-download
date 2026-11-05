@@ -1,0 +1,14 @@
+{
+  "name": "stronghold-lobby",
+  "private": true,
+  "type": "module",
+  "description": "卫戍协议 联机大厅后端（Cloudflare Workers）：房间牌 Board DO + 跨服匹配 MatchQueue DO",
+  "scripts": {
+    "test": "node --test",
+    "dev": "npx --yes wrangler@4 dev",
+    "deploy": "npx --yes wrangler@4 deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4"
+  }
+}

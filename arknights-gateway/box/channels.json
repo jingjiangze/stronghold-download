@@ -1,0 +1,17 @@
+{
+  "updatedAt": "2026-10-09",
+  "channels": [
+    {
+      "id": "weishu",
+      "name": "卫戍云通道 · 海外"
+    },
+    {
+      "id": "nyat",
+      "name": "NYAT 隧道 · 湖南"
+    },
+    {
+      "id": "sakura",
+      "name": "SakuraFRP 隧道 · 山东"
+    }
+  ]
+}
